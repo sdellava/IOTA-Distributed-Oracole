@@ -5,6 +5,9 @@ services:
       dockerfile: Dockerfile
     container_name: oracle-node-1
     restart: unless-stopped
+    init: true
+    stop_signal: SIGTERM
+    stop_grace_period: 120s
     env_file:
       - .env
     environment:
@@ -13,7 +16,7 @@ services:
     dns:
       - 1.1.1.1
       - 8.8.8.8
-    command: ["npm", "run", "daemon", "--", "--node", "1"]
+    command: ["node", "--import", "tsx", "src/index.ts", "--node", "1"]
     volumes:
       - ./keys:/app/keys
 
@@ -23,6 +26,9 @@ services:
       dockerfile: Dockerfile
     container_name: oracle-node-2
     restart: unless-stopped
+    init: true
+    stop_signal: SIGTERM
+    stop_grace_period: 120s
     env_file:
       - .env
     environment:
@@ -31,7 +37,7 @@ services:
     dns:
       - 1.1.1.1
       - 8.8.8.8
-    command: ["npm", "run", "daemon", "--", "--node", "2"]
+    command: ["node", "--import", "tsx", "src/index.ts", "--node", "2"]
     volumes:
       - ./keys:/app/keys
 
@@ -41,6 +47,9 @@ services:
       dockerfile: Dockerfile
     container_name: oracle-node-3
     restart: unless-stopped
+    init: true
+    stop_signal: SIGTERM
+    stop_grace_period: 120s
     env_file:
       - .env
     environment:
@@ -49,6 +58,6 @@ services:
     dns:
       - 1.1.1.1
       - 8.8.8.8
-    command: ["npm", "run", "daemon", "--", "--node", "3"]
+    command: ["node", "--import", "tsx", "src/index.ts", "--node", "3"]
     volumes:
       - ./keys:/app/keys
