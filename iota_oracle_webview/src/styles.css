@@ -19,10 +19,7 @@ body {
   min-height: 100vh;
   overflow-x: hidden;
   -webkit-text-size-adjust: 100%;
-  background:
-    radial-gradient(circle at top left, rgba(75, 125, 255, 0.18), transparent 25%),
-    radial-gradient(circle at top right, rgba(35, 200, 170, 0.12), transparent 25%),
-    #0b1020;
+  background: #0b1020;
 }
 
 button,
