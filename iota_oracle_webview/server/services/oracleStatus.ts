@@ -1,5 +1,5 @@
 import { IotaClient } from "@iota/iota-sdk/client";
-import { config } from "../config.js";
+import { config, getRuntimeConfig } from "../config.js";
 import type {
   NodeActivity,
   OracleEventItem,
@@ -35,8 +35,6 @@ type RpcDynamicFieldPage = {
   hasNextPage?: boolean;
   nextCursor?: string | null;
 };
-
-const client = new IotaClient({ url: config.rpcUrl });
 
 function normalizeAddress(value: string): string {
   const t = String(value ?? "").trim().toLowerCase();
@@ -135,16 +133,21 @@ function normalizeEvent(moduleName: string, event: RpcEvent): OracleEventItem {
   };
 }
 
-async function queryModuleEvents(packageId: string, moduleName: string): Promise<OracleEventItem[]> {
+async function queryModuleEvents(
+  client: IotaClient,
+  packageId: string,
+  moduleName: string,
+  eventFetchLimit: number,
+): Promise<OracleEventItem[]> {
   if (!packageId) return [];
   const page = await client.queryEvents({
     query: { MoveModule: { package: packageId, module: moduleName } },
-    limit: config.eventFetchLimit,
+    limit: eventFetchLimit,
   });
   return (page.data ?? []).map((event) => normalizeEvent(moduleName, event as RpcEvent));
 }
 
-async function getStateObjectContent(stateId: string, warnings: string[]): Promise<unknown | null> {
+async function getStateObjectContent(client: IotaClient, stateId: string, warnings: string[]): Promise<unknown | null> {
   try {
     const response = (await client.getObject({ id: stateId, options: { showContent: true } })) as RpcObjectResponse;
     return response?.data?.content ?? null;
@@ -230,7 +233,11 @@ function toNodeActivity(
   );
 }
 
-async function listDynamicFields(parentId: string, warnings: string[]): Promise<NonNullable<RpcDynamicFieldPage["data"]>> {
+async function listDynamicFields(
+  client: IotaClient,
+  parentId: string,
+  warnings: string[],
+): Promise<NonNullable<RpcDynamicFieldPage["data"]>> {
   const out: NonNullable<RpcDynamicFieldPage["data"]> = [];
   let cursor: string | null | undefined = null;
   try {
@@ -270,17 +277,17 @@ function parseTaskTemplate(dynamicFieldContent: unknown): OracleTemplateCost | n
   };
 }
 
-async function getConfiguredCosts(warnings: string[]) {
+async function getConfiguredCosts(client: IotaClient, stateId: string, warnings: string[]) {
   const empty = { systemFeeBps: null, minPayment: null, templates: [] as OracleTemplateCost[] };
-  if (!config.oracleStateId) return empty;
-  const content = await getStateObjectContent(config.oracleStateId, warnings);
+  if (!stateId) return empty;
+  const content = await getStateObjectContent(client, stateId, warnings);
   if (!content) return empty;
   const stateFields = extractFields(content);
   if (!stateFields) {
     warnings.push("Unable to parse oracle system state fields.");
     return empty;
   }
-  const dynamicFields = await listDynamicFields(config.oracleStateId, warnings);
+  const dynamicFields = await listDynamicFields(client, stateId, warnings);
   const templateFields = dynamicFields.filter((item) => String(item.name?.type ?? "").includes("TaskTemplateKey"));
   const templates: OracleTemplateCost[] = [];
   for (const field of templateFields) {
@@ -302,8 +309,10 @@ async function getConfiguredCosts(warnings: string[]) {
 }
 
 export async function getOracleStatus(): Promise<OracleStatusResponse> {
+  const runtime = getRuntimeConfig();
+  const client = new IotaClient({ url: runtime.rpcUrl });
   const warnings: string[] = [];
-  if (!config.oracleTasksPackageId) {
+  if (!runtime.oracleTasksPackageId) {
     warnings.push("ORACLE_TASKS_PACKAGE_ID is not configured. Dashboard is running in degraded mode.");
   }
 
@@ -315,10 +324,10 @@ export async function getOracleStatus(): Promise<OracleStatusResponse> {
     warnings.push(`Unable to read latest checkpoint: ${String(error)}`);
   }
 
-  const content = config.oracleStateId ? await getStateObjectContent(config.oracleStateId, warnings) : null;
+  const content = runtime.oracleStateId ? await getStateObjectContent(client, runtime.oracleStateId, warnings) : null;
   const registeredNodes = content ? parseRegisteredNodes(content) : [];
   const registeredNodeAddresses = registeredNodes.map((node) => node.address);
-  const configuredCosts = await getConfiguredCosts(warnings);
+  const configuredCosts = await getConfiguredCosts(client, runtime.oracleStateId, warnings);
   const acceptedTasksByAddress = new Map(
     registeredNodes.map((node) => [
       normalizeAddress(node.address),
@@ -328,11 +337,11 @@ export async function getOracleStatus(): Promise<OracleStatusResponse> {
 
   let taskEvents: OracleEventItem[] = [];
   let messageEvents: OracleEventItem[] = [];
-  if (config.oracleTasksPackageId) {
+  if (runtime.oracleTasksPackageId) {
     try {
       [taskEvents, messageEvents] = await Promise.all([
-        queryModuleEvents(config.oracleTasksPackageId, config.oracleTaskModule),
-        queryModuleEvents(config.oracleTasksPackageId, config.oracleMessageModule),
+        queryModuleEvents(client, runtime.oracleTasksPackageId, config.oracleTaskModule, config.eventFetchLimit),
+        queryModuleEvents(client, runtime.oracleTasksPackageId, config.oracleMessageModule, config.eventFetchLimit),
       ]);
     } catch (error) {
       warnings.push(`Unable to query oracle events: ${String(error)}`);
@@ -360,13 +369,13 @@ export async function getOracleStatus(): Promise<OracleStatusResponse> {
 
   return {
     ok: true,
-    mode: config.oracleTasksPackageId ? "live" : "degraded",
-    network: config.network || "unknown",
-    rpcUrl: config.rpcUrl,
-    packageId: config.oracleTasksPackageId || null,
-    tasksPackageId: config.oracleTasksPackageId || null,
-    systemPackageId: config.oracleSystemPackageId || null,
-    stateId: config.oracleStateId || null,
+    mode: runtime.oracleTasksPackageId ? "live" : "degraded",
+    network: runtime.network || "unknown",
+    rpcUrl: runtime.rpcUrl,
+    packageId: runtime.oracleTasksPackageId || null,
+    tasksPackageId: runtime.oracleTasksPackageId || null,
+    systemPackageId: runtime.oracleSystemPackageId || null,
+    stateId: runtime.oracleStateId || null,
     latestCheckpoint,
     activeWindowMinutes: config.activeWindowMinutes,
     eventFetchLimit: config.eventFetchLimit,

@@ -1,4 +1,11 @@
-import type { ExampleTask, ExecuteTaskResponse, OracleStatus, PreparedWalletTaskResponse } from '../types';
+import type {
+  ExampleTask,
+  ExecuteTaskResponse,
+  NetworkConfigResponse,
+  OracleNetwork,
+  OracleStatus,
+  PreparedWalletTaskResponse,
+} from '../types';
 
 async function ensureOk<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -10,6 +17,22 @@ async function ensureOk<T>(response: Response): Promise<T> {
 
 export async function fetchStatus(): Promise<OracleStatus> {
   return ensureOk<OracleStatus>(await fetch('/api/status'));
+}
+
+export async function fetchNetworkConfig(): Promise<NetworkConfigResponse> {
+  return ensureOk<NetworkConfigResponse>(await fetch('/api/network'));
+}
+
+export async function updateActiveNetwork(network: OracleNetwork): Promise<NetworkConfigResponse> {
+  return ensureOk<NetworkConfigResponse>(
+    await fetch('/api/network', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ network }),
+    }),
+  );
 }
 
 export async function fetchExamples(): Promise<ExampleTask[]> {

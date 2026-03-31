@@ -3,13 +3,14 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import dotenv from "dotenv";
-import { config } from "../config.js";
+import { config, getRuntimeConfig } from "../config.js";
 
 function npmCommand(): string {
   return "npm";
 }
 
 async function buildClientEnv(): Promise<NodeJS.ProcessEnv> {
+  const runtime = getRuntimeConfig();
   const envPath = path.join(config.oracleClientDir, ".env");
   let parsed: Record<string, string> = {};
 
@@ -28,6 +29,18 @@ async function buildClientEnv(): Promise<NodeJS.ProcessEnv> {
     ORACLE_STATUS_ID: "",
 
     ...parsed,
+
+    // Runtime-selected network values must override client .env values.
+    IOTA_NETWORK: runtime.network,
+    IOTA_RPC_URL: runtime.rpcUrl,
+    ORACLE_TASKS_PACKAGE_ID: runtime.oracleTasksPackageId,
+    ORACLE_SYSTEM_PACKAGE_ID: runtime.oracleSystemPackageId,
+    ORACLE_STATE_ID: runtime.oracleStateId,
+    ORACLE_TREASURY_ID: runtime.oracleTreasuryId,
+    ORACLE_TREASURY_OBJECT_ID: runtime.oracleTreasuryId,
+    IOTA_RANDOM_OBJECT_ID: runtime.iotaRandomObjectId,
+    IOTA_CLOCK_OBJECT_ID: runtime.iotaClockObjectId,
+    IOTA_CLOCK_ID: runtime.iotaClockObjectId,
   };
 }
 

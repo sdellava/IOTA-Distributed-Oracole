@@ -1,6 +1,8 @@
 import "dotenv/config";
 import path from "node:path";
 
+export type OracleNetwork = "mainnet" | "testnet" | "devnet";
+
 function toNumber(value: string | undefined, fallback: number): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -21,18 +23,70 @@ function envAny(...names: string[]): string {
   return "";
 }
 
+function normalizeNetwork(value: string | undefined): OracleNetwork {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === "dev" || raw === "devnet") return "devnet";
+  if (raw === "test" || raw === "testnet") return "testnet";
+  return "mainnet";
+}
+
+function networkPrefix(network: OracleNetwork): string {
+  return network.toUpperCase();
+}
+
 const rootDir = process.cwd();
 const clientDir = path.resolve(rootDir, process.env.ORACLE_CLIENT_DIR ?? "../iota_oracle_client");
 const examplesDirRaw = process.env.ORACLE_EXAMPLES_DIR?.trim() || process.env.ORACLE_CLIENT_EXAMPLES_DIR?.trim() || "examples";
 const examplesDir = path.resolve(rootDir, examplesDirRaw);
 
+const supportedNetworks = (toList(process.env.VITE_SUPPORTED_NETWORKS) as OracleNetwork[])
+  .map((n) => normalizeNetwork(n))
+  .filter((n, i, arr) => arr.indexOf(n) === i);
+if (supportedNetworks.length === 0) supportedNetworks.push("mainnet", "testnet", "devnet");
+
+const configuredDefault = normalizeNetwork(process.env.WEBVIEW_DEFAULT_NETWORK ?? process.env.VITE_DEFAULT_NETWORK ?? "mainnet");
+let activeNetwork: OracleNetwork = supportedNetworks.includes(configuredDefault) ? configuredDefault : "mainnet";
+if (!supportedNetworks.includes(activeNetwork)) activeNetwork = supportedNetworks[0]!;
+
+function pickNetworkValue(network: OracleNetwork, key: string, fallback = ""): string {
+  const prefixed = process.env[`${networkPrefix(network)}_${key}`]?.trim();
+  if (prefixed) return prefixed;
+  return process.env[key]?.trim() || fallback;
+}
+
+export function getActiveNetwork(): OracleNetwork {
+  return activeNetwork;
+}
+
+export function setActiveNetwork(next: string): OracleNetwork {
+  const normalized = normalizeNetwork(next);
+  if (!supportedNetworks.includes(normalized)) {
+    throw new Error(`Unsupported network: ${next}`);
+  }
+  activeNetwork = normalized;
+  return activeNetwork;
+}
+
+export function getSupportedNetworks(): OracleNetwork[] {
+  return [...supportedNetworks];
+}
+
+export function getRuntimeConfig(network = activeNetwork) {
+  const selected = normalizeNetwork(network);
+  return {
+    network: selected,
+    rpcUrl: pickNetworkValue(selected, "IOTA_RPC_URL", "https://api.mainnet.iota.cafe"),
+    oracleTasksPackageId: pickNetworkValue(selected, "ORACLE_TASKS_PACKAGE_ID"),
+    oracleSystemPackageId: pickNetworkValue(selected, "ORACLE_SYSTEM_PACKAGE_ID"),
+    oracleStateId: pickNetworkValue(selected, "ORACLE_STATE_ID", pickNetworkValue(selected, "ORACLE_SYSTEM_STATE_ID", pickNetworkValue(selected, "ORACLE_STATUS_ID"))),
+    oracleTreasuryId: pickNetworkValue(selected, "ORACLE_TREASURY_ID", pickNetworkValue(selected, "ORACLE_TREASURY_OBJECT_ID")),
+    iotaRandomObjectId: pickNetworkValue(selected, "IOTA_RANDOM_OBJECT_ID"),
+    iotaClockObjectId: pickNetworkValue(selected, "IOTA_CLOCK_OBJECT_ID", pickNetworkValue(selected, "IOTA_CLOCK_ID")),
+  };
+}
+
 export const config = {
   port: toNumber(process.env.PORT, 8787),
-  network: (process.env.IOTA_NETWORK ?? "testnet").trim().toLowerCase(),
-  rpcUrl: process.env.IOTA_RPC_URL ?? "https://api.testnet.iota.cafe",
-  oracleTasksPackageId: envAny("ORACLE_TASKS_PACKAGE_ID", "ORACLE_PACKAGE_ID"),
-  oracleSystemPackageId: envAny("ORACLE_SYSTEM_PACKAGE_ID", "ORACLE_PACKAGE_ID"),
-  oracleStateId: envAny("ORACLE_STATE_ID", "ORACLE_SYSTEM_STATE_ID", "ORACLE_STATUS_ID"),
   oracleTaskModule: process.env.ORACLE_TASK_MODULE ?? "oracle_tasks",
   oracleMessageModule: process.env.ORACLE_MESSAGE_MODULE ?? "oracle_messages",
   activeWindowMinutes: toNumber(process.env.ACTIVE_WINDOW_MINUTES, 15),
@@ -46,9 +100,9 @@ export const envDebug = {
   cwd: rootDir,
   envFileLoaded: Boolean(
     process.env.ORACLE_TASKS_PACKAGE_ID ||
-    process.env.ORACLE_SYSTEM_PACKAGE_ID ||
-    process.env.ORACLE_PACKAGE_ID ||
-    process.env.IOTA_RPC_URL ||
-    process.env.PORT,
+      process.env.ORACLE_SYSTEM_PACKAGE_ID ||
+      process.env.ORACLE_PACKAGE_ID ||
+      process.env.IOTA_RPC_URL ||
+      process.env.PORT,
   ),
 };

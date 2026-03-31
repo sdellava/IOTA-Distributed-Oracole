@@ -1,3 +1,5 @@
+export type OracleNetwork = "mainnet" | "testnet" | "devnet";
+
 export type OracleEventItem = {
   txDigest: string;
   eventSeq: string;
@@ -123,4 +125,13 @@ export type PreparedWalletTaskResponse = {
   exitCode: number | null;
   startedAt: string;
   finishedAt: string;
+};
+
+export type NetworkConfigResponse = {
+  activeNetwork: OracleNetwork;
+  supportedNetworks: OracleNetwork[];
+  rpcUrl: string;
+  tasksPackageId: string | null;
+  systemPackageId: string | null;
+  stateId: string | null;
 };

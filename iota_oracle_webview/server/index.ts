@@ -2,7 +2,14 @@ import express from "express";
 import cors from "cors";
 import path from "node:path";
 import { IotaClient } from "@iota/iota-sdk/client";
-import { config, envDebug } from "./config.js";
+import {
+  config,
+  envDebug,
+  getActiveNetwork,
+  getRuntimeConfig,
+  getSupportedNetworks,
+  setActiveNetwork,
+} from "./config.js";
 import {
   executeOracleTask,
   listExampleTasks,
@@ -118,6 +125,41 @@ app.get("/api/status", async (_req, res) => {
   }
 });
 
+app.get("/api/network", (_req, res) => {
+  const runtime = getRuntimeConfig();
+  res.json({
+    activeNetwork: getActiveNetwork(),
+    supportedNetworks: getSupportedNetworks(),
+    rpcUrl: runtime.rpcUrl,
+    tasksPackageId: runtime.oracleTasksPackageId || null,
+    systemPackageId: runtime.oracleSystemPackageId || null,
+    stateId: runtime.oracleStateId || null,
+  });
+});
+
+app.post("/api/network", (req, res) => {
+  try {
+    const network = String((req.body as any)?.network ?? "").trim();
+    if (!network) {
+      res.status(400).json({ error: "Body must include network." });
+      return;
+    }
+    const activeNetwork = setActiveNetwork(network);
+    const runtime = getRuntimeConfig(activeNetwork);
+    res.json({
+      ok: true,
+      activeNetwork,
+      supportedNetworks: getSupportedNetworks(),
+      rpcUrl: runtime.rpcUrl,
+      tasksPackageId: runtime.oracleTasksPackageId || null,
+      systemPackageId: runtime.oracleSystemPackageId || null,
+      stateId: runtime.oracleStateId || null,
+    });
+  } catch (error) {
+    sendApiError(res, 400, error);
+  }
+});
+
 app.get("/api/examples", async (_req, res) => {
   try {
     const items = await listExampleTasks();
@@ -144,7 +186,8 @@ app.get("/api/task/:taskId", async (req, res) => {
       return;
     }
 
-    const client = new IotaClient({ url: config.rpcUrl });
+    const runtime = getRuntimeConfig();
+    const client = new IotaClient({ url: runtime.rpcUrl });
 
     const response = await client.getObject({
       id: taskId,
@@ -221,7 +264,8 @@ app.get("/api/task/:taskId/events", async (req, res) => {
       return;
     }
 
-    const client = new IotaClient({ url: config.rpcUrl });
+    const runtime = getRuntimeConfig();
+    const client = new IotaClient({ url: runtime.rpcUrl });
 
     const taskObj: any = await client.getObject({
       id: taskId,
@@ -229,7 +273,7 @@ app.get("/api/task/:taskId/events", async (req, res) => {
     });
 
     const taskType = String(taskObj?.data?.type ?? "");
-    const taskPackageId = taskType.split("::")[0] || config.oracleTasksPackageId;
+    const taskPackageId = taskType.split("::")[0] || runtime.oracleTasksPackageId;
 
     const [taskEvents, messageEvents] = await Promise.all([
       queryTaskEventsByModule(client, taskPackageId, config.oracleTaskModule, taskId),
@@ -296,17 +340,15 @@ app.get("*", (req, res) => {
 });
 
 app.listen(config.port, "0.0.0.0", () => {
+  const runtime = getRuntimeConfig();
   console.log(`[iota_oracle_webview] listening on http://0.0.0.0:${config.port}`);
   console.log(`[iota_oracle_webview] client dir: ${config.oracleClientDir}`);
   console.log(`[iota_oracle_webview] examples dir: ${config.oracleExamplesDir}`);
   console.log(`[iota_oracle_webview] env cwd: ${envDebug.cwd}`);
-  console.log(
-    `[iota_oracle_webview] ORACLE_TASKS_PACKAGE_ID loaded: ${config.oracleTasksPackageId ? "yes" : "no"}`,
-  );
-  console.log(
-    `[iota_oracle_webview] ORACLE_SYSTEM_PACKAGE_ID loaded: ${config.oracleSystemPackageId ? "yes" : "no"}`,
-  );
-  console.log(
-    `[iota_oracle_webview] ORACLE_STATE_ID loaded: ${config.oracleStateId ? "yes" : "no"}`,
-  );
+  console.log(`[iota_oracle_webview] active network: ${getActiveNetwork()}`);
+  console.log(`[iota_oracle_webview] supported networks: ${getSupportedNetworks().join(", ")}`);
+  console.log(`[iota_oracle_webview] IOTA_RPC_URL loaded: ${runtime.rpcUrl ? "yes" : "no"}`);
+  console.log(`[iota_oracle_webview] ORACLE_TASKS_PACKAGE_ID loaded: ${runtime.oracleTasksPackageId ? "yes" : "no"}`);
+  console.log(`[iota_oracle_webview] ORACLE_SYSTEM_PACKAGE_ID loaded: ${runtime.oracleSystemPackageId ? "yes" : "no"}`);
+  console.log(`[iota_oracle_webview] ORACLE_STATE_ID loaded: ${runtime.oracleStateId ? "yes" : "no"}`);
 });

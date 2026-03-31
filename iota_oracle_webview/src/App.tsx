@@ -4,13 +4,21 @@ import Menu, { Item as RcMenuItem, Divider } from "rc-menu";
 import ActivityTable from "./components/ActivityTable";
 import MetricCard from "./components/MetricCard";
 import TaskRunner from "./components/TaskRunner";
-import { fetchExamples, fetchStatus } from "./lib/api";
-import type { ExampleTask, OracleStatus } from "./types";
+import { fetchExamples, fetchNetworkConfig, fetchStatus, updateActiveNetwork } from "./lib/api";
+import type { ExampleTask, OracleNetwork, OracleStatus } from "./types";
 import ValidateTaskPage from "./pages/ValidateTaskPage";
 
 const REFRESH_MS = 10_000;
 
 type PageMode = "run" | "validate";
+const FALLBACK_NETWORKS: OracleNetwork[] = ["mainnet", "testnet", "devnet"];
+
+function normalizeNetwork(value: string | null | undefined): OracleNetwork {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === "devnet" || raw === "dev") return "devnet";
+  if (raw === "testnet" || raw === "test") return "testnet";
+  return "mainnet";
+}
 
 function shortAddress(address: string, start = 6, end = 4): string {
   if (!address) return "-";
@@ -27,12 +35,16 @@ export default function App() {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [pageMode, setPageMode] = useState<PageMode>("run");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [supportedNetworks, setSupportedNetworks] = useState<OracleNetwork[]>(FALLBACK_NETWORKS);
+  const [activeNetwork, setActiveNetworkState] = useState<OracleNetwork>("mainnet");
+  const [networkLoading, setNetworkLoading] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   async function refreshStatus() {
     try {
       const data = await fetchStatus();
       setStatus(data);
+      setActiveNetworkState(normalizeNetwork(data.network));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -42,7 +54,21 @@ export default function App() {
   }
 
   useEffect(() => {
-    void refreshStatus();
+    async function init() {
+      try {
+        const networkConfig = await fetchNetworkConfig();
+        const supported = (networkConfig.supportedNetworks?.length ? networkConfig.supportedNetworks : FALLBACK_NETWORKS).map((item) =>
+          normalizeNetwork(item),
+        );
+        setSupportedNetworks(Array.from(new Set(supported)));
+        setActiveNetworkState(normalizeNetwork(networkConfig.activeNetwork));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+      await refreshStatus();
+    }
+
+    void init();
     const timer = window.setInterval(() => void refreshStatus(), REFRESH_MS);
     return () => window.clearInterval(timer);
   }, []);
@@ -67,10 +93,21 @@ export default function App() {
     if (!status?.lastRefreshIso) return "-";
     return new Date(status.lastRefreshIso).toLocaleString();
   }, [status?.lastRefreshIso]);
-  const networkLabel = useMemo(() => {
-    const raw = status?.network || import.meta.env.VITE_IOTA_NETWORK || import.meta.env.VITE_NETWORK || "unknown";
-    return String(raw).toUpperCase();
-  }, [status?.network]);
+  async function onNetworkChange(nextValue: string) {
+    const next = normalizeNetwork(nextValue);
+    if (next === activeNetwork) return;
+
+    setNetworkLoading(true);
+    try {
+      const networkConfig = await updateActiveNetwork(next);
+      setActiveNetworkState(normalizeNetwork(networkConfig.activeNetwork));
+      await refreshStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setNetworkLoading(false);
+    }
+  }
 
   return (
     <div className="page">
@@ -113,9 +150,21 @@ export default function App() {
                     </div>
                   ) : null}
                 </div>
-                <span className="network-pill" title="IOTA network">
-                  {networkLabel}
-                </span>
+                <label className="network-select-wrap" title="IOTA network">
+                  <span className="sr-only">Network</span>
+                  <select
+                    className="network-select"
+                    value={activeNetwork}
+                    onChange={(event) => void onNetworkChange(event.target.value)}
+                    disabled={networkLoading}
+                  >
+                    {supportedNetworks.map((network) => (
+                      <option key={network} value={network}>
+                        {network.toUpperCase()}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <ConnectButton connectText="Connect Wallet" />
               </div>
               <div className="wallet-status">
