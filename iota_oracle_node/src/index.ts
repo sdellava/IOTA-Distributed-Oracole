@@ -94,7 +94,7 @@ function installShutdownHooks(ctx: NodeContext, autoUnregister: boolean): void {
 function logStartup(ctx: NodeContext): void {
   console.log(`[node ${ctx.nodeId}] address=${ctx.identity.address}`);
   console.log(
-    `[node ${ctx.nodeId}] accepted templates=${ctx.acceptedTemplateIds.length ? ctx.acceptedTemplateIds.join(",") : "ALL"}`,
+    `[node ${ctx.nodeId}] accepted templates=${ctx.acceptedTemplateIds.length ? ctx.acceptedTemplateIds.join(",") : "<none>"}`,
   );
   console.log(`[node ${ctx.nodeId}] listening assigned tasks: ${ctx.taskAssignedType}`);
   console.log(`[node ${ctx.nodeId}] listening data requests: ${ctx.dataReqType}`);

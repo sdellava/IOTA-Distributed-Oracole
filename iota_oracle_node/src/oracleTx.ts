@@ -151,10 +151,6 @@ export async function registerOracleNode(opts: {
     .map((n) => Math.floor(Number(n)))
     .filter((n) => Number.isFinite(n) && n > 0);
 
-  if (acceptedTemplateIds.length === 0) {
-    throw new Error("acceptedTemplateIds cannot be empty");
-  }
-
   const mode = resolveRegisterMode();
   if (mode === "off") return "";
 
