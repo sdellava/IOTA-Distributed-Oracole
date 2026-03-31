@@ -5,6 +5,7 @@ import { decodeIotaPrivateKey } from "@iota/iota-sdk/cryptography";
 import { Ed25519Keypair } from "@iota/iota-sdk/keypairs/ed25519";
 
 import { bcsVecU8, bcsAddress, bcsVecU64, bcsU64 } from "./bcs";
+import { envByNetwork } from "./config/env";
 import { parseAcceptedTemplateIds } from "./nodeConfig";
 import { signAndExecuteWithLockRetry } from "./txRetry.js";
 
@@ -21,24 +22,24 @@ function optEnv(key: string): string | undefined {
 
 function getSystemPackageId(): string {
   return (
-    process.env.ORACLE_SYSTEM_PACKAGE_ID?.trim() ||
-    process.env.ORACLE_PACKAGE_ID?.trim() ||
+    envByNetwork("ORACLE_SYSTEM_PACKAGE_ID") ||
+    envByNetwork("ORACLE_PACKAGE_ID") ||
     mustEnv("ORACLE_PACKAGE_ID")
   );
 }
 
 function getStateId(): string {
   return (
-    process.env.ORACLE_STATE_ID?.trim() ||
-    process.env.ORACLE_STATUS_ID?.trim() ||
-    process.env.ORACLE_SYSTEM_STATE_ID?.trim() ||
+    envByNetwork("ORACLE_STATE_ID") ||
+    envByNetwork("ORACLE_STATUS_ID") ||
+    envByNetwork("ORACLE_SYSTEM_STATE_ID") ||
     mustEnv("ORACLE_STATE_ID")
   );
 }
 
 
 function getClockId(): string {
-  return (process.env.IOTA_CLOCK_ID?.trim() || "0x6").trim() || "0x6";
+  return (envByNetwork("IOTA_CLOCK_ID") || "0x6").trim() || "0x6";
 }
 
 function isDevLikeNetwork(networkRaw: string | undefined): boolean {
@@ -200,7 +201,7 @@ export async function registerOracleNode(opts: {
       }
     }
 
-    const systemId = (process.env.IOTA_SYSTEM_STATE_ID ?? "0x5").trim() || "0x5";
+    const systemId = (envByNetwork("IOTA_SYSTEM_STATE_ID") ?? "0x5").trim() || "0x5";
 
     const res = await signAndExecuteWithLockRetry({
       client,

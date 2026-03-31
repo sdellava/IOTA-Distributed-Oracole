@@ -9,3 +9,4 @@ iota_oracle_client/.env
 iota_oracle_webview/.env
 .env
 **/keys/**
+iota_oracle_move/oracle_validator_cap_delegate/Move.lock
