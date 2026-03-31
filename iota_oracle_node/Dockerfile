@@ -16,8 +16,12 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --registry=https://registry.npmjs.org/ --no-audit --fund=false --loglevel=info
+RUN printf "registry=https://registry.npmjs.org/\n" > /root/.npmrc \
+ && npm config set registry https://registry.npmjs.org/ \
+ && npm config set fetch-retries 5 \
+ && npm config set fetch-retry-mintimeout 20000 \
+ && npm config set fetch-retry-maxtimeout 120000 \
+ && env -u NPM_CONFIG_REGISTRY -u npm_config_registry npm ci --no-audit --fund=false --loglevel=verbose --foreground-scripts --progress=false
 
 COPY . .
 
