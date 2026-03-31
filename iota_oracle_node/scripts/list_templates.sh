@@ -74,4 +74,4 @@ fi
 
 echo "[info] project: ${PROJECT_DIR}"
 cd "${PROJECT_DIR}"
-npm exec tsx src/tools/listTemplates.ts "${ARGS[@]}"
+npm exec -- tsx src/tools/listTemplates.ts "${ARGS[@]}"
