@@ -1,5 +1,3 @@
-const DEFAULT_ACCEPTED_TEMPLATE_IDS = [1, 2, 3, 4] as const;
-
 export function optBool(name: string, def = false): boolean {
   const v = process.env[name]?.trim();
   if (!v) return def;
@@ -17,8 +15,14 @@ export function optInt(name: string, def: number): number {
 export function parseAcceptedTemplateIds(raw = process.env.ORACLE_ACCEPTED_TEMPLATE_IDS ?? ""): number[] {
   const t = String(raw ?? "").trim();
 
-  if (!t || t === "*" || t.toLowerCase() === "all") {
-    return [...DEFAULT_ACCEPTED_TEMPLATE_IDS];
+  if (!t) {
+    return [];
+  }
+
+  if (t === "*" || t.toLowerCase() === "all") {
+    throw new Error(
+      "ORACLE_ACCEPTED_TEMPLATE_IDS must be an explicit comma-separated list. Wildcards are no longer supported.",
+    );
   }
 
   const out: number[] = [];
@@ -30,10 +34,6 @@ export function parseAcceptedTemplateIds(raw = process.env.ORACLE_ACCEPTED_TEMPL
       throw new Error(`Invalid ORACLE_ACCEPTED_TEMPLATE_IDS entry: ${s}`);
     }
     if (!out.includes(n)) out.push(n);
-  }
-
-  if (out.length === 0) {
-    return [...DEFAULT_ACCEPTED_TEMPLATE_IDS];
   }
 
   out.sort((a, b) => a - b);
