@@ -152,6 +152,27 @@ command -v node >/dev/null 2>&1 || { echo "[error] node not found" >&2; exit 1; 
 
 FULL_JSON_PATH="$(cd "$(dirname "$TEMPLATE_JSON")" && pwd)/$(basename "$TEMPLATE_JSON")"
 
+current_proposal_counter() {
+  iota client object "${STATE_ID}" --json \
+    | node -e '
+const fs = require("fs");
+const txt = fs.readFileSync(0, "utf8");
+const data = JSON.parse(txt);
+function walk(x) {
+  if (!x || typeof x !== "object") return undefined;
+  if (Object.prototype.hasOwnProperty.call(x, "template_proposal_id")) return x.template_proposal_id;
+  for (const v of Object.values(x)) {
+    const out = walk(v);
+    if (out !== undefined) return out;
+  }
+  return undefined;
+}
+const v = walk(data);
+if (v === undefined || v === null || v === "") throw new Error("template_proposal_id not found");
+process.stdout.write(String(v));
+'
+}
+
 read -r TEMPLATE_ID TASK_TYPE IS_ENABLED BASE_PRICE MAX_INPUT MAX_OUTPUT INCLUDED_DOWNLOAD PRICE_PER_DOWNLOAD ALLOW_STORAGE MIN_RETENTION MAX_RETENTION PRICE_PER_RETENTION <<<"$(
   node -e '
 const fs = require("fs");
@@ -240,4 +261,6 @@ iota client ptb \
   "$PRICE_PER_RETENTION" \
   --gas-budget "$GAS_BUDGET"
 
+PROPOSAL_ID="$(current_proposal_counter || true)"
 echo "[ok] proposal created for template_id=${TEMPLATE_ID}. Awaiting approvals."
+[[ -n "${PROPOSAL_ID}" ]] && echo "[ok] proposal_id=${PROPOSAL_ID}"

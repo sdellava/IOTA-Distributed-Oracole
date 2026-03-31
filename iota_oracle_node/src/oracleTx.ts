@@ -4,7 +4,7 @@ import { Transaction } from "@iota/iota-sdk/transactions";
 import { decodeIotaPrivateKey } from "@iota/iota-sdk/cryptography";
 import { Ed25519Keypair } from "@iota/iota-sdk/keypairs/ed25519";
 
-import { bcsVecU8, bcsAddress, bcsVecU64 } from "./bcs";
+import { bcsVecU8, bcsAddress, bcsVecU64, bcsU64 } from "./bcs";
 import { parseAcceptedTemplateIds } from "./nodeConfig";
 import { signAndExecuteWithLockRetry } from "./txRetry.js";
 
@@ -49,19 +49,18 @@ function isDevLikeNetwork(networkRaw: string | undefined): boolean {
 function resolveRegisterMode(): "off" | "dev" | "prod" {
   const raw = String(process.env.REGISTER_MODE ?? "").trim().toLowerCase();
   if (raw === "off" || raw === "false" || raw === "0") return "off";
+  const networkIsDevLike = isDevLikeNetwork(process.env.IOTA_NETWORK);
 
-  const hasControllerCap = Boolean(
-    process.env.VALIDATOR_CAP_ID?.trim() || process.env.ORACLE_CONTROLLER_CAP_ID?.trim(),
-  );
-  let mode: "dev" | "prod" = (raw === "dev" || raw === "prod")
-    ? (raw as "dev" | "prod")
-    : (hasControllerCap ? "prod" : "dev");
-
-  // Safety rule: non-dev networks must use validator/controller-cap registration.
-  if (!isDevLikeNetwork(process.env.IOTA_NETWORK)) {
-    mode = "prod";
+  if (raw === "dev") {
+    // Safety rule: non-dev networks cannot use dev registration mode.
+    return networkIsDevLike ? "dev" : "prod";
   }
-  return mode;
+  if (raw === "prod") return "prod";
+
+  // Default inference by network:
+  // - dev/devnet/local/localnet -> dev registration (no controller cap required)
+  // - all other networks         -> prod registration (validator/controller cap required)
+  return networkIsDevLike ? "dev" : "prod";
 }
 
 function gasBudget(envKey: string, def: number): number {
@@ -288,16 +287,17 @@ export async function unregisterOracleNode(opts: { client: IotaClient; keypair: 
 export async function approveTaskTemplateProposal(opts: {
   client: IotaClient;
   keypair: Ed25519Keypair;
+  proposalId?: number;
   expectedTemplateId?: number;
 }): Promise<string> {
-  const { client, keypair, expectedTemplateId } = opts;
+  const { client, keypair, proposalId, expectedTemplateId } = opts;
   const pkg = getSystemPackageId();
   const stateId = getStateId();
   const clockId = getClockId();
-
-  if (expectedTemplateId != null) {
-    await assertExpectedTemplateProposal(client, stateId, expectedTemplateId);
-  }
+  const resolvedProposalId = await resolvePendingTemplateProposalId(client, stateId, {
+    proposalId,
+    expectedTemplateId,
+  });
 
   const res = await signAndExecuteWithLockRetry({
     client,
@@ -307,7 +307,7 @@ export async function approveTaskTemplateProposal(opts: {
       tx.setGasBudget(gasBudget("GAS_BUDGET_TEMPLATE_PROPOSAL_APPROVE", gasBudget("GAS_BUDGET", 20_000_000)));
       tx.moveCall({
         target: `${pkg}::systemState::approve_task_template_proposal`,
-        arguments: [tx.object(stateId), tx.object(clockId)],
+        arguments: [tx.object(stateId), tx.object(clockId), tx.pure(bcsU64(resolvedProposalId))],
       });
       return tx;
     },
@@ -318,6 +318,15 @@ export async function approveTaskTemplateProposal(opts: {
   await client.waitForTransaction({ digest: res.digest });
   return res.digest as string;
 }
+
+type PendingTemplateProposal = {
+  proposalId: number;
+  templateId: number;
+  kind: number;
+  approvals: number;
+  electorateSize: number;
+  deadlineMs: number;
+};
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -347,7 +356,63 @@ function toNumber(value: unknown): number | null {
   return toNumber(record.value);
 }
 
-async function assertExpectedTemplateProposal(client: IotaClient, stateId: string, expectedTemplateId: number): Promise<void> {
+function toArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  const record = asRecord(value);
+  if (!record) return [];
+  for (const key of ["items", "contents", "vec", "value"]) {
+    const nested = record[key];
+    if (Array.isArray(nested)) return nested;
+  }
+  return [];
+}
+
+function parsePendingTemplateProposals(stateFields: Record<string, unknown>): PendingTemplateProposal[] {
+  const raw = toArray(stateFields.template_proposals);
+  const out: PendingTemplateProposal[] = [];
+
+  for (const item of raw) {
+    const fields = extractFields(item) ?? asRecord(item) ?? {};
+    const proposalId = toNumber(fields.proposal_id);
+    const templateId = toNumber(fields.template_id);
+    if (proposalId == null || proposalId <= 0 || templateId == null || templateId <= 0) continue;
+    out.push({
+      proposalId,
+      templateId,
+      kind: toNumber(fields.proposal_kind) ?? 0,
+      approvals: toNumber(fields.approvals) ?? 0,
+      electorateSize: toNumber(fields.electorate_size) ?? 0,
+      deadlineMs: toNumber(fields.deadline_ms) ?? 0,
+    });
+  }
+
+  out.sort((a, b) => a.proposalId - b.proposalId);
+  if (out.length > 0) return out;
+
+  // Backward compatibility with single-proposal state layout.
+  const active = toNumber(stateFields.template_proposal_active);
+  if (active === 1) {
+    const proposalId = toNumber(stateFields.template_proposal_id);
+    const templateId = toNumber(stateFields.proposed_template_id);
+    if (proposalId != null && proposalId > 0 && templateId != null && templateId > 0) {
+      out.push({
+        proposalId,
+        templateId,
+        kind: toNumber(stateFields.template_proposal_kind) ?? 0,
+        approvals: toNumber(stateFields.template_proposal_approvals) ?? 0,
+        electorateSize: toNumber(stateFields.template_proposal_electorate_size) ?? 0,
+        deadlineMs: toNumber(stateFields.template_proposal_deadline_ms) ?? 0,
+      });
+    }
+  }
+  return out;
+}
+
+async function resolvePendingTemplateProposalId(
+  client: IotaClient,
+  stateId: string,
+  opts: { proposalId?: number; expectedTemplateId?: number },
+): Promise<number> {
   const response: any = await client.getObject({
     id: stateId,
     options: { showContent: true },
@@ -356,16 +421,39 @@ async function assertExpectedTemplateProposal(client: IotaClient, stateId: strin
   if (!stateFields) {
     throw new Error("Cannot parse oracle state object fields");
   }
-
-  const active = toNumber(stateFields.template_proposal_active);
-  const proposedTemplateId = toNumber(stateFields.proposed_template_id);
-
-  if (active !== 1) {
-    throw new Error(`No active template proposal on-chain (expected template_id=${expectedTemplateId})`);
+  const proposals = parsePendingTemplateProposals(stateFields);
+  if (proposals.length === 0) {
+    throw new Error("No active template proposal on-chain");
   }
-  if (proposedTemplateId !== expectedTemplateId) {
-    throw new Error(
-      `Active proposal template_id mismatch: expected ${expectedTemplateId}, found ${proposedTemplateId ?? "unknown"}`,
-    );
+
+  if (opts.proposalId != null) {
+    const exact = proposals.find((p) => p.proposalId === opts.proposalId);
+    if (!exact) {
+      throw new Error(`Pending proposal_id=${opts.proposalId} not found on-chain`);
+    }
+    if (opts.expectedTemplateId != null && exact.templateId !== opts.expectedTemplateId) {
+      throw new Error(
+        `Proposal mismatch: proposal_id=${opts.proposalId} has template_id=${exact.templateId}, expected ${opts.expectedTemplateId}`,
+      );
+    }
+    return exact.proposalId;
   }
+
+  if (opts.expectedTemplateId != null) {
+    const matches = proposals.filter((p) => p.templateId === opts.expectedTemplateId);
+    if (matches.length === 0) {
+      throw new Error(`No active template proposal on-chain for template_id=${opts.expectedTemplateId}`);
+    }
+    if (matches.length > 1) {
+      throw new Error(
+        `Multiple pending proposals for template_id=${opts.expectedTemplateId}. Pass --proposal-id explicitly.`,
+      );
+    }
+    return matches[0]!.proposalId;
+  }
+
+  if (proposals.length > 1) {
+    throw new Error(`Multiple pending proposals found (${proposals.length}). Pass --proposal-id or --template-id.`);
+  }
+  return proposals[0]!.proposalId;
 }

@@ -35,10 +35,11 @@ Registration rule:
 
 ```bash
 npm run cli -- accept-template-proposal --node 1
+npm run cli -- accept-template-proposal --node 1 --proposal-id 12
 npm run cli -- accept-template-proposal --node 1 --template-id 4
 ```
 
-If `--template-id` is provided, CLI verifies the active on-chain proposal matches that template ID before approving.
+If multiple proposals are pending, pass `--proposal-id` (or a unique `--template-id`).
 
 ### Update accepted templates for node
 
@@ -50,10 +51,11 @@ This **replaces** `accepted_template_ids` on-chain.
 
 ## Node Manager scripts
 
-### Approve active proposal by template ID
+### Approve proposal by id/template
 
 ```bash
 bash ./scripts/approve_template_by_id.sh --template-id 4 --node 1
+bash ./scripts/approve_template_by_id.sh --proposal-id 12 --node 1
 ```
 
 ### Add template to node supported list
@@ -76,7 +78,7 @@ bash ./scripts/update_supported_templates.sh --action remove --template-id 4 --n
 bash ./scripts/list_templates.sh
 ```
 
-Include pending proposal with current approvals:
+Include pending proposals with current approvals:
 
 ```bash
 bash ./scripts/list_templates.sh --pending

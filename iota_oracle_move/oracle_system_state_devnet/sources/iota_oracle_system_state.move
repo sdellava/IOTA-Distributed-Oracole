@@ -23,6 +23,7 @@ module iota_oracle_system_state::systemState {
 
     const EProposalExpired: u64 = 62;
     const EAlreadyApproved: u64 = 63;
+    const ENoOracleNodesRegistered: u64 = 64;
     const EInvalidProposalTimeout: u64 = 65;
     const EInvalidProposalKind: u64 = 66;
     const EProposalNotFound: u64 = 67;
@@ -243,9 +244,8 @@ module iota_oracle_system_state::systemState {
 
         maybe_expire_template_proposals(st, clock);
 
-        // Allow supervisors to open proposals even during bootstrap (0 nodes).
-        // Approval is still node-gated because majority_threshold(0) == 1.
         let electorate = vector::length(&st.oracle_nodes);
+        assert!(electorate > 0, ENoOracleNodesRegistered);
 
         let now = timestamp_ms(clock);
         let pid = st.template_proposal_id + 1;
@@ -298,9 +298,8 @@ module iota_oracle_system_state::systemState {
 
         maybe_expire_template_proposals(st, clock);
 
-        // Allow supervisors to open proposals even during bootstrap (0 nodes).
-        // Approval is still node-gated because majority_threshold(0) == 1.
         let electorate = vector::length(&st.oracle_nodes);
+        assert!(electorate > 0, ENoOracleNodesRegistered);
 
         let now = timestamp_ms(clock);
         let pid = st.template_proposal_id + 1;
@@ -532,6 +531,7 @@ module iota_oracle_system_state::systemState {
     // ORACLE NODES
     // =========================================================
 
+   /*
     public entry fun register_oracle_node(
         st: &mut State,
         system: &mut IotaSystemState,
@@ -546,8 +546,8 @@ module iota_oracle_system_state::systemState {
         assert!(contains_addr(&committee, validator), ENotInCommittee);
         upsert_oracle_node(st, validator, oracle_addr, pubkey, accepted_template_ids);
     }
-
-    /*
+    */
+    
     public entry fun register_oracle_node_dev(
         st: &mut State,
         oracle_addr: address,
@@ -558,7 +558,7 @@ module iota_oracle_system_state::systemState {
         let sender = iota::tx_context::sender(ctx);
         upsert_oracle_node(st, sender, oracle_addr, pubkey, accepted_template_ids);
     }
-    */
+    
 
     public entry fun unregister_oracle_node(st: &mut State, ctx: &mut TxContext) {
         let sender = iota::tx_context::sender(ctx);

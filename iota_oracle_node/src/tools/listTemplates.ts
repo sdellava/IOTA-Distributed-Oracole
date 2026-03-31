@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { iotaClient } from "../iota.js";
+import { getStateId } from "../config/env.js";
 
 type TaskTemplate = {
   templateId: number;
@@ -20,7 +21,7 @@ type PendingProposal = {
   approvalsNeeded: number;
   deadlineMs: number;
   deadlineIso: string | null;
-} | null;
+};
 
 function parseArgs(argv: string[]) {
   const flags = new Set(argv.slice(2).map((x) => x.trim().toLowerCase()));
@@ -83,21 +84,31 @@ function toBool(value: unknown): boolean {
   return toNum(value) !== 0;
 }
 
+function toArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  const record = asRecord(value);
+  if (!record) return [];
+  for (const key of ["items", "contents", "vec", "value"]) {
+    const nested = record[key];
+    if (Array.isArray(nested)) return nested;
+  }
+  return [];
+}
+
 function majorityThreshold(total: number): number {
   if (total <= 0) return 0;
   return Math.floor(total / 2) + 1;
 }
 
 async function getStateFields() {
-  const stateId = String(process.env.ORACLE_STATE_ID ?? "").trim();
-  if (!stateId) throw new Error("Missing env ORACLE_STATE_ID");
+  const stateId = getStateId();
   const client = iotaClient();
   const res: any = await client.getObject({
     id: stateId,
     options: { showContent: true },
   });
   const fields = extractFields(res?.data?.content);
-  if (!fields) throw new Error("Cannot parse ORACLE_STATE_ID object fields");
+  if (!fields) throw new Error(`Cannot parse state object fields for ${stateId}`);
   return { client, stateId, fields };
 }
 
@@ -141,29 +152,63 @@ async function listTemplateDynamicFields(client: any, stateId: string): Promise<
   return out;
 }
 
-function getPendingProposal(fields: Record<string, unknown>): PendingProposal {
+function getPendingProposals(fields: Record<string, unknown>): PendingProposal[] {
+  const items = toArray(fields.template_proposals);
+  const out: PendingProposal[] = [];
+
+  for (const item of items) {
+    const p = extractFields(item) ?? asRecord(item) ?? {};
+    const proposalId = toNum(p.proposal_id);
+    const kindRaw = toNum(p.proposal_kind);
+    const kind = kindRaw === 1 ? "upsert" : kindRaw === 2 ? "remove" : "unknown";
+    const templateId = toNum(p.template_id);
+    const approvals = toNum(p.approvals);
+    const electorateSize = toNum(p.electorate_size);
+    const approvalsNeeded = majorityThreshold(electorateSize);
+    const deadlineMs = toNum(p.deadline_ms);
+
+    if (proposalId <= 0 || templateId <= 0) continue;
+
+    out.push({
+      proposalId,
+      kind,
+      templateId,
+      approvals,
+      electorateSize,
+      approvalsNeeded,
+      deadlineMs,
+      deadlineIso: deadlineMs > 0 ? new Date(deadlineMs).toISOString() : null,
+    });
+  }
+
+  out.sort((a, b) => a.proposalId - b.proposalId);
+  if (out.length > 0) return out;
+
+  // Backward compatibility with single-proposal state layout.
   const active = toNum(fields.template_proposal_active);
-  if (active !== 1) return null;
-
-  const proposalId = toNum(fields.template_proposal_id);
-  const kindRaw = toNum(fields.template_proposal_kind);
-  const kind = kindRaw === 1 ? "upsert" : kindRaw === 2 ? "remove" : "unknown";
-  const templateId = toNum(fields.proposed_template_id);
-  const approvals = toNum(fields.template_proposal_approvals);
-  const electorateSize = toNum(fields.template_proposal_electorate_size);
-  const approvalsNeeded = majorityThreshold(electorateSize);
-  const deadlineMs = toNum(fields.template_proposal_deadline_ms);
-
-  return {
-    proposalId,
-    kind,
-    templateId,
-    approvals,
-    electorateSize,
-    approvalsNeeded,
-    deadlineMs,
-    deadlineIso: deadlineMs > 0 ? new Date(deadlineMs).toISOString() : null,
-  };
+  if (active === 1) {
+    const proposalId = toNum(fields.template_proposal_id);
+    const kindRaw = toNum(fields.template_proposal_kind);
+    const kind = kindRaw === 1 ? "upsert" : kindRaw === 2 ? "remove" : "unknown";
+    const templateId = toNum(fields.proposed_template_id);
+    const approvals = toNum(fields.template_proposal_approvals);
+    const electorateSize = toNum(fields.template_proposal_electorate_size);
+    const approvalsNeeded = majorityThreshold(electorateSize);
+    const deadlineMs = toNum(fields.template_proposal_deadline_ms);
+    if (proposalId > 0 && templateId > 0) {
+      out.push({
+        proposalId,
+        kind,
+        templateId,
+        approvals,
+        electorateSize,
+        approvalsNeeded,
+        deadlineMs,
+        deadlineIso: deadlineMs > 0 ? new Date(deadlineMs).toISOString() : null,
+      });
+    }
+  }
+  return out;
 }
 
 function printHelp() {
@@ -171,7 +216,7 @@ function printHelp() {
   npm exec tsx src/tools/listTemplates.ts [--pending] [--pending-only] [--json]
 
 Options:
-  --pending       Also show the active pending template proposal
+  --pending       Also show pending template proposals
   --pending-only  Show only pending proposal details
   --json          Print JSON output
 `);
@@ -185,13 +230,13 @@ async function main() {
   }
 
   const { client, stateId, fields } = await getStateFields();
-  const pending = getPendingProposal(fields);
+  const pending = getPendingProposals(fields);
   const approved = await listTemplateDynamicFields(client, stateId);
 
   const out = {
     stateId,
     approvedTemplates: approved,
-    pendingProposal: pending,
+    pendingProposals: pending,
   };
 
   if (args.json) {
@@ -211,15 +256,13 @@ async function main() {
 
   if (args.pending || args.pendingOnly) {
     console.log("");
-    if (!pending) {
-      console.log("Pending proposal: none");
+    if (pending.length === 0) {
+      console.log("Pending proposals: none");
     } else {
-      console.log("Pending proposal:");
-      console.log(`- proposal_id: ${pending.proposalId}`);
-      console.log(`- kind: ${pending.kind}`);
-      console.log(`- template_id: ${pending.templateId}`);
-      console.log(`- approvals: ${pending.approvals}/${pending.approvalsNeeded} (electorate=${pending.electorateSize})`);
-      console.log(`- deadline: ${pending.deadlineIso ?? "-"}`);
+      console.log(`Pending proposals: ${pending.length}`);
+      for (const p of pending) {
+        console.log(`- proposal_id=${p.proposalId} kind=${p.kind} template_id=${p.templateId} approvals=${p.approvals}/${p.approvalsNeeded} deadline=${p.deadlineIso ?? "-"}`);
+      }
     }
   }
 }
@@ -237,4 +280,3 @@ main().catch((e: any) => {
   );
   process.exit(1);
 });
-

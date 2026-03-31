@@ -29,7 +29,7 @@ function readCommand(argv: string[]): string {
 
 function printHelp() {
   console.log(`Usage:
-  npm run cli -- accept-template-proposal --node 1 [--template-id 4]
+  npm run cli -- accept-template-proposal --node 1 [--proposal-id 12] [--template-id 4]
   npm run cli -- set-accepted-templates --node 1 --templates 1,2,3,4,5,6,7`);
 }
 
@@ -43,12 +43,18 @@ async function cmdAcceptTemplateProposal(argv: string[]) {
   if (templateIdRaw.length > 0 && (!Number.isInteger(expectedTemplateId) || Number(expectedTemplateId) <= 0)) {
     throw new Error(`--template-id must be a positive integer (got "${templateIdRaw}")`);
   }
+  const proposalIdRaw = String(args["proposal-id"] ?? args.proposalId ?? "").trim();
+  const proposalId = proposalIdRaw.length > 0 ? Number(proposalIdRaw) : undefined;
+  if (proposalIdRaw.length > 0 && (!Number.isInteger(proposalId) || Number(proposalId) <= 0)) {
+    throw new Error(`--proposal-id must be a positive integer (got "${proposalIdRaw}")`);
+  }
 
   const client = iotaClient();
   const identity = loadOrCreateNodeIdentity(nodeId);
   const digest = await approveTaskTemplateProposal({
     client,
     keypair: identity.keypair,
+    proposalId,
     expectedTemplateId,
   });
 
@@ -59,6 +65,7 @@ async function cmdAcceptTemplateProposal(argv: string[]) {
         command: "accept-template-proposal",
         nodeId,
         address: identity.address,
+        proposalId: proposalId ?? null,
         expectedTemplateId: expectedTemplateId ?? null,
         digest,
       },

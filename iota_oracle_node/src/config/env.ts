@@ -4,23 +4,42 @@ export function mustEnv(key: string): string {
   return v;
 }
 
+export function networkPrefix(): "DEVNET" | "TESTNET" | "MAINNET" | "" {
+  const net = (process.env.IOTA_NETWORK ?? "").trim().toLowerCase();
+  if (net === "dev" || net === "devnet" || net === "local" || net === "localnet") return "DEVNET";
+  if (net === "test" || net === "testnet") return "TESTNET";
+  if (net === "main" || net === "mainnet") return "MAINNET";
+  return "";
+}
+
+export function envByNetwork(baseKey: string): string | undefined {
+  const prefix = networkPrefix();
+  if (prefix) {
+    const v = process.env[`${prefix}_${baseKey}`]?.trim();
+    if (v) return v;
+  }
+  const direct = process.env[baseKey]?.trim();
+  if (direct) return direct;
+  return undefined;
+}
+
 export function getTasksPackageId(): string {
-  return process.env.ORACLE_TASKS_PACKAGE_ID?.trim() || mustEnv("ORACLE_PACKAGE_ID");
+  return envByNetwork("ORACLE_TASKS_PACKAGE_ID") || mustEnv("ORACLE_PACKAGE_ID");
 }
 
 export function getSystemPackageId(): string {
   return (
-    process.env.ORACLE_SYSTEM_PACKAGE_ID?.trim() ||
-    process.env.ORACLE_PACKAGE_ID?.trim() ||
+    envByNetwork("ORACLE_SYSTEM_PACKAGE_ID") ||
+    envByNetwork("ORACLE_PACKAGE_ID") ||
     mustEnv("ORACLE_PACKAGE_ID")
   );
 }
 
 export function getStateId(): string {
   return (
-    process.env.ORACLE_STATE_ID?.trim() ||
-    process.env.ORACLE_STATUS_ID?.trim() ||
-    process.env.ORACLE_SYSTEM_STATE_ID?.trim() ||
+    envByNetwork("ORACLE_STATE_ID") ||
+    envByNetwork("ORACLE_STATUS_ID") ||
+    envByNetwork("ORACLE_SYSTEM_STATE_ID") ||
     mustEnv("ORACLE_STATE_ID")
   );
 }

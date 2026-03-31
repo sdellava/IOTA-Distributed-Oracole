@@ -92,6 +92,8 @@ type PreparedWalletTransaction = {
 
 const EMediationVarianceTooHigh = 401;
 
+type StructRef = { address: string; module: string; name: string };
+
 function mustEnv(k: string): string {
   const v = process.env[k]?.trim();
   if (!v) throw new Error(`Missing env ${k}`);
@@ -394,6 +396,69 @@ function asNumber(v: unknown, fallback = 0): number {
   const n = Number(v);
   if (!Number.isFinite(n)) return fallback;
   return Math.floor(n);
+}
+
+function collectStructRefsFromNormalizedType(typeNode: unknown): StructRef[] {
+  const out: StructRef[] = [];
+
+  const walk = (node: unknown) => {
+    if (!node) return;
+    if (typeof node === "string") {
+      const m = node.match(/^(0x[a-fA-F0-9]+)::([^:]+)::([^:<]+)$/);
+      if (m) out.push({ address: m[1].toLowerCase(), module: m[2], name: m[3] });
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item);
+      return;
+    }
+    if (typeof node !== "object") return;
+
+    const rec = node as Record<string, unknown>;
+    if (rec.Struct && typeof rec.Struct === "object") {
+      const s = rec.Struct as Record<string, unknown>;
+      const address = String(s.address ?? "").trim().toLowerCase();
+      const module = String(s.module ?? "").trim();
+      const name = String(s.name ?? "").trim();
+      if (address && module && name) out.push({ address, module, name });
+      walk(s.typeArguments);
+    }
+
+    for (const value of Object.values(rec)) walk(value);
+  };
+
+  walk(typeNode);
+  return out;
+}
+
+async function assertCreateTaskCompatibility(client: AnyClient, tasksPkg: string, systemPkg: string): Promise<void> {
+  const getNormalizedMoveFunction = (client as any)?.getNormalizedMoveFunction;
+  if (typeof getNormalizedMoveFunction !== "function") return;
+
+  const normalized: any = await getNormalizedMoveFunction.call(client, {
+    package: tasksPkg,
+    module: "oracle_tasks",
+    function: "create_task",
+  });
+
+  const parameters: unknown[] = Array.isArray(normalized?.parameters) ? normalized.parameters : [];
+  if (parameters.length < 2) return;
+
+  const p0 = collectStructRefsFromNormalizedType(parameters[0]);
+  const p1 = collectStructRefsFromNormalizedType(parameters[1]);
+  const expected = systemPkg.toLowerCase();
+
+  const p0Ok = p0.some((s) => s.address === expected && s.module === "systemState" && s.name === "State");
+  const p1Ok = p1.some((s) => s.address === expected && s.module === "systemState" && s.name === "OracleTreasury");
+
+  if (p0Ok && p1Ok) return;
+
+  const got0 = p0[0] ? `${p0[0].address}::${p0[0].module}::${p0[0].name}` : "<unknown>";
+  const got1 = p1[0] ? `${p1[0].address}::${p1[0].module}::${p1[0].name}` : "<unknown>";
+  throw new Error(
+    `Package mismatch: ORACLE_TASKS_PACKAGE_ID=${tasksPkg} expects create_task params [${got0}, ${got1}], ` +
+      `but ORACLE_SYSTEM_PACKAGE_ID=${systemPkg}. Republish oracle_tasks against the current oracle_system_state package and update env.`,
+  );
 }
 
 function normalizeTaskPayload(taskObj: any): PreparedTask {
@@ -1134,6 +1199,7 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
   const treasuryId = getTreasuryId();
   const randomId = (process.env.IOTA_RANDOM_OBJECT_ID ?? "0x8").trim() || "0x8";
   const clockId = (process.env.IOTA_CLOCK_OBJECT_ID ?? process.env.IOTA_CLOCK_ID ?? "0x6").trim() || "0x6";
+  await assertCreateTaskCompatibility(client, tasksPkg, systemPkg);
 
   const taskObj = loadTaskJson(taskArg);
   const prepared = normalizeTaskPayload(taskObj);

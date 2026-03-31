@@ -1,8 +1,8 @@
 bash register_oracle_nodes_dev.sh
 
 # This is the address that owns the Oracle controller cap
-export CONTROLLER_ADDRESS_OR_ALIAS=0x59dadd46e10bc3d890a0d20aa3fd1a460110eab5d368922ac1db02883434cc43
-bash setup_oracle_job_templates.sh
+export CONTROLLER_ADDRESS_OR_ALIAS=0xad71e9f72902bbfd0cbbc3f1d482cae8fbe1606849a539eaf4c2c14b7febd238
+bash setup_oracle_task_templates.sh
 
 To change/create a template:
 
@@ -44,10 +44,14 @@ iota client ptb \
 # Approve from node 1
 iota client switch --address "$NODE1_ALIAS"
 
+# Resolve proposal id (latest created)
+export PROPOSAL_ID="$(iota client object "${STATE_ID}" --json | jq -r '.. | .template_proposal_id? // empty' | tail -n1)"
+
 iota client ptb \
   --move-call "${SYSTEM_PKG}::systemState::approve_task_template_proposal" \
   "@${STATE_ID}" \
   "@${CLOCK_ID}" \
+  "$PROPOSAL_ID" \
   --gas-budget "$GAS_BUDGET"
 
 # Approve from node 2
@@ -57,4 +61,5 @@ iota client ptb \
   --move-call "${SYSTEM_PKG}::systemState::approve_task_template_proposal" \
   "@${STATE_ID}" \
   "@${CLOCK_ID}" \
+  "$PROPOSAL_ID" \
   --gas-budget "$GAS_BUDGET"

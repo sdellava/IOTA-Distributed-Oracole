@@ -4,8 +4,8 @@ set -Eeuo pipefail
 trap 'echo "[error] line $LINENO: command failed: $BASH_COMMAND" >&2' ERR
 
 # -----------------------------------------------------------------------------
-# Oracle job templates governance setup for:
-# 0x9d29664cf826bbabf906e87ef4b88b76560286634c44f834c8ad306a8306dea2::systemState
+# Oracle task templates governance setup for:
+# 0x9d29664cf826bbabf906e87ef4b88b76560286634c44f834c8ad306a836dea2::systemState
 # -----------------------------------------------------------------------------
 # Current Move notes:
 # - propose_task_template_upsert(cap, st, clock, timeout, template_id, task_type,
@@ -13,15 +13,16 @@ trap 'echo "[error] line $LINENO: command failed: $BASH_COMMAND" >&2' ERR
 #   included_download_bytes, price_per_download_byte_iota,
 #   allow_storage, min_retention_days, max_retention_days,
 #   price_per_retention_day_iota, ctx)
-# - approve_task_template_proposal(st, clock, ctx)
+# - approve_task_template_proposal(st, clock, proposal_id, ctx)
 # - Clock shared object = 0x6
 # -----------------------------------------------------------------------------
 
-SYSTEM_PKG="${SYSTEM_PKG:-0x9d29664cf826bbabf906e87ef4b88b76560286634c44f834c8ad306a8306dea2}"
-STATE_ID="${STATE_ID:-0xec7b66ccf663491e568daa3599ed3771f0886769eb5bf86f1876d91fa4cecfcf}"
+SYSTEM_PKG="${SYSTEM_PKG:-${DEVNET_ORACLE_SYSTEM_PACKAGE_ID:-${ORACLE_SYSTEM_PACKAGE_ID:-0xbfc326f5d151be3c5f7544efd2a49b62c6276e25deefbe0e950e3f13e50d6434}}}"
+STATE_ID="${STATE_ID:-${DEVNET_ORACLE_STATE_ID:-${ORACLE_STATE_ID:-0x45cc11a20f16fd1566076a9ce81a6c3cb1db6ce6c7f80751d4daff03954a3b2b}}}"
 CONTROLLER_CAP_ID="${CONTROLLER_CAP_ID:-0xa60b03ad45ed46c564ba1620b0347500b34cd082064004f4521cff0c53672dfd}"
 CLOCK_ID="${CLOCK_ID:-0x6}"
-ORACLE_TASKS_PACKAGE_ID="${ORACLE_TASKS_PACKAGE_ID:-0x7521e5910c2cec19b8fbe12f8b2827145ed882812ecd3aef33e7ab81c9b0c630}"
+ORACLE_TASKS_PACKAGE_ID="${ORACLE_TASKS_PACKAGE_ID:-0x4124d07d2bc1c31c60d2fa54c6fcab7e631dbedd085f724e22fc054f9c22b342}"
+ORACLE_TREASURY_ID="${ORACLE_TREASURY_ID:-${DEVNET_ORACLE_TREASURY_ID:-0x361ec4240051fc8a491b3b482785e18460e5a843bae7bf87c989fe80d18c7e89}}"
 
 CONTROLLER_ADDRESS_OR_ALIAS="${CONTROLLER_ADDRESS_OR_ALIAS:-}"
 PROPOSAL_TIMEOUT_MS="${PROPOSAL_TIMEOUT_MS:-600000}"
@@ -108,6 +109,7 @@ NODE2_ALIAS="${NODE2_ALIAS:-oracle-node-2}"
 NODE3_ALIAS="${NODE3_ALIAS:-oracle-node-3}"
 
 ONLY_TEMPLATE=""
+LAST_PROPOSAL_ID=""
 
 usage() {
   cat <<EOF
@@ -208,6 +210,27 @@ ptb_move_call() {
   iota client ptb "$@" --gas-budget "$GAS_BUDGET"
 }
 
+current_proposal_counter() {
+  iota client object "${STATE_ID}" --json \
+    | node -e '
+const fs = require("fs");
+const txt = fs.readFileSync(0, "utf8");
+const data = JSON.parse(txt);
+function walk(x) {
+  if (!x || typeof x !== "object") return undefined;
+  if (Object.prototype.hasOwnProperty.call(x, "template_proposal_id")) return x.template_proposal_id;
+  for (const v of Object.values(x)) {
+    const out = walk(v);
+    if (out !== undefined) return out;
+  }
+  return undefined;
+}
+const v = walk(data);
+if (v === undefined || v === null || v === "") throw new Error("template_proposal_id not found");
+process.stdout.write(String(v));
+'
+}
+
 propose_template_upsert() {
   local template_id="$1"
   local task_type="$2"
@@ -245,14 +268,19 @@ propose_template_upsert() {
     "$min_retention_days" \
     "$max_retention_days" \
     "$price_per_retention_day_iota"
+
+  LAST_PROPOSAL_ID="$(current_proposal_counter)"
+  echo "[info] created proposal_id=${LAST_PROPOSAL_ID} for template_id=${template_id}"
 }
 
 approve_current_proposal() {
   local node_alias="$1"
+  local proposal_id="$2"
   ptb_move_call "$node_alias" \
     --move-call "${SYSTEM_PKG}::systemState::approve_task_template_proposal" \
     "@${STATE_ID}" \
-    "@${CLOCK_ID}"
+    "@${CLOCK_ID}" \
+    "$proposal_id"
 }
 
 setup_template() {
@@ -288,12 +316,16 @@ setup_template() {
     "$min_retention_days" \
     "$max_retention_days" \
     "$price_per_retention_day_iota"
+  [[ -n "${LAST_PROPOSAL_ID}" ]] || {
+    echo "[error] proposal_id not resolved after propose" >&2
+    exit 1
+  }
 
   echo "[2/3] approve by $NODE1_ALIAS"
-  approve_current_proposal "$NODE1_ALIAS"
+  approve_current_proposal "$NODE1_ALIAS" "$LAST_PROPOSAL_ID"
 
   echo "[3/3] approve by $NODE2_ALIAS"
-  approve_current_proposal "$NODE2_ALIAS"
+  approve_current_proposal "$NODE2_ALIAS" "$LAST_PROPOSAL_ID"
 
   echo "[ok] template applied: $label"
 }
@@ -307,6 +339,7 @@ echo "[info] controller=${CONTROLLER_ADDRESS_OR_ALIAS:-<not set>}"
 echo "[info] ORACLE_TASKS_PACKAGE_ID=$ORACLE_TASKS_PACKAGE_ID"
 echo "[info] SYSTEM_PKG=$SYSTEM_PKG"
 echo "[info] STATE_ID=$STATE_ID"
+echo "[info] ORACLE_TREASURY_ID=$ORACLE_TREASURY_ID"
 echo "[info] CONTROLLER_CAP_ID=$CONTROLLER_CAP_ID"
 echo "[info] CLOCK_ID=$CLOCK_ID"
 echo "[info] only=${ONLY_TEMPLATE:-all}"
