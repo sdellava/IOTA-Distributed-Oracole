@@ -1,0 +1,80 @@
+{
+  "template_id": 5,
+  "type": "LLM_EXTRACT_STRUCTURED",
+  "requested_nodes": 3,
+  "source": {
+    "kind": "document_url",
+    "mimeType": "application/pdf",
+    "url": "https://tsapps.nist.gov/srmext/certificates/1830.pdf",
+    "pdf": {
+      "pageRange": [
+        1,
+        2
+      ],
+      "extractText": true,
+      "ocrFallback": false
+    }
+  },
+  "llm": {
+    "task": "extract_structured_data",
+    "temperature": 0,
+    "top_p": 1,
+    "max_output_tokens": 300,
+    "rules": {
+      "return_json_only": true,
+      "unknown_string": "",
+      "date_format": "YYYY-MM-DD"
+    },
+    "output_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "issuing_agency",
+        "document_type",
+        "reference_material_id",
+        "material_name",
+        "issue_date",
+        "page_count"
+      ],
+      "properties": {
+        "issuing_agency": {
+          "type": "string"
+        },
+        "document_type": {
+          "type": "string",
+          "enum": [
+            "certificate_of_analysis"
+          ]
+        },
+        "reference_material_id": {
+          "type": "string"
+        },
+        "material_name": {
+          "type": "string"
+        },
+        "issue_date": {
+          "type": "string"
+        },
+        "page_count": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  "normalization": {
+    "kind": "json",
+    "canonical": true,
+    "dropNulls": false,
+    "sortArrays": true
+  },
+  "consensus": {
+    "mode": "exact_hash",
+    "quorum": {
+      "type": "pct",
+      "value": 0.67
+    }
+  },
+  "timeouts": {
+    "step1Ms": 30000
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "template_id": 4,
+  "type": "STORAGE",
+  "requested_nodes": 3,
+  "retention_days": 30,
+  "declared_download_bytes": 7780115,
+  "source": {
+    "kind": "url",
+    "url": "https://www.zcsazzurro.com/uploads/documetazione/certificazioni/Test-Report-for-TOR-Erzeuger-Typ-A-3000-6000TLM-V3.pdf",
+    "method": "GET",
+    "headers": {
+      "Accept": "application/pdf,*/*",
+      "User-Agent": "Mozilla/5.0"
+    }
+  },
+  "fileName": "ricetta_carbonara_2.pdf",
+  "mimeType": "application/pdf",
+  "consensus": {
+    "mode": "exact_hash",
+    "quorum": {
+      "type": "pct",
+      "value": 0.67
+    }
+  },
+  "timeouts": {
+    "step1Ms": 30000
+  }
+}

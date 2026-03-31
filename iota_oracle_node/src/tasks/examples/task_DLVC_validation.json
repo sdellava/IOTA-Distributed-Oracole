@@ -1,0 +1,17 @@
+{
+  "template_id": 8,
+  "type": "DLVC_VALIDATION",
+  "requested_nodes": 3,
+  "create_result_controller_cap": true,
+  "did": "did:iota:testnet:0x3c777acc7adf57d7c54be1a876876bad68ce34dc283b8981c247781ae20f20f9",
+  "consensus": {
+    "mode": "exact_hash",
+    "quorum": {
+      "type": "pct",
+      "value": 0.67
+    }
+  },
+  "timeouts": {
+    "step1Ms": 15000
+  }
+}

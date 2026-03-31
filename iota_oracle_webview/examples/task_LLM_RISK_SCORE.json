@@ -1,0 +1,64 @@
+{
+  "template_id": 7,
+  "type": "LLM_RISK_SCORE",
+  "requested_nodes": 3,
+  "source": {
+    "kind": "document_url",
+    "mimeType": "application/pdf",
+    "url": "https://www.aoml.noaa.gov/ftp/pub/phod/lumpkin/haida_foia_request/1354C121977F_1103.pdf",
+    "pdf": {
+      "pageRange": [1, 1],
+      "extractText": true,
+      "ocrFallback": false
+    }
+  },
+  "llm": {
+    "task": "risk_score",
+    "temperature": 0,
+    "top_p": 1,
+    "max_output_tokens": 80,
+    "rules": {
+      "return_json_only": true,
+      "score_min": 0,
+      "score_max": 10000,
+      "score_definition": "0 means fully completed and operationally processable; 10000 means blank, incomplete, or unusable for processing",
+      "scoring_focus": "document completeness and processability, not authenticity or fraud risk",
+      "blank_form_rule": "if the document is mostly a blank template or contains mostly field labels without filled values, assign at least 9500",
+      "output_must_contain_only_score": true
+    },
+    "output_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["risk_score_bps"],
+      "properties": {
+        "risk_score_bps": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        }
+      }
+    }
+  },
+  "normalization": {
+    "kind": "json",
+    "canonical": true,
+    "dropNulls": false,
+    "sortArrays": true
+  },
+  "consensus": {
+    "mode": "exact_hash",
+    "quorum": {
+      "type": "pct",
+      "value": 0.67
+    },
+    "numericPath": "risk_score_bps"
+  },
+  "mediation": {
+    "mode": "mean_u64",
+    "varianceMax": 1200,
+    "numericPath": "risk_score_bps"
+  },
+  "timeouts": {
+    "step1Ms": 20000
+  }
+}

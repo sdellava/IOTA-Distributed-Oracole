@@ -1,0 +1,28 @@
+{
+  "type": "GET_JSON_CANONICAL",
+  "requested_nodes": 3,
+  "request": {
+    "method": "GET",
+    "url": "https://api.coindesk.com/v1/bpi/currentprice.json",
+    "headers": {
+      "accept": "application/json,*/*"
+    }
+  },
+  "normalization": {
+    "kind": "json",
+    "canonical": true,
+    "dropNulls": true,
+    "dropKeys": ["time", "timestamp", "updated", "updatedISO", "updateduk", "disclaimer", "chartName"],
+    "sortArrays": false
+  },
+  "consensus": {
+    "mode": "exact_hash",
+    "quorum": {
+      "type": "pct",
+      "value": 0.67
+    }
+  },
+  "timeouts": {
+    "step1Ms": 10000
+  }
+}

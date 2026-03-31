@@ -1,0 +1,47 @@
+networks:
+  traefik_proxy:
+    external: true
+    name: traefik_proxy
+
+services:
+  iota_oracle_webview:
+    image: iota_oracle_webview:latest
+    container_name: iota_oracle_webview
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: "3000"
+      NODE_ENV: "production"
+      ORACLE_CLIENT_DIR: "/iota_oracle_client"
+      ORACLE_EXAMPLES_DIR: "/app/examples"
+    command: ["npm", "run", "start"]
+    networks:
+      - traefik_proxy
+    volumes:
+      - ../iota_oracle_client:/iota_oracle_client
+      - ./examples:/app/examples:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+
+      - "traefik.http.routers.oracle.rule=Host(`oracle.objectid.io`)"
+      - "traefik.http.routers.oracle.entrypoints=websecure"
+      - "traefik.http.routers.oracle.tls=true"
+      - "traefik.http.routers.oracle.tls.certresolver=myresolver"
+      - "traefik.http.routers.oracle.service=oracle"
+
+      - "traefik.http.services.oracle.loadbalancer.server.port=3000"
+
+      - "traefik.http.routers.oracle.middlewares=oracle-sec-v1@docker"
+      - "traefik.http.middlewares.oracle-sec-v1.headers.permissionsPolicy=geolocation=*, camera=*, microphone=*, payment=(), usb=()"
+      - "traefik.http.middlewares.oracle-sec-v1.headers.customResponseHeaders.Content-Security-Policy=default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob: filesystem:; script-src * 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src * 'self' 'unsafe-inline' 'unsafe-eval' blob: data:; img-src * 'self' data: blob:; connect-src * 'self' blob: data:;"
+      - "traefik.http.middlewares.oracle-sec-v1.headers.stsSeconds=63072000"
+      - "traefik.http.middlewares.oracle-sec-v1.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.oracle-sec-v1.headers.stsPreload=true"
+      - "traefik.http.middlewares.oracle-sec-v1.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.oracle-sec-v1.headers.referrerPolicy=strict-origin-when-cross-origin"
+      - "traefik.http.middlewares.oracle-sec-v1.headers.customResponseHeaders.X-Config-Version=ORACLE_PROD_V1"

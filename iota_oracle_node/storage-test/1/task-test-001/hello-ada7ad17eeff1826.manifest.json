@@ -1,0 +1,14 @@
+{
+  "taskId": "task-test-001",
+  "nodeId": "1",
+  "taskType": "STORAGE",
+  "source": "text",
+  "mimeType": "text/plain",
+  "originalFileName": "hello.txt",
+  "storedFileName": "hello-ada7ad17eeff1826.txt",
+  "storedRelativePath": "1/task-test-001/hello-ada7ad17eeff1826.txt",
+  "bytes": 13,
+  "sha256": "ada7ad17eeff1826bdf1e69d6a70d542548a6f0a3c3809748a36076d97671047",
+  "retentionDays": 7,
+  "savedAt": "2026-03-09T15:03:44.253Z"
+}

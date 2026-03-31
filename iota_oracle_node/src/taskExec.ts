@@ -1,0 +1,21 @@
+import { runTask } from "./tasks/index";
+
+export async function executeTask(opts: {
+  taskType: string;
+  payload: any;
+  taskId?: string;
+  nodeId?: string;
+  templateId?: number;
+  declaredDownloadBytes?: number;
+  retentionDays?: number;
+  taskCreatedAtMs?: number;
+}): Promise<string> {
+  return runTask(opts.taskType, opts.payload, {
+    taskId: opts.taskId,
+    nodeId: opts.nodeId,
+    templateId: opts.templateId,
+    declaredDownloadBytes: opts.declaredDownloadBytes,
+    retentionDays: opts.retentionDays,
+    taskCreatedAtMs: opts.taskCreatedAtMs,
+  });
+}

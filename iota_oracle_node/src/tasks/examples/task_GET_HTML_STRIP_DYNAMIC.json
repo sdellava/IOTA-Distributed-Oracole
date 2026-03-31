@@ -1,0 +1,37 @@
+{
+  "type": "GET_HTML_STRIP_DYNAMIC",
+  "requested_nodes": 3,
+  "request": {
+    "method": "GET",
+    "url": "https://www.example.com/",
+    "headers": {
+      "accept": "text/html,*/*"
+    }
+  },
+  "normalization": {
+    "kind": "html_text",
+    "stripScripts": true,
+    "stripStyles": true,
+    "stripComments": true,
+    "removeSelectors": ["script", "style", "noscript", "header", "footer", "nav"],
+    "dropTextPatterns": [
+      "\\b\\d{1,2}:\\d{2}(:\\d{2})?\\b",
+      "\\b\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z)?\\b",
+      "\\bLast\\s+updated\\b.*",
+      "\\bUpdated\\b.*"
+    ],
+    "trim": true,
+    "collapseWhitespace": true,
+    "lineEnding": "lf"
+  },
+  "consensus": {
+    "mode": "exact_hash",
+    "quorum": {
+      "type": "pct",
+      "value": 0.67
+    }
+  },
+  "timeouts": {
+    "step1Ms": 15000
+  }
+}

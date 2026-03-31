@@ -1,0 +1,35 @@
+
+cd ./oracle_tasks
+iota client switch --env devnet
+iota client switch --address OID_groundcontrol
+iota client publish --dry-run
+
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Object Changes                                                                                            │
+├───────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Created Objects:                                                                                          │
+│  ┌──                                                                                                      │
+│  │ ObjectID: 0x20473ad06c4bc8d9e53de1e88757187a6f2a1dd0203bd7edc9900da27c57686e                           │
+│  │ Sender: 0x59dadd46e10bc3d890a0d20aa3fd1a460110eab5d368922ac1db02883434cc43                             │
+│  │ Owner: Account Address ( 0x59dadd46e10bc3d890a0d20aa3fd1a460110eab5d368922ac1db02883434cc43 )          │
+│  │ ObjectType: 0x2::package::UpgradeCap                                                                   │
+│  │ Version: 33509126                                                                                      │
+│  │ Digest: 4oGEaad4dpxehvojfAmpVWhwLUNTWxSwTwsrRbNj9ha8                                                   │
+│  └──                                                                                                      │
+│ Mutated Objects:                                                                                          │
+│  ┌──                                                                                                      │
+│  │ ObjectID: 0xe0b892c3d679885c2f53ce391901ab35ee2fb67b1e7ee8f2b801a5a3e0c95d32                           │
+│  │ Sender: 0x59dadd46e10bc3d890a0d20aa3fd1a460110eab5d368922ac1db02883434cc43                             │
+│  │ Owner: Account Address ( 0x59dadd46e10bc3d890a0d20aa3fd1a460110eab5d368922ac1db02883434cc43 )          │
+│  │ ObjectType: 0x2::coin::Coin<0x2::iota::IOTA>                                                           │
+│  │ Version: 33509126                                                                                      │
+│  │ Digest: 6MRrF14ihbq6Z6N7h1TVFZ5PQLLGjapLLhWBGoLYw6TZ                                                   │
+│  └──                                                                                                      │
+│ Published Objects:                                                                                        │
+│  ┌──                                                                                                      │
+│  │ PackageID: 0x7521e5910c2cec19b8fbe12f8b2827145ed882812ecd3aef33e7ab81c9b0c630                          │
+│  │ Version: 1                                                                                             │
+│  │ Digest: ExjLXcFQEPNf5mceV9wfW77KJjUGL77wrxL65xGsbDGy                                                   │
+│  │ Modules: oracle_messages, oracle_task_config, oracle_task_consensus, oracle_task_runtime, oracle_tasks │
+│  └──                                                                                                      │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────╯

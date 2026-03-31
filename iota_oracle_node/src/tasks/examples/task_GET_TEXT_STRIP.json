@@ -1,0 +1,27 @@
+{
+  "type": "GET_TEXT_STRIP",
+  "requested_nodes": 3,
+  "request": {
+    "method": "GET",
+    "url": "https://www.w3.org/TR/2003/REC-PNG-20031110/iso_8859-1.txt",
+    "headers": {
+      "accept": "text/plain,*/*"
+    }
+  },
+  "normalization": {
+    "kind": "text",
+    "trim": true,
+    "collapseWhitespace": true,
+    "lineEnding": "lf"
+  },
+  "consensus": {
+    "mode": "exact_hash",
+    "quorum": {
+      "type": "pct",
+      "value": 0.67
+    }
+  },
+  "timeouts": {
+    "step1Ms": 10000
+  }
+}

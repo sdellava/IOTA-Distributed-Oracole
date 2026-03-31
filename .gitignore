@@ -1,0 +1,11 @@
+node_modules
+dist
+build
+iota_oracle_move/oracle_tasks/Move.lock
+keys
+iota_oracle_node/storage/
+iota_oracle_node/.env
+iota_oracle_client/.env
+iota_oracle_webview/.env
+.env
+**/keys/**

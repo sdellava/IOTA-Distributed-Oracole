@@ -1,0 +1,12 @@
+export type TaskHandlerContext = {
+  taskType: string;
+  payload: any;
+  taskId?: string;
+  nodeId?: string;
+  templateId?: number;
+  declaredDownloadBytes?: number;
+  retentionDays?: number;
+  taskCreatedAtMs?: number;
+};
+
+export type TaskHandler = (ctx: TaskHandlerContext) => Promise<string>;

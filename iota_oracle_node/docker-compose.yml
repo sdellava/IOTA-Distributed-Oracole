@@ -1,0 +1,18 @@
+services:
+  oracle-node-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: oracle-node-1
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ID: "1"
+      NODE_OPTIONS: --dns-result-order=ipv4first
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    command: ["npm", "run", "daemon", "--", "--node", "1"]
+    volumes:
+      - ./keys:/app/keys

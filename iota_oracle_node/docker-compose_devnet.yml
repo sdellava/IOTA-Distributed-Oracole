@@ -1,0 +1,54 @@
+services:
+  oracle-node-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: oracle-node-1
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ID: "1"
+      NODE_OPTIONS: --dns-result-order=ipv4first
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    command: ["npm", "run", "daemon", "--", "--node", "1"]
+    volumes:
+      - ./keys:/app/keys
+
+  oracle-node-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: oracle-node-2
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ID: "2"
+      NODE_OPTIONS: --dns-result-order=ipv4first
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    command: ["npm", "run", "daemon", "--", "--node", "2"]
+    volumes:
+      - ./keys:/app/keys
+
+  oracle-node-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: oracle-node-3
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ID: "3"
+      NODE_OPTIONS: --dns-result-order=ipv4first
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    command: ["npm", "run", "daemon", "--", "--node", "3"]
+    volumes:
+      - ./keys:/app/keys

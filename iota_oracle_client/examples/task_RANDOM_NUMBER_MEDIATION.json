@@ -1,0 +1,33 @@
+{
+  "template_id": 1,
+  "type": "RANDOM_NUMBER_MEDIATION",
+  "requested_nodes": 3,
+  "request": {
+    "method": "GET",
+    "url": "https://www.randomnumberapi.com/api/v1.0/random?min=80&max=100&count=1",
+    "headers": {
+      "accept": "application/json,*/*"
+    }
+  },
+  "normalization": {
+    "kind": "json",
+    "canonical": true,
+    "dropNulls": true,
+    "dropKeys": [],
+    "sortArrays": false
+  },
+  "consensus": {
+    "mode": "exact_hash",
+    "quorum": {
+      "type": "pct",
+      "value": 0.67
+    }
+  },
+  "timeouts": {
+    "step1Ms": 10000
+  },
+  "mediation": {
+    "mode": "mean_u64",
+    "varianceMax": 20
+  }
+}

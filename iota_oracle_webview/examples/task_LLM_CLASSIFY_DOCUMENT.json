@@ -1,0 +1,75 @@
+{
+  "template_id": 6,
+  "type": "LLM_CLASSIFY_DOCUMENT",
+  "requested_nodes": 3,
+  "source": {
+    "kind": "document_url",
+    "mimeType": "application/pdf",
+    "url": "https://oma.od.nih.gov/Lists/DMSFormsList/Attachments/414/NH1884-1.pdf",
+    "pdf": {
+      "pageRange": [1, 1],
+      "extractText": true,
+      "ocrFallback": false
+    }
+  },
+  "llm": {
+    "task": "classify_document",
+    "temperature": 0,
+    "top_p": 1,
+    "max_output_tokens": 150,
+    "rules": {
+      "return_json_only": true
+    },
+    "labels": [
+      "commercial_invoice",
+      "bill_of_lading",
+      "certificate_of_analysis",
+      "technical_specification",
+      "warranty",
+      "shipping_document",
+      "generic"
+    ],
+    "output_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document_class", "is_blank_template", "language"],
+      "properties": {
+        "document_class": {
+          "type": "string",
+          "enum": [
+            "commercial_invoice",
+            "bill_of_lading",
+            "certificate_of_analysis",
+            "technical_specification",
+            "warranty",
+            "shipping_document",
+            "generic"
+          ]
+        },
+        "is_blank_template": {
+          "type": "boolean"
+        },
+        "language": {
+          "type": "string",
+          "enum": ["en", "it", "de", "fr", "es", "unknown"]
+        }
+      }
+    }
+  },
+  "normalization": {
+    "kind": "json",
+    "canonical": true,
+    "dropNulls": false,
+    "sortArrays": true
+  },
+  "consensus": {
+    "mode": "exact_hash",
+    "quorum": {
+      "type": "pct",
+      "value": 0.67
+    }
+  },
+  "timeouts": {
+    "step1Ms": 20000
+  }
+}

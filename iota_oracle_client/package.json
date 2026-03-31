@@ -1,0 +1,20 @@
+{
+  "name": "iota_oracle_client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "create": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@iota/iota-sdk": "1.10.0",
+    "dotenv": "^16.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

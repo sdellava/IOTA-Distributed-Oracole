@@ -1,0 +1,127 @@
+# IOTA Oracle Node - CLI Guide
+
+## Overview
+
+This Oracle node supports:
+
+1. **On-chain daemon** for event-driven task processing
+2. **CLI** for operational admin commands
+
+## Important behavior
+
+`STORAGE` tasks are **IPFS-only**. Node manager need to configure a IPFS node and api key to support STORAGE task.
+
+## Install
+
+```bash
+npm install
+cp .env.example .env
+npm run build
+```
+
+## Start
+
+```bash
+npm run daemon -- --node 1
+```
+
+Registration rule:
+- if `IOTA_NETWORK` is not `dev`/`devnet` (or `local`/`localnet`), node registration is forced to `systemState::register_oracle_node` and requires validator controller cap + signer key.
+- in prod mode, if `VALIDATOR_CAP_ID`/`ORACLE_CONTROLLER_CAP_ID` is not set, node tries to auto-detect an owned `validator_cap::UnverifiedValidatorOperationCap` from the signer address.
+
+## CLI commands
+
+### Accept template proposal
+
+```bash
+npm run cli -- accept-template-proposal --node 1
+npm run cli -- accept-template-proposal --node 1 --template-id 4
+```
+
+If `--template-id` is provided, CLI verifies the active on-chain proposal matches that template ID before approving.
+
+### Update accepted templates for node
+
+```bash
+npm run cli -- set-accepted-templates --node 1 --templates 1,2,3,4,5,6,7,8
+```
+
+This **replaces** `accepted_template_ids` on-chain.
+
+## Node Manager scripts
+
+### Approve active proposal by template ID
+
+```bash
+bash ./scripts/approve_template_by_id.sh --template-id 4 --node 1
+```
+
+### Add template to node supported list
+
+```bash
+bash ./scripts/update_supported_templates.sh --action add --template-id 7 --node 1
+```
+
+### Remove template from node supported list
+
+```bash
+bash ./scripts/update_supported_templates.sh --action remove --template-id 4 --node 1
+```
+
+`update_supported_templates.sh` computes a final list, calls `set-accepted-templates`, and updates `ORACLE_ACCEPTED_TEMPLATE_IDS` in `.env` (default `./.env`, override with `--env-file`).
+
+### List approved templates (and pending approvals)
+
+```bash
+bash ./scripts/list_templates.sh
+```
+
+Include pending proposal with current approvals:
+
+```bash
+bash ./scripts/list_templates.sh --pending
+```
+
+Show only pending proposal details:
+
+```bash
+bash ./scripts/list_templates.sh --pending-only
+```
+
+JSON output:
+
+```bash
+bash ./scripts/list_templates.sh --pending --json
+```
+
+## IPFS requirements for STORAGE
+
+`STORAGE` task execution requires:
+
+```env
+IPFS_ENABLED=true
+IPFS_API_URL=...
+```
+
+Plus valid IPFS auth.
+
+## Troubleshooting
+
+### `accept-template-proposal` fails
+
+Check:
+
+- `IOTA_RPC_URL`
+- `ORACLE_SYSTEM_PACKAGE_ID`
+- `ORACLE_STATE_ID`
+- node wallet gas balance
+- active approvable proposal exists on-chain
+
+### STORAGE task fails with IPFS error
+
+Check:
+
+- `IPFS_ENABLED=true`
+- `IPFS_API_URL` reachable
+- credentials are valid
+- file size is within configured limits
