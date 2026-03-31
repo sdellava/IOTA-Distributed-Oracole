@@ -21,7 +21,7 @@ RUN printf "registry=https://registry.npmjs.org/\n" > /root/.npmrc \
  && npm config set fetch-retries 5 \
  && npm config set fetch-retry-mintimeout 20000 \
  && npm config set fetch-retry-maxtimeout 120000 \
- && env -u NPM_CONFIG_REGISTRY -u npm_config_registry npm ci --no-audit --fund=false --loglevel=verbose --foreground-scripts --progress=false
+ && env -u NPM_CONFIG_REGISTRY -u npm_config_registry npm ci --no-audit --fund=false --loglevel=verbose --ignore-scripts --progress=false
 
 COPY . .
 
