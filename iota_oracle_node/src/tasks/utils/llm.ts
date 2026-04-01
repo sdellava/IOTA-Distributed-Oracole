@@ -117,6 +117,18 @@ function looksLikeUrlDownloadTimeout(rawBody: string): boolean {
   return t.includes("timeout while downloading") && t.includes('"param"') && t.includes("url");
 }
 
+function shouldRetryWithFileData(status: number, rawBody: string): boolean {
+  if (status !== 400) return false;
+  const t = String(rawBody ?? "").toLowerCase();
+  return (
+    looksLikeUrlDownloadTimeout(rawBody) ||
+    t.includes("unsupported_file") ||
+    t.includes("file type you uploaded is not supported") ||
+    (t.includes("error while downloading") && t.includes('"param"') && t.includes("url")) ||
+    (t.includes("invalid_value") && t.includes('"param"') && t.includes("url"))
+  );
+}
+
 function filenameFromUrl(url: string): string {
   try {
     const u = new URL(url);
@@ -277,7 +289,7 @@ export async function callLlmJsonWithPdfUrl(opts: {
     let raw = await res.text();
 
     // Fallback: if OpenAI can't download the URL, send the same PDF as base64 file_data.
-    if (!res.ok && res.status === 400 && looksLikeUrlDownloadTimeout(raw)) {
+    if (!res.ok && shouldRetryWithFileData(res.status, raw)) {
       const fetched = await httpFetchBytes({
         url: opts.pdfUrl,
         method: "GET",
