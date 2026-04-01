@@ -1,13 +1,23 @@
-import { resolvePdfSource, extractPdfText } from "../utils/pdf";
-import { callLlmJson } from "../utils/llm";
+import { callLlmJsonWithPdfUrl } from "../utils/llm";
 
 function stringifySchema(schema: any): string {
   return JSON.stringify(schema, null, 2);
 }
 
-function clampText(text: string, maxChars: number): string {
-  if (text.length <= maxChars) return text;
-  return text.slice(0, maxChars);
+function normalizeUrl(value: unknown): string {
+  const url = String(value ?? "").trim();
+  if (!/^https?:\/\//i.test(url)) throw new Error(`Invalid PDF source url: ${url}`);
+  return url;
+}
+
+function parsePageRange(input: unknown): [number, number] | null {
+  if (!Array.isArray(input) || input.length !== 2) return null;
+  const a = Number(input[0]);
+  const b = Number(input[1]);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  const start = Math.max(1, Math.floor(a));
+  const end = Math.max(start, Math.floor(b));
+  return [start, end];
 }
 
 function pageRangeLabel(pageRange: [number, number] | null): string {
@@ -24,9 +34,7 @@ function requireSchema(payload: any): any {
 function promptEnvelope(opts: {
   objective: string;
   documentUrl: string;
-  documentSha256: string;
   pageRange: [number, number] | null;
-  text: string;
   schema: any;
   extraRules?: string[];
 }): string {
@@ -41,14 +49,12 @@ function promptEnvelope(opts: {
   return [
     `Objective: ${opts.objective}`,
     `Document URL: ${opts.documentUrl}`,
-    `Document SHA-256: ${opts.documentSha256}`,
     `Document pages considered: ${pageRangeLabel(opts.pageRange)}`,
+    "IMPORTANT: Use only the specified page range for extraction/classification.",
     "Output schema:",
     stringifySchema(opts.schema),
     "Rules:",
     ...rules.map((r, idx) => `${idx + 1}. ${r}`),
-    "Document text:",
-    opts.text,
   ].join("\n\n");
 }
 
@@ -57,25 +63,24 @@ export async function runPdfLlmJsonTask(opts: {
   objective: string;
   extraRules?: string[];
 }): Promise<{ canonical: string; parsed: any }> {
-  const pdf = await resolvePdfSource(opts.payload);
-  const extractedText = await extractPdfText(pdf.bytes, pdf.pageRange);
-  const maxChars = Math.max(2_000, Number(opts.payload?.llm?.max_input_chars ?? process.env.LLM_MAX_INPUT_CHARS ?? 20_000));
+  const source = opts.payload?.source ?? {};
+  const pdfUrl = normalizeUrl(source?.url ?? opts.payload?.url);
+  const pageRange = parsePageRange(source?.pdf?.pageRange ?? opts.payload?.pdf?.pageRange);
   const schema = requireSchema(opts.payload);
 
   const prompt = promptEnvelope({
     objective: opts.objective,
-    documentUrl: pdf.url,
-    documentSha256: pdf.sha256Hex,
-    pageRange: pdf.pageRange,
-    text: clampText(extractedText, maxChars),
+    documentUrl: pdfUrl,
+    pageRange,
     schema,
     extraRules: opts.extraRules,
   });
 
-  const result = await callLlmJson({
+  const result = await callLlmJsonWithPdfUrl({
     taskName: String(opts.payload?.type ?? "LLM_TASK"),
     prompt,
     schema,
+    pdfUrl,
     llmConfig: opts.payload?.llm,
     normalization: opts.payload?.normalization,
   });
