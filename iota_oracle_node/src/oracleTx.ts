@@ -96,7 +96,11 @@ async function assertTxSuccess(client: IotaClient, digest: string, label: string
   }
 }
 
-async function findOwnedDelegatedCapId(client: IotaClient, owner: string): Promise<string | null> {
+async function findOwnedDelegatedCapId(
+  client: IotaClient,
+  owner: string,
+  expectedType?: string | null,
+): Promise<string | null> {
   let cursor: string | null | undefined = null;
   const found: string[] = [];
 
@@ -112,7 +116,9 @@ async function findOwnedDelegatedCapId(client: IotaClient, owner: string): Promi
       const objectId = String(item?.data?.objectId ?? item?.objectId ?? "").trim();
       const typ = String(item?.data?.type ?? item?.type ?? "").trim();
       if (!objectId || !typ) continue;
-      if (typ.includes("::validator_cap_delegate::DelegatedControllerCap")) {
+      const isDelegatedCap = typ.includes("::validator_cap_delegate::DelegatedControllerCap");
+      const matchesExpected = !expectedType || typ.toLowerCase() === expectedType.toLowerCase();
+      if (isDelegatedCap && matchesExpected) {
         found.push(objectId);
       }
     }
@@ -124,6 +130,27 @@ async function findOwnedDelegatedCapId(client: IotaClient, owner: string): Promi
   if (found.length === 0) return null;
   found.sort();
   return found[0]!;
+}
+
+async function expectedDelegatedCapType(client: IotaClient, systemPkg: string): Promise<string | null> {
+  const getNormalizedMoveFunction = (client as any)?.getNormalizedMoveFunction;
+  if (typeof getNormalizedMoveFunction !== "function") return null;
+  try {
+    const normalized: any = await getNormalizedMoveFunction.call(client, {
+      package: systemPkg,
+      module: "systemState",
+      function: "register_oracle_node",
+    });
+    const p2 = normalized?.parameters?.[2];
+    const s = p2?.Struct;
+    const address = String(s?.address ?? "").trim().toLowerCase();
+    const module = String(s?.module ?? "").trim();
+    const name = String(s?.name ?? "").trim();
+    if (!address || !module || !name) return null;
+    return `${address}::${module}::${name}`;
+  } catch {
+    return null;
+  }
 }
 
 async function readObjectTypeAndOwner(
@@ -165,11 +192,12 @@ export async function registerOracleNode(opts: {
     const signer = oracleKeypair;
     const signerAddress = signer.getPublicKey().toIotaAddress().toLowerCase();
     const delegatedCapTypeMarker = "::validator_cap_delegate::DelegatedControllerCap";
+    const expectedCapType = await expectedDelegatedCapType(client, pkg);
 
     let delegatedCapId = optEnvByNetwork("DELEGATED_CONTROLLER_CAP_ID");
 
     if (!delegatedCapId) {
-      delegatedCapId = (await findOwnedDelegatedCapId(client, signerAddress)) ?? undefined;
+      delegatedCapId = (await findOwnedDelegatedCapId(client, signerAddress, expectedCapType)) ?? undefined;
     }
     if (!delegatedCapId) {
       throw new Error(
@@ -183,8 +211,13 @@ export async function registerOracleNode(opts: {
         `Object ${delegatedCapId} is not DelegatedControllerCap (type=${capInfo.type || "unknown"}).`,
       );
     }
+    if (expectedCapType && capInfo.type.toLowerCase() !== expectedCapType.toLowerCase()) {
+      throw new Error(
+        `DelegatedControllerCap type mismatch: got ${capInfo.type}, expected ${expectedCapType}. Mint/use a delegated cap from the validator_cap_delegate package linked to ORACLE_SYSTEM_PACKAGE_ID=${pkg}.`,
+      );
+    }
     if (capInfo.ownerAddress && capInfo.ownerAddress !== signerAddress) {
-      const autoOwnedCapId = await findOwnedDelegatedCapId(client, signerAddress);
+      const autoOwnedCapId = await findOwnedDelegatedCapId(client, signerAddress, expectedCapType);
       if (autoOwnedCapId && autoOwnedCapId !== delegatedCapId) {
         delegatedCapId = autoOwnedCapId;
       } else {
