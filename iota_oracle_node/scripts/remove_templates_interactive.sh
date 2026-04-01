@@ -9,7 +9,7 @@ GAS_BUDGET="${GAS_BUDGET:-50000000}"
 SYSTEM_PKG="${SYSTEM_PKG:-${ORACLE_SYSTEM_PACKAGE_ID:-}}"
 STATE_ID="${STATE_ID:-${ORACLE_STATE_ID:-}}"
 CLOCK_ID="${CLOCK_ID:-0x6}"
-CONTROLLER_CAP_ID="${CONTROLLER_CAP_ID:-${ORACLE_CONTROLLER_CAP_ID:-}}"
+CONTROLLER_CAP_ID="${CONTROLLER_CAP_ID:-}"
 CONTROLLER_ADDRESS_OR_ALIAS="${CONTROLLER_ADDRESS_OR_ALIAS:-}"
 
 while [[ $# -gt 0 ]]; do
@@ -72,9 +72,6 @@ SYSTEM_PKG="${SYSTEM_PKG:-$(get_prefixed_env ORACLE_SYSTEM_PACKAGE_ID)}"
 STATE_ID="${STATE_ID:-$(get_prefixed_env ORACLE_STATE_ID)}"
 CLOCK_ID="${CLOCK_ID:-$(get_prefixed_env IOTA_CLOCK_ID)}"
 CONTROLLER_CAP_ID="${CONTROLLER_CAP_ID:-$(get_prefixed_env CONTROLLER_CAP_ID)}"
-if [[ -z "$CONTROLLER_CAP_ID" ]]; then
-  CONTROLLER_CAP_ID="$(get_prefixed_env ORACLE_CONTROLLER_CAP_ID)"
-fi
 if [[ -z "$CONTROLLER_ADDRESS_OR_ALIAS" ]]; then
   CONTROLLER_ADDRESS_OR_ALIAS="$(get_prefixed_env CONTROLLER_ADDRESS_OR_ALIAS)"
 fi
@@ -86,7 +83,7 @@ if [[ -z "$CONTROLLER_ADDRESS_OR_ALIAS" ]]; then
 fi
 [[ -n "$SYSTEM_PKG" ]] || { echo "[error] missing ORACLE_SYSTEM_PACKAGE_ID" >&2; exit 1; }
 [[ -n "$STATE_ID" ]] || { echo "[error] missing ORACLE_STATE_ID" >&2; exit 1; }
-[[ -n "$CONTROLLER_CAP_ID" ]] || { echo "[error] missing CONTROLLER_CAP_ID / ORACLE_CONTROLLER_CAP_ID" >&2; exit 1; }
+[[ -n "$CONTROLLER_CAP_ID" ]] || { echo "[error] missing CONTROLLER_CAP_ID" >&2; exit 1; }
 [[ -n "$CONTROLLER_ADDRESS_OR_ALIAS" ]] || { echo "[error] missing controller address/alias" >&2; exit 1; }
 
 JSON="$(cd "${PROJECT_DIR}" && npm exec -- tsx src/tools/listTemplates.ts --json)"

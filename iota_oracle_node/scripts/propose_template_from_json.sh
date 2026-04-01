@@ -12,7 +12,7 @@ GAS_BUDGET="${GAS_BUDGET:-50000000}"
 CONTROLLER_ADDRESS_OR_ALIAS="${CONTROLLER_ADDRESS_OR_ALIAS:-}"
 SYSTEM_PKG="${SYSTEM_PKG:-${ORACLE_SYSTEM_PACKAGE_ID:-}}"
 STATE_ID="${STATE_ID:-${ORACLE_STATE_ID:-}}"
-CONTROLLER_CAP_ID="${CONTROLLER_CAP_ID:-${ORACLE_CONTROLLER_CAP_ID:-}}"
+CONTROLLER_CAP_ID="${CONTROLLER_CAP_ID:-}"
 CLOCK_ID="${CLOCK_ID:-0x6}"
 
 usage() {
@@ -123,7 +123,7 @@ fi
 
 SYSTEM_PKG="${SYSTEM_PKG:-${ORACLE_SYSTEM_PACKAGE_ID:-}}"
 STATE_ID="${STATE_ID:-${ORACLE_STATE_ID:-}}"
-CONTROLLER_CAP_ID="${CONTROLLER_CAP_ID:-${ORACLE_CONTROLLER_CAP_ID:-}}"
+CONTROLLER_CAP_ID="${CONTROLLER_CAP_ID:-}"
 if [[ -z "$CONTROLLER_ADDRESS_OR_ALIAS" ]]; then
   CONTROLLER_ADDRESS_OR_ALIAS="${ORACLE_CONTROLLER_ADDRESS:-${CONTROLLER_ADDRESS_OR_ALIAS:-}}"
 fi
@@ -133,7 +133,7 @@ fi
 [[ -z "$TEMPLATE_ID_OVERRIDE" || "$TEMPLATE_ID_OVERRIDE" =~ ^[0-9]+$ ]] || { echo "[error] --template-id must be numeric" >&2; exit 1; }
 [[ -n "$SYSTEM_PKG" ]] || { echo "[error] missing SYSTEM_PKG / ORACLE_SYSTEM_PACKAGE_ID" >&2; exit 1; }
 [[ -n "$STATE_ID" ]] || { echo "[error] missing STATE_ID / ORACLE_STATE_ID" >&2; exit 1; }
-[[ -n "$CONTROLLER_CAP_ID" ]] || { echo "[error] missing CONTROLLER_CAP_ID / ORACLE_CONTROLLER_CAP_ID" >&2; exit 1; }
+[[ -n "$CONTROLLER_CAP_ID" ]] || { echo "[error] missing CONTROLLER_CAP_ID" >&2; exit 1; }
 [[ -n "$CONTROLLER_ADDRESS_OR_ALIAS" ]] || { echo "[error] missing controller address/alias" >&2; exit 1; }
 [[ "$PROPOSAL_TIMEOUT_MS" =~ ^[0-9]+$ ]] || { echo "[error] --proposal-timeout-ms must be numeric" >&2; exit 1; }
 [[ "$GAS_BUDGET" =~ ^[0-9]+$ ]] || { echo "[error] --gas-budget must be numeric" >&2; exit 1; }

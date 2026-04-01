@@ -109,9 +109,6 @@ SYSTEM_PKG="$(get_prefixed_env ORACLE_SYSTEM_PACKAGE_ID)"
 STATE_ID="$(get_prefixed_env ORACLE_STATE_ID)"
 CLOCK_ID="$(get_prefixed_env IOTA_CLOCK_ID)"
 CONTROLLER_CAP_ID="$(get_prefixed_env CONTROLLER_CAP_ID)"
-if [[ -z "$CONTROLLER_CAP_ID" ]]; then
-  CONTROLLER_CAP_ID="$(get_prefixed_env ORACLE_CONTROLLER_CAP_ID)"
-fi
 CONTROLLER_ADDRESS_OR_ALIAS="$(get_prefixed_env CONTROLLER_ADDRESS_OR_ALIAS)"
 if [[ -z "$CONTROLLER_ADDRESS_OR_ALIAS" ]]; then
   CONTROLLER_ADDRESS_OR_ALIAS="$(get_prefixed_env ORACLE_CONTROLLER_ADDRESS)"
@@ -123,7 +120,7 @@ fi
 
 [[ -n "$SYSTEM_PKG" ]] || { echo "[error] missing ${NET_PREFIX}_ORACLE_SYSTEM_PACKAGE_ID (or ORACLE_SYSTEM_PACKAGE_ID) in env" >&2; exit 1; }
 [[ -n "$STATE_ID" ]] || { echo "[error] missing ${NET_PREFIX}_ORACLE_STATE_ID (or ORACLE_STATE_ID) in env" >&2; exit 1; }
-[[ -n "$CONTROLLER_CAP_ID" ]] || { echo "[error] missing ${NET_PREFIX}_CONTROLLER_CAP_ID (or CONTROLLER_CAP_ID / ORACLE_CONTROLLER_CAP_ID) in env" >&2; exit 1; }
+[[ -n "$CONTROLLER_CAP_ID" ]] || { echo "[error] missing ${NET_PREFIX}_CONTROLLER_CAP_ID (or CONTROLLER_CAP_ID) in env" >&2; exit 1; }
 [[ -n "$CONTROLLER_ADDRESS_OR_ALIAS" ]] || { echo "[error] missing controller address/alias in env and active-address unavailable" >&2; exit 1; }
 
 mapfile -t JSON_FILES < <(find "$EXAMPLES_DIR" -maxdepth 1 -type f -name '*.json' | sort)

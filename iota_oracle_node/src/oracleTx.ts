@@ -62,7 +62,7 @@ function resolveRegisterMode(): "off" | "dev" | "prod" {
 
   // Default inference by network:
   // - dev/devnet/local/localnet -> dev registration (no controller cap required)
-  // - all other networks         -> prod registration (validator/controller cap required)
+  // - all other networks         -> prod registration (delegated controller cap required)
   return networkIsDevLike ? "dev" : "prod";
 }
 
@@ -166,16 +166,14 @@ export async function registerOracleNode(opts: {
     const signerAddress = signer.getPublicKey().toIotaAddress().toLowerCase();
     const delegatedCapTypeMarker = "::validator_cap_delegate::DelegatedControllerCap";
 
-    let delegatedCapId =
-      optEnvByNetwork("DELEGATED_CONTROLLER_CAP_ID") ||
-      optEnvByNetwork("ORACLE_CONTROLLER_CAP_ID");
+    let delegatedCapId = optEnvByNetwork("DELEGATED_CONTROLLER_CAP_ID");
 
     if (!delegatedCapId) {
       delegatedCapId = (await findOwnedDelegatedCapId(client, signerAddress)) ?? undefined;
     }
     if (!delegatedCapId) {
       throw new Error(
-        `Prod registration requires DelegatedControllerCap owned by oracle signer ${signerAddress}. Set DELEGATED_CONTROLLER_CAP_ID (or ORACLE_CONTROLLER_CAP_ID) or use a signer that owns one.`,
+        `Prod registration requires DelegatedControllerCap owned by oracle signer ${signerAddress}. Set DELEGATED_CONTROLLER_CAP_ID or use a signer that owns one.`,
       );
     }
 
