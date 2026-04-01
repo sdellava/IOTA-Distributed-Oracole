@@ -5,12 +5,9 @@
   "retention_days": 30,
   "source": {
     "kind": "url",
-    "url": "https://www.zcsazzurro.com/uploads/documetazione/certificazioni/Test-Report-for-TOR-Erzeuger-Typ-A-3000-6000TLM-V3.pdf",
+    "url": "https://www.coop.it/sites/default/files/2021-03/ricetta_Carbonara%202.pdf",
     "method": "GET",
-    "headers": {
-      "Accept": "application/pdf,*/*",
-      "User-Agent": "Mozilla/5.0"
-    }
+    "headers": {}
   },
   "fileName": "ricetta_carbonara_2.pdf",
   "mimeType": "application/pdf",

@@ -5,9 +5,12 @@
   "source": {
     "kind": "document_url",
     "mimeType": "application/pdf",
-    "url": "https://www.aoml.noaa.gov/ftp/pub/phod/lumpkin/haida_foia_request/1354C121977F_1103.pdf",
+    "url": "https://www.gsa.gov/cdnstatic/SF_1103.pdf",
     "pdf": {
-      "pageRange": [1, 1],
+      "pageRange": [
+        1,
+        1
+      ],
       "extractText": true,
       "ocrFallback": false
     }
@@ -21,15 +24,15 @@
       "return_json_only": true,
       "score_min": 0,
       "score_max": 10000,
-      "score_definition": "0 means fully completed and operationally processable; 10000 means blank, incomplete, or unusable for processing",
-      "scoring_focus": "document completeness and processability, not authenticity or fraud risk",
-      "blank_form_rule": "if the document is mostly a blank template or contains mostly field labels without filled values, assign at least 9500",
+      "score_definition": "0 means operationally complete and low-risk, 10000 means incomplete or unusable for processing",
       "output_must_contain_only_score": true
     },
     "output_schema": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["risk_score_bps"],
+      "required": [
+        "risk_score_bps"
+      ],
       "properties": {
         "risk_score_bps": {
           "type": "integer",

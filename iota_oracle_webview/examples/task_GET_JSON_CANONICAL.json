@@ -1,10 +1,10 @@
 {
-  "template_id": 1,
-  "type": "RANDOM_NUMBER_MEDIATION",
+  "template_id": 10,
+  "type": "GET_JSON_CANONICAL",
   "requested_nodes": 3,
   "request": {
     "method": "GET",
-    "url": "https://www.randomnumberapi.com/api/v1.0/random?min=80&max=100&count=1",
+    "url": "https://api.coindesk.com/v1/bpi/currentprice.json",
     "headers": {
       "accept": "application/json,*/*"
     }
@@ -13,7 +13,7 @@
     "kind": "json",
     "canonical": true,
     "dropNulls": true,
-    "dropKeys": [],
+    "dropKeys": ["time", "timestamp", "updated", "updatedISO", "updateduk", "disclaimer", "chartName"],
     "sortArrays": false
   },
   "consensus": {
@@ -25,9 +25,5 @@
   },
   "timeouts": {
     "step1Ms": 10000
-  },
-  "mediation": {
-    "mode": "mean_u64",
-    "varianceMax": 20
   }
 }

@@ -6,10 +6,17 @@ import "@iota/dapp-kit/dist/index.css";
 import App from "./App";
 import "./styles.css";
 
-const walletRpcUrl = import.meta.env.VITE_IOTA_RPC_URL?.trim() || "https://api.devnet.iota.cafe";
+const mainnetRpcUrl = import.meta.env.VITE_IOTA_MAINNET_RPC_URL?.trim() || "https://api.mainnet.iota.cafe";
+const testnetRpcUrl = import.meta.env.VITE_IOTA_TESTNET_RPC_URL?.trim() || "https://api.testnet.iota.cafe";
+const devnetRpcUrl =
+  import.meta.env.VITE_IOTA_DEVNET_RPC_URL?.trim() ||
+  import.meta.env.VITE_IOTA_RPC_URL?.trim() ||
+  "https://api.devnet.iota.cafe";
 
 const { networkConfig } = createNetworkConfig({
-  devnet: { url: walletRpcUrl },
+  mainnet: { url: mainnetRpcUrl },
+  testnet: { url: testnetRpcUrl },
+  devnet: { url: devnetRpcUrl },
 });
 
 const queryClient = new QueryClient();

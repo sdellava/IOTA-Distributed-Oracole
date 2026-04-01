@@ -44,7 +44,6 @@ export default function App() {
     try {
       const data = await fetchStatus();
       setStatus(data);
-      setActiveNetworkState(normalizeNetwork(data.network));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -233,6 +232,7 @@ export default function App() {
 
           <TaskRunner
             examples={examples}
+            activeNetwork={activeNetwork}
             onExecuted={() => void refreshStatus()}
             onTemplateIdChange={setSelectedTemplateId}
           />

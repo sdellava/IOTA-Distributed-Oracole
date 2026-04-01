@@ -9,27 +9,27 @@ iota client publish --dry-run
 ├───────────────────────────────────────────────────────────────────────────────────────────────────────────┤
 │ Created Objects:                                                                                          │
 │  ┌──                                                                                                      │
-│  │ ObjectID: 0x20473ad06c4bc8d9e53de1e88757187a6f2a1dd0203bd7edc9900da27c57686e                           │
-│  │ Sender: 0x59dadd46e10bc3d890a0d20aa3fd1a460110eab5d368922ac1db02883434cc43                             │
-│  │ Owner: Account Address ( 0x59dadd46e10bc3d890a0d20aa3fd1a460110eab5d368922ac1db02883434cc43 )          │
+│  │ ObjectID: 0x126cea3f9b4746dcf883f6216c11acfd6cb5d2534a06ecdfdf35668d128504ae                           │
+│  │ Sender: 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb                             │
+│  │ Owner: Account Address ( 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb )          │
 │  │ ObjectType: 0x2::package::UpgradeCap                                                                   │
-│  │ Version: 33509126                                                                                      │
-│  │ Digest: 4oGEaad4dpxehvojfAmpVWhwLUNTWxSwTwsrRbNj9ha8                                                   │
+│  │ Version: 48622007                                                                                      │
+│  │ Digest: CQHEkA1ubccTwovXku2u5vZ3NuHq2eWdBe2xEMv4Ken6                                                   │
 │  └──                                                                                                      │
 │ Mutated Objects:                                                                                          │
 │  ┌──                                                                                                      │
-│  │ ObjectID: 0xe0b892c3d679885c2f53ce391901ab35ee2fb67b1e7ee8f2b801a5a3e0c95d32                           │
-│  │ Sender: 0x59dadd46e10bc3d890a0d20aa3fd1a460110eab5d368922ac1db02883434cc43                             │
-│  │ Owner: Account Address ( 0x59dadd46e10bc3d890a0d20aa3fd1a460110eab5d368922ac1db02883434cc43 )          │
+│  │ ObjectID: 0x0df7c9cc747797403e50a2fe75d3cc9d172e3e19b0fa15e3c95965d90b271867                           │
+│  │ Sender: 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb                             │
+│  │ Owner: Account Address ( 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb )          │
 │  │ ObjectType: 0x2::coin::Coin<0x2::iota::IOTA>                                                           │
-│  │ Version: 33509126                                                                                      │
-│  │ Digest: 6MRrF14ihbq6Z6N7h1TVFZ5PQLLGjapLLhWBGoLYw6TZ                                                   │
+│  │ Version: 48622007                                                                                      │
+│  │ Digest: 9RwFDfVJwUwLXkMcaNiUgL4uWrJuJqyGPughy3fSHwpG                                                   │
 │  └──                                                                                                      │
 │ Published Objects:                                                                                        │
 │  ┌──                                                                                                      │
-│  │ PackageID: 0x4124d07d2bc1c31c60d2fa54c6fcab7e631dbedd085f724e22fc054f9c22b342                          │
+│  │ PackageID: 0x2cb81f3e2e41a51342015c4393d56315b342d593fbaa6cae61d997e1ceab7a33                          │
 │  │ Version: 1                                                                                             │
-│  │ Digest: ExjLXcFQEPNf5mceV9wfW77KJjUGL77wrxL65xGsbDGy                                                   │
+│  │ Digest: GeGJdXSzYhJv5ojnhxJdEDrKrBzjvUKjrQ97NvuP78eQ                                                   │
 │  │ Modules: oracle_messages, oracle_task_config, oracle_task_consensus, oracle_task_runtime, oracle_tasks │
 │  └──                                                                                                      │
 ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────╯

@@ -6,7 +6,6 @@ trap 'echo "[error] line $LINENO: command failed: $BASH_COMMAND" >&2' ERR
 TEMPLATE_JSON=""
 ENV_FILE=""
 TEMPLATE_ID_OVERRIDE=""
-ALLOW_DUPLICATE=0
 PROPOSAL_TIMEOUT_MS="${PROPOSAL_TIMEOUT_MS:-600000}"
 GAS_BUDGET="${GAS_BUDGET:-50000000}"
 CONTROLLER_ADDRESS_OR_ALIAS="${CONTROLLER_ADDRESS_OR_ALIAS:-}"
@@ -24,9 +23,8 @@ Usage:
   ./scripts/propose_template_from_json.sh --file <template_or_example.json> [options]
 
 Options:
-  --file <path>                 JSON file containing template_id and type
+  --file <path>                 JSON file containing at least template_id and type
   --template-id <u64>           Optional override when JSON does not include template_id
-  --allow-duplicate             Allow proposing even if template is already approved/pending
   --env-file <path>             Optional env file to load first (default: ./ .env if present)
   --controller <addr_or_alias>  Controller address/alias that owns controller cap
   --proposal-timeout-ms <u64>   Proposal timeout in milliseconds (default: 600000)
@@ -36,6 +34,25 @@ Options:
   --controller-cap-id <id>      Oracle controller cap id
   --clock-id <id>               Clock object id (default: 0x6)
   -h, --help                    Show help
+
+JSON accepted fields:
+  Required:
+    template_id, type
+  Optional (top-level or under "template"):
+    is_enabled
+    base_price_iota
+    max_input_bytes
+    max_output_bytes
+    included_download_bytes
+    price_per_download_byte_iota
+    allow_storage
+    min_retention_days
+    max_retention_days
+    price_per_retention_day_iota
+
+Examples:
+  ./scripts/propose_template_from_json.sh --file src/tasks/examples/task_STORAGE.json
+  ./scripts/propose_template_from_json.sh --file ./my_template.json --controller 0xabc...
 EOF
 }
 
@@ -50,9 +67,6 @@ while [[ $# -gt 0 ]]; do
       shift
       [[ $# -gt 0 ]] || { echo "[error] missing value for --template-id" >&2; usage; exit 1; }
       TEMPLATE_ID_OVERRIDE="$1"
-      ;;
-    --allow-duplicate)
-      ALLOW_DUPLICATE=1
       ;;
     --env-file)
       shift
@@ -116,6 +130,7 @@ fi
 if [[ -n "$ENV_FILE" ]]; then
   [[ -f "$ENV_FILE" ]] || { echo "[error] env file not found: $ENV_FILE" >&2; exit 1; }
   set -a
+  # Load env file safely even if it has CRLF line endings.
   # shellcheck disable=SC1090
   source <(sed 's/\r$//' "$ENV_FILE")
   set +a
@@ -134,7 +149,10 @@ fi
 [[ -n "$SYSTEM_PKG" ]] || { echo "[error] missing SYSTEM_PKG / ORACLE_SYSTEM_PACKAGE_ID" >&2; exit 1; }
 [[ -n "$STATE_ID" ]] || { echo "[error] missing STATE_ID / ORACLE_STATE_ID" >&2; exit 1; }
 [[ -n "$CONTROLLER_CAP_ID" ]] || { echo "[error] missing CONTROLLER_CAP_ID / ORACLE_CONTROLLER_CAP_ID" >&2; exit 1; }
-[[ -n "$CONTROLLER_ADDRESS_OR_ALIAS" ]] || { echo "[error] missing controller address/alias" >&2; exit 1; }
+[[ -n "$CONTROLLER_ADDRESS_OR_ALIAS" ]] || {
+  echo "[error] missing controller address/alias (use --controller or CONTROLLER_ADDRESS_OR_ALIAS env)" >&2
+  exit 1
+}
 [[ "$PROPOSAL_TIMEOUT_MS" =~ ^[0-9]+$ ]] || { echo "[error] --proposal-timeout-ms must be numeric" >&2; exit 1; }
 [[ "$GAS_BUDGET" =~ ^[0-9]+$ ]] || { echo "[error] --gas-budget must be numeric" >&2; exit 1; }
 
@@ -164,24 +182,6 @@ process.stdout.write(String(v));
 '
 }
 
-template_status() {
-  (cd "${PROJECT_DIR}" && npm exec -- tsx src/tools/listTemplates.ts --json) \
-    | node -e '
-const fs = require("fs");
-const templateId = Number(process.argv[1]);
-const data = JSON.parse(fs.readFileSync(0, "utf8"));
-const approved = Array.isArray(data?.approvedTemplates) ? data.approvedTemplates : [];
-const pending = Array.isArray(data?.pendingProposals) ? data.pendingProposals : [];
-if (approved.some((x) => Number(x?.templateId) === templateId)) {
-  process.stdout.write("approved");
-} else if (pending.some((x) => Number(x?.templateId) === templateId && String(x?.kind ?? "") === "upsert")) {
-  process.stdout.write("pending");
-} else {
-  process.stdout.write("none");
-}
-' "$1"
-}
-
 PARSED_TEMPLATE="$(
   node -e '
 const fs = require("fs");
@@ -198,12 +198,16 @@ const toInt = (v, d) => {
   return Math.trunc(n);
 };
 const taskType = String(pick("type") ?? "").trim();
-if (!taskType) throw new Error("JSON must contain non-empty type");
+if (!taskType) {
+  throw new Error("JSON must contain non-empty type");
+}
 let templateId = toInt(pick("template_id"), NaN);
 const templateIdOverride = toInt(templateIdOverrideRaw, NaN);
-if (Number.isFinite(templateIdOverride) && templateIdOverride > 0) templateId = templateIdOverride;
+if (Number.isFinite(templateIdOverride) && templateIdOverride > 0) {
+  templateId = templateIdOverride;
+}
 if (!Number.isFinite(templateId) || templateId <= 0) {
-  throw new Error("JSON must contain numeric template_id (or use --template-id)");
+  throw new Error(`Cannot resolve template_id for type=${taskType}. Add template_id in JSON or pass --template-id.`);
 }
 const isStorage = taskType.toUpperCase() === "STORAGE";
 const allowStorage = toInt(pick("allow_storage"), isStorage ? 1 : 0);
@@ -226,25 +230,29 @@ const vals = [
 process.stdout.write(vals.join(" "));
   ' "$FULL_JSON_PATH" "$TEMPLATE_ID_OVERRIDE"
 )"
-
 read -r TEMPLATE_ID TASK_TYPE IS_ENABLED BASE_PRICE MAX_INPUT MAX_OUTPUT INCLUDED_DOWNLOAD PRICE_PER_DOWNLOAD ALLOW_STORAGE MIN_RETENTION MAX_RETENTION PRICE_PER_RETENTION <<<"$PARSED_TEMPLATE"
-
-if [[ "$ALLOW_DUPLICATE" -ne 1 ]]; then
-  STATUS="$(template_status "$TEMPLATE_ID")"
-  if [[ "$STATUS" == "approved" ]]; then
-    echo "[skip] template_id=${TEMPLATE_ID} already approved. Use --allow-duplicate to force."
-    exit 0
-  fi
-  if [[ "$STATUS" == "pending" ]]; then
-    echo "[skip] template_id=${TEMPLATE_ID} already pending for upsert. Use --allow-duplicate to force."
-    exit 0
-  fi
-fi
 
 echo "[info] project: ${PROJECT_DIR}"
 echo "[info] json: ${FULL_JSON_PATH}"
+echo "[info] controller: ${CONTROLLER_ADDRESS_OR_ALIAS}"
+echo "[info] system_pkg: ${SYSTEM_PKG}"
+echo "[info] state_id: ${STATE_ID}"
+echo "[info] controller_cap_id: ${CONTROLLER_CAP_ID}"
+echo "[info] clock_id: ${CLOCK_ID}"
+echo "[info] proposal_timeout_ms: ${PROPOSAL_TIMEOUT_MS}"
+echo "[info] gas_budget: ${GAS_BUDGET}"
 echo "[info] template_id: ${TEMPLATE_ID}"
 echo "[info] task_type: ${TASK_TYPE}"
+echo "[info] is_enabled: ${IS_ENABLED}"
+echo "[info] base_price_iota: ${BASE_PRICE}"
+echo "[info] max_input_bytes: ${MAX_INPUT}"
+echo "[info] max_output_bytes: ${MAX_OUTPUT}"
+echo "[info] included_download_bytes: ${INCLUDED_DOWNLOAD}"
+echo "[info] price_per_download_byte_iota: ${PRICE_PER_DOWNLOAD}"
+echo "[info] allow_storage: ${ALLOW_STORAGE}"
+echo "[info] min_retention_days: ${MIN_RETENTION}"
+echo "[info] max_retention_days: ${MAX_RETENTION}"
+echo "[info] price_per_retention_day_iota: ${PRICE_PER_RETENTION}"
 
 iota client switch --address "$CONTROLLER_ADDRESS_OR_ALIAS" >/dev/null
 
@@ -269,6 +277,5 @@ iota client ptb \
   --gas-budget "$GAS_BUDGET"
 
 PROPOSAL_ID="$(current_proposal_counter || true)"
-echo "[ok] proposal created for template_id=${TEMPLATE_ID}."
+echo "[ok] proposal created for template_id=${TEMPLATE_ID}. Awaiting approvals."
 [[ -n "${PROPOSAL_ID}" ]] && echo "[ok] proposal_id=${PROPOSAL_ID}"
-

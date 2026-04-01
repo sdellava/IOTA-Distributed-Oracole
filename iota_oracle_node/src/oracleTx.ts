@@ -1,7 +1,5 @@
-import fs from "node:fs";
 import type { IotaClient } from "@iota/iota-sdk/client";
 import { Transaction } from "@iota/iota-sdk/transactions";
-import { decodeIotaPrivateKey } from "@iota/iota-sdk/cryptography";
 import { Ed25519Keypair } from "@iota/iota-sdk/keypairs/ed25519";
 
 import { bcsVecU8, bcsAddress, bcsVecU64, bcsU64 } from "./bcs";
@@ -18,6 +16,10 @@ function mustEnv(key: string): string {
 function optEnv(key: string): string | undefined {
   const v = process.env[key]?.trim();
   return v || undefined;
+}
+
+function optEnvByNetwork(baseKey: string): string | undefined {
+  return envByNetwork(baseKey) || optEnv(baseKey);
 }
 
 function getSystemPackageId(): string {
@@ -72,25 +74,29 @@ function gasBudget(envKey: string, def: number): number {
   return Math.floor(n);
 }
 
-function loadValidatorKeypairOrNull(): Ed25519Keypair | null {
-  const fp = optEnv("VALIDATOR_KEY_FILE") || optEnv("ORACLE_CONTROLLER_KEY_FILE");
-  const inline = optEnv("VALIDATOR_IOTAPRIVKEY") || optEnv("ORACLE_CONTROLLER_IOTAPRIVKEY");
-
-  let secret: string | undefined;
-  if (fp) {
-    secret = fs.readFileSync(fp, "utf8").trim();
-  } else if (inline) {
-    secret = inline;
+function txFailureReason(tx: any): string | null {
+  const status = tx?.effects?.status;
+  if (!status) return null;
+  if (typeof status === "string") {
+    return status.toLowerCase() === "success" ? null : status;
   }
-
-  if (!secret) return null;
-
-  const parsed = decodeIotaPrivateKey(secret);
-  if (parsed.schema !== "ED25519") throw new Error(`Validator key schema not supported: ${parsed.schema}`);
-  return Ed25519Keypair.fromSecretKey(parsed.secretKey);
+  const s = String(status?.status ?? "").toLowerCase();
+  if (!s || s === "success") return null;
+  return String(status?.error ?? status?.message ?? JSON.stringify(status));
 }
 
-async function findOwnedValidatorCapId(client: IotaClient, owner: string): Promise<string | null> {
+async function assertTxSuccess(client: IotaClient, digest: string, label: string, withEvents = false): Promise<void> {
+  const finalTx: any = await client.waitForTransaction({
+    digest,
+    options: withEvents ? { showEffects: true, showEvents: true } : { showEffects: true },
+  } as any);
+  const reason = txFailureReason(finalTx);
+  if (reason) {
+    throw new Error(`${label} failed on-chain: ${reason}`);
+  }
+}
+
+async function findOwnedDelegatedCapId(client: IotaClient, owner: string): Promise<string | null> {
   let cursor: string | null | undefined = null;
   const found: string[] = [];
 
@@ -106,7 +112,7 @@ async function findOwnedValidatorCapId(client: IotaClient, owner: string): Promi
       const objectId = String(item?.data?.objectId ?? item?.objectId ?? "").trim();
       const typ = String(item?.data?.type ?? item?.type ?? "").trim();
       if (!objectId || !typ) continue;
-      if (typ.includes("validator_cap::UnverifiedValidatorOperationCap")) {
+      if (typ.includes("::validator_cap_delegate::DelegatedControllerCap")) {
         found.push(objectId);
       }
     }
@@ -156,47 +162,36 @@ export async function registerOracleNode(opts: {
   if (mode === "off") return "";
 
   if (mode === "prod") {
-    const signer = loadValidatorKeypairOrNull() ?? oracleKeypair;
+    const signer = oracleKeypair;
     const signerAddress = signer.getPublicKey().toIotaAddress().toLowerCase();
-    const validatorCapTypeMarker = "validator_cap::UnverifiedValidatorOperationCap";
+    const delegatedCapTypeMarker = "::validator_cap_delegate::DelegatedControllerCap";
 
-    let validatorCapId: string | undefined;
-    const explicitValidatorCap = optEnv("VALIDATOR_CAP_ID");
-    if (explicitValidatorCap) {
-      validatorCapId = explicitValidatorCap;
-    } else {
-      // Backward-compatible alias. This is accepted only if it is actually a validator cap object.
-      const legacyCap = optEnv("ORACLE_CONTROLLER_CAP_ID");
-      if (legacyCap) {
-        const legacyInfo = await readObjectTypeAndOwner(client, legacyCap);
-        if (legacyInfo.type.includes(validatorCapTypeMarker)) {
-          validatorCapId = legacyCap;
-        }
-      }
-    }
+    let delegatedCapId =
+      optEnvByNetwork("DELEGATED_CONTROLLER_CAP_ID") ||
+      optEnvByNetwork("ORACLE_CONTROLLER_CAP_ID");
 
-    if (!validatorCapId) {
-      validatorCapId = (await findOwnedValidatorCapId(client, signerAddress)) ?? undefined;
+    if (!delegatedCapId) {
+      delegatedCapId = (await findOwnedDelegatedCapId(client, signerAddress)) ?? undefined;
     }
-    if (!validatorCapId) {
+    if (!delegatedCapId) {
       throw new Error(
-        `Prod registration requires UnverifiedValidatorOperationCap owned by signer ${signerAddress}. Set VALIDATOR_CAP_ID or use a signer that owns a validator cap.`,
+        `Prod registration requires DelegatedControllerCap owned by oracle signer ${signerAddress}. Set DELEGATED_CONTROLLER_CAP_ID (or ORACLE_CONTROLLER_CAP_ID) or use a signer that owns one.`,
       );
     }
 
-    const capInfo = await readObjectTypeAndOwner(client, validatorCapId);
-    if (!capInfo.type.includes(validatorCapTypeMarker)) {
+    const capInfo = await readObjectTypeAndOwner(client, delegatedCapId);
+    if (!capInfo.type.includes(delegatedCapTypeMarker)) {
       throw new Error(
-        `Object ${validatorCapId} is not UnverifiedValidatorOperationCap (type=${capInfo.type || "unknown"}).`,
+        `Object ${delegatedCapId} is not DelegatedControllerCap (type=${capInfo.type || "unknown"}).`,
       );
     }
     if (capInfo.ownerAddress && capInfo.ownerAddress !== signerAddress) {
-      const autoOwnedCapId = await findOwnedValidatorCapId(client, signerAddress);
-      if (autoOwnedCapId && autoOwnedCapId !== validatorCapId) {
-        validatorCapId = autoOwnedCapId;
+      const autoOwnedCapId = await findOwnedDelegatedCapId(client, signerAddress);
+      if (autoOwnedCapId && autoOwnedCapId !== delegatedCapId) {
+        delegatedCapId = autoOwnedCapId;
       } else {
         throw new Error(
-          `Validator cap ${validatorCapId} is owned by ${capInfo.ownerAddress}, but signer is ${signerAddress}.`,
+          `DelegatedControllerCap ${delegatedCapId} is owned by ${capInfo.ownerAddress}, but oracle signer is ${signerAddress}.`,
         );
       }
     }
@@ -214,7 +209,7 @@ export async function registerOracleNode(opts: {
           arguments: [
             tx.object(stateId),
             tx.object(systemId),
-            tx.object(validatorCapId),
+            tx.object(delegatedCapId),
             tx.pure(bcsAddress(oracleAddr)),
             tx.pure(bcsVecU8(oraclePubkeyRaw32)),
             tx.pure(bcsVecU64(acceptedTemplateIds)),
@@ -225,8 +220,11 @@ export async function registerOracleNode(opts: {
       options: { showEffects: true, showObjectChanges: true },
       label: "register_oracle_node",
     });
-
-    await client.waitForTransaction({ digest: res.digest });
+    const immediateReason = txFailureReason(res);
+    if (immediateReason) {
+      throw new Error(`register_oracle_node failed on-chain: ${immediateReason}`);
+    }
+    await assertTxSuccess(client, String(res.digest), "register_oracle_node");
     return res.digest as string;
   }
 
@@ -250,8 +248,11 @@ export async function registerOracleNode(opts: {
     options: { showEffects: true, showObjectChanges: true },
     label: "register_oracle_node_dev",
   });
-
-  await client.waitForTransaction({ digest: res.digest });
+  const immediateReason = txFailureReason(res);
+  if (immediateReason) {
+    throw new Error(`register_oracle_node_dev failed on-chain: ${immediateReason}`);
+  }
+  await assertTxSuccess(client, String(res.digest), "register_oracle_node_dev");
   return res.digest as string;
 }
 
@@ -275,8 +276,11 @@ export async function unregisterOracleNode(opts: { client: IotaClient; keypair: 
     options: { showEffects: true, showObjectChanges: true },
     label: "unregister_oracle_node",
   });
-
-  await client.waitForTransaction({ digest: res.digest });
+  const immediateReason = txFailureReason(res);
+  if (immediateReason) {
+    throw new Error(`unregister_oracle_node failed on-chain: ${immediateReason}`);
+  }
+  await assertTxSuccess(client, String(res.digest), "unregister_oracle_node");
   return res.digest as string;
 }
 
@@ -311,8 +315,11 @@ export async function approveTaskTemplateProposal(opts: {
     options: { showEffects: true, showEvents: true, showObjectChanges: true },
     label: "approve_task_template_proposal",
   });
-
-  await client.waitForTransaction({ digest: res.digest });
+  const immediateReason = txFailureReason(res);
+  if (immediateReason) {
+    throw new Error(`approve_task_template_proposal failed on-chain: ${immediateReason}`);
+  }
+  await assertTxSuccess(client, String(res.digest), "approve_task_template_proposal", true);
   return res.digest as string;
 }
 

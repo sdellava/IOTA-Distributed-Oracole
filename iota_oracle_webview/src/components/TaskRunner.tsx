@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useCurrentAccount, useIotaClient, useSignAndExecuteTransaction } from '@iota/dapp-kit';
+import { useCurrentAccount, useSignAndExecuteTransaction } from '@iota/dapp-kit';
+import { IotaClient, type ChainType } from '@iota/iota-sdk/client';
 import { Transaction } from '@iota/iota-sdk/transactions';
 import { fetchExampleContent, prepareWalletTask } from '../lib/api';
-import type { ExampleTask, PreparedWalletTaskResponse } from '../types';
+import type { ExampleTask, OracleNetwork, PreparedWalletTaskResponse } from '../types';
 
 type Props = {
   examples: ExampleTask[];
+  activeNetwork: OracleNetwork;
   onExecuted: () => void;
   onTemplateIdChange?: (templateId: string) => void;
 };
@@ -66,6 +68,18 @@ const MEDIATION_MEAN_U64 = 1;
 
 const MSG_NO_COMMIT = 7;
 const NO_COMMIT_FETCH_LIMIT = 200;
+const MAINNET_RPC_URL = import.meta.env.VITE_IOTA_MAINNET_RPC_URL?.trim() || 'https://api.mainnet.iota.cafe';
+const TESTNET_RPC_URL = import.meta.env.VITE_IOTA_TESTNET_RPC_URL?.trim() || 'https://api.testnet.iota.cafe';
+const DEVNET_RPC_URL =
+  import.meta.env.VITE_IOTA_DEVNET_RPC_URL?.trim() ||
+  import.meta.env.VITE_IOTA_RPC_URL?.trim() ||
+  'https://api.devnet.iota.cafe';
+
+const CHAIN_BY_NETWORK: Record<OracleNetwork, ChainType> = {
+  mainnet: 'iota:mainnet',
+  testnet: 'iota:testnet',
+  devnet: 'iota:devnet',
+};
 
 function asRecord(value: unknown): Record<string, any> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : null;
@@ -466,18 +480,26 @@ function statusBadgeClass(kind: TaskStatusKind): string {
   return 'badge-muted';
 }
 
-export default function TaskRunner({ examples, onExecuted, onTemplateIdChange }: Props) {
+export default function TaskRunner({ examples, activeNetwork, onExecuted, onTemplateIdChange }: Props) {
   const [taskText, setTaskText] = useState<string>('{}');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<WalletRunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedExample, setSelectedExample] = useState<string>('');
   const currentAccount = useCurrentAccount();
-  const iotaClient = useIotaClient();
+  const iotaClients = useMemo(
+    () => ({
+      mainnet: new IotaClient({ url: MAINNET_RPC_URL }),
+      testnet: new IotaClient({ url: TESTNET_RPC_URL }),
+      devnet: new IotaClient({ url: DEVNET_RPC_URL }),
+    }),
+    [],
+  );
+  const executionClientRef = useRef(iotaClients.devnet);
   const pollTokenRef = useRef(0);
   const { mutateAsync: signAndExecuteTransaction } = useSignAndExecuteTransaction({
     execute: async ({ bytes, signature }) =>
-      await iotaClient.executeTransactionBlock({
+      await executionClientRef.current.executeTransactionBlock({
         transactionBlock: bytes,
         signature,
         options: {
@@ -535,14 +557,22 @@ export default function TaskRunner({ examples, onExecuted, onTemplateIdChange }:
     setTaskText(text);
   }
 
-  async function monitorTask(taskId: string, basePrepared: PreparedWalletTaskResponse, digest: string, token: number) {
+  async function monitorTask(
+    networkClient: IotaClient,
+    taskId: string,
+    basePrepared: PreparedWalletTaskResponse,
+    digest: string,
+    token: number,
+  ) {
     const startedAt = Date.now();
 
     while (pollTokenRef.current === token && Date.now() - startedAt < MAX_POLL_MS) {
       try {
-        const snapshot = await readTaskCompositeState(iotaClient, taskId);
+        const snapshot = await readTaskCompositeState(networkClient, taskId);
         const baseLive = describeSnapshot(snapshot);
-        const noCommitMessages = await readNoCommitMessages(iotaClient, taskId, snapshot.taskType).catch(() => [] as NoCommitMessage[]);
+        const noCommitMessages = await readNoCommitMessages(networkClient, taskId, snapshot.taskType).catch(
+          () => [] as NoCommitMessage[],
+        );
         const latestNoCommit = noCommitMessages[0];
         const live: TaskLiveState = {
           ...baseLive,
@@ -630,11 +660,15 @@ export default function TaskRunner({ examples, onExecuted, onTemplateIdChange }:
         setTaskText(JSON.stringify(task, null, 2));
       }
 
+      const networkClient = iotaClients[activeNetwork];
+      const chain = CHAIN_BY_NETWORK[activeNetwork];
+      executionClientRef.current = networkClient;
+
       const prepared = await prepareWalletTask(task, currentAccount.address);
       const transaction = Transaction.from(prepared.serializedTransaction);
-      const execution = await signAndExecuteTransaction({ transaction });
+      const execution = await signAndExecuteTransaction({ transaction, chain });
       const digest = String(execution?.digest ?? '').trim();
-      const confirmedExecution = await fetchExecutionForDigest(iotaClient, digest, execution);
+      const confirmedExecution = await fetchExecutionForDigest(networkClient, digest, execution);
       const taskId = extractTaskId(confirmedExecution) || extractTaskId(execution);
 
       if (!taskId) {
@@ -665,7 +699,7 @@ export default function TaskRunner({ examples, onExecuted, onTemplateIdChange }:
         },
       });
 
-      void monitorTask(taskId, prepared, digest, token);
+      void monitorTask(networkClient, taskId, prepared, digest, token);
       onExecuted();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

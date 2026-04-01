@@ -1,4 +1,5 @@
 {
+  "template_id": 10,
   "type": "GET_JSON_CANONICAL",
   "requested_nodes": 3,
   "request": {
