@@ -40,9 +40,10 @@ iota client ptb \
 
 
 
-to find the UNVERIFIED_VALIDATOR_OPERATION_CAP_ID knowing the address (in this example 0x13f11.... )
+to find the UNVERIFIED_VALIDATOR_OPERATION_CAP_ID knowing the address (in this example 0x13f11.... ):
 
 VALIDATOR_ADDR=0x13f11b0548895a8514324f9f3c07c8f50725491f30c39d374ee7952a74cf9585
+
 iota client objects "$VALIDATOR_ADDR" --json | jq -r '
   .[] | .data
   | select(.type | test("Validator.*Cap|Unverified.*Cap"; "i"))
