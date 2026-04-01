@@ -1,5 +1,12 @@
-import 'dotenv/config';
+import { createRequire } from 'node:module';
 import { IotaClient, getFullnodeUrl } from '@iota/iota-sdk/client';
+
+const require = createRequire(import.meta.url);
+try {
+  require('dotenv/config');
+} catch {
+  // Optional dependency in minimal/runtime-only containers.
+}
 
 const NON_RETRYABLE_METHODS = new Set<string>([
   'executeTransactionBlock',

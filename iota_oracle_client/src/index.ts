@@ -1,4 +1,12 @@
-import "dotenv/config";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+try {
+  require("dotenv/config");
+} catch {
+  // Optional dependency in minimal/runtime-only containers.
+}
+
 import fs from "node:fs";
 import path from "node:path";
 import { Transaction } from "@iota/iota-sdk/transactions";
