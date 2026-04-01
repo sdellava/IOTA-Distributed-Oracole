@@ -2,18 +2,19 @@
 
 [move]
 version = 3
-manifest_digest = "2114F8C7736FA1AF36F62AFAD9F3C51AC88C3770142F277D3022054682656AEA"
-deps_digest = "F9B494B64F0615AED0E98FC12A85B85ECD2BC5185C22D30E7F67786BB52E507C"
+manifest_digest = "BBE819914F6B37899CCBF7B6C2C3818DEDF111D8027D100447A23C052200CFCB"
+deps_digest = "397E6A9F7A624706DBDFEE056CE88391A15876868FD18A88504DA74EB458D697"
 dependencies = [
   { id = "Iota", name = "Iota" },
   { id = "IotaSystem", name = "IotaSystem" },
   { id = "MoveStdlib", name = "MoveStdlib" },
   { id = "Stardust", name = "Stardust" },
+  { id = "iota_oracle_validator_cap_delegate", name = "iota_oracle_validator_cap_delegate" },
 ]
 
 [[move.package]]
 id = "Iota"
-source = { git = "https://github.com/iotaledger/iota.git", rev = "4698c6723208e052a00c74602d2c8dc0efffe5de", subdir = "crates/iota-framework/packages/iota-framework" }
+source = { git = "https://github.com/iotaledger/iota.git", rev = "431ab686e6f1d4abd83b16dd7c671712002ecac8", subdir = "crates/iota-framework/packages/iota-framework" }
 
 dependencies = [
   { id = "MoveStdlib", name = "MoveStdlib" },
@@ -21,7 +22,7 @@ dependencies = [
 
 [[move.package]]
 id = "IotaSystem"
-source = { git = "https://github.com/iotaledger/iota.git", rev = "4698c6723208e052a00c74602d2c8dc0efffe5de", subdir = "crates/iota-framework/packages/iota-system" }
+source = { git = "https://github.com/iotaledger/iota.git", rev = "431ab686e6f1d4abd83b16dd7c671712002ecac8", subdir = "crates/iota-framework/packages/iota-system" }
 
 dependencies = [
   { id = "Iota", name = "Iota" },
@@ -30,15 +31,26 @@ dependencies = [
 
 [[move.package]]
 id = "MoveStdlib"
-source = { git = "https://github.com/iotaledger/iota.git", rev = "4698c6723208e052a00c74602d2c8dc0efffe5de", subdir = "crates/iota-framework/packages/move-stdlib" }
+source = { git = "https://github.com/iotaledger/iota.git", rev = "431ab686e6f1d4abd83b16dd7c671712002ecac8", subdir = "crates/iota-framework/packages/move-stdlib" }
 
 [[move.package]]
 id = "Stardust"
-source = { git = "https://github.com/iotaledger/iota.git", rev = "4698c6723208e052a00c74602d2c8dc0efffe5de", subdir = "crates/iota-framework/packages/stardust" }
+source = { git = "https://github.com/iotaledger/iota.git", rev = "431ab686e6f1d4abd83b16dd7c671712002ecac8", subdir = "crates/iota-framework/packages/stardust" }
 
 dependencies = [
   { id = "Iota", name = "Iota" },
   { id = "MoveStdlib", name = "MoveStdlib" },
+]
+
+[[move.package]]
+id = "iota_oracle_validator_cap_delegate"
+source = { local = "../oracle_validator_cap_delegate_testnet" }
+
+dependencies = [
+  { id = "Iota", name = "Iota" },
+  { id = "IotaSystem", name = "IotaSystem" },
+  { id = "MoveStdlib", name = "MoveStdlib" },
+  { id = "Stardust", name = "Stardust" },
 ]
 
 [move.toolchain-version]
@@ -50,8 +62,8 @@ flavor = "iota"
 
 [env.testnet]
 chain-id = "2304aa97"
-original-published-id = "0x1c2d7204102ad1d2c544a0fbe54c1fde98198fffe18e9ced0aa7666e5e78ff04"
-latest-published-id = "0x1c2d7204102ad1d2c544a0fbe54c1fde98198fffe18e9ced0aa7666e5e78ff04"
+original-published-id = "0xdf9fbabb671a5be16ceb544acf15ed61d55124ac9c3d72ecc6313a8132e73fd0"
+latest-published-id = "0xdf9fbabb671a5be16ceb544acf15ed61d55124ac9c3d72ecc6313a8132e73fd0"
 published-version = "1"
 
 [env.mainnet]

@@ -1,19 +1,18 @@
 module iota_oracle_system_state::systemState {
     use iota_system::iota_system::IotaSystemState;
-    use iota_system::validator_cap::UnverifiedValidatorOperationCap;
-    use iota::address;
+    use iota_oracle_validator_cap_delegate::validator_cap_delegate::{Self as validator_cap_delegate, DelegatedControllerCap};
     use iota::coin::{Self as coin, Coin};
     use iota::dynamic_field;
     use iota::clock::{Clock, timestamp_ms};
     use iota::event;
     use iota::iota::IOTA;
-    use std::bcs;
 
     const ENotInCommittee: u64 = 1;
     const ENotFound: u64 = 3;
     const EOracleAddrTaken: u64 = 4;
-    const EInvalidCapFormat: u64 = 5;
+    const EOracleSenderMismatch: u64 = 8;
     const EFeeBpsTooHigh: u64 = 6;
+    const EInvalidNetworkMode: u64 = 7;
 
     const ETemplateNotFound: u64 = 41;
     const ETemplateDisabled: u64 = 42;
@@ -23,6 +22,7 @@ module iota_oracle_system_state::systemState {
 
     const EProposalExpired: u64 = 62;
     const EAlreadyApproved: u64 = 63;
+    const ENoOracleNodesRegistered: u64 = 64;
     const EInvalidProposalTimeout: u64 = 65;
     const EInvalidProposalKind: u64 = 66;
     const EProposalNotFound: u64 = 67;
@@ -97,7 +97,7 @@ module iota_oracle_system_state::systemState {
     // Renamed from Status -> State
     public struct State has key, store {
         id: object::UID,
-        payload: vector<u8>,
+        network: vector<u8>,
         oracle_nodes: vector<OracleNode>,
 
         // config economica globale minima
@@ -173,7 +173,7 @@ module iota_oracle_system_state::systemState {
 
         let st = State {
             id: object::new(ctx),
-            payload: b"{}",
+            network: b"testnet",
             oracle_nodes: vector::empty(),
 
             system_fee_bps: 500,
@@ -189,15 +189,6 @@ module iota_oracle_system_state::systemState {
 
         let cap = ControllerCap { id: object::new(ctx) };
         transfer::transfer(cap, sender);
-    }
-
-    public entry fun set_state(
-        _cap: &ControllerCap,
-        st: &mut State,
-        payload: vector<u8>,
-        _ctx: &mut TxContext
-    ) {
-        st.payload = payload;
     }
 
     public entry fun set_global_economic_config(
@@ -243,9 +234,8 @@ module iota_oracle_system_state::systemState {
 
         maybe_expire_template_proposals(st, clock);
 
-        // Allow supervisors to open proposals even during bootstrap (0 nodes).
-        // Approval is still node-gated because majority_threshold(0) == 1.
         let electorate = vector::length(&st.oracle_nodes);
+        assert!(electorate > 0, ENoOracleNodesRegistered);
 
         let now = timestamp_ms(clock);
         let pid = st.template_proposal_id + 1;
@@ -298,9 +288,8 @@ module iota_oracle_system_state::systemState {
 
         maybe_expire_template_proposals(st, clock);
 
-        // Allow supervisors to open proposals even during bootstrap (0 nodes).
-        // Approval is still node-gated because majority_threshold(0) == 1.
         let electorate = vector::length(&st.oracle_nodes);
+        assert!(electorate > 0, ENoOracleNodesRegistered);
 
         let now = timestamp_ms(clock);
         let pid = st.template_proposal_id + 1;
@@ -535,19 +524,21 @@ module iota_oracle_system_state::systemState {
     public entry fun register_oracle_node(
         st: &mut State,
         system: &mut IotaSystemState,
-        validator_cap: &UnverifiedValidatorOperationCap,
+        delegated_cap: &DelegatedControllerCap,
         oracle_addr: address,
         pubkey: vector<u8>,
         accepted_template_ids: vector<u64>,
-        _ctx: &mut TxContext
+        ctx: &mut TxContext
     ) {
-        let validator = validator_address_from_cap(validator_cap);
-        let committee = iota_system::iota_system::committee_validator_addresses(system);
-        assert!(contains_addr(&committee, validator), ENotInCommittee);
+        // On devnet the controller cap is intentionally optional, so this
+        // production path is disabled.
+        assert!(!is_devnet(st), EInvalidNetworkMode);
+        let sender = iota::tx_context::sender(ctx);
+        assert!(sender == oracle_addr, EOracleSenderMismatch);
+        let validator = validator_address_from_delegated_cap(system, delegated_cap);
         upsert_oracle_node(st, validator, oracle_addr, pubkey, accepted_template_ids);
     }
 
-    /*
     public entry fun register_oracle_node_dev(
         st: &mut State,
         oracle_addr: address,
@@ -555,10 +546,11 @@ module iota_oracle_system_state::systemState {
         accepted_template_ids: vector<u64>,
         ctx: &mut TxContext
     ) {
+        assert!(is_devnet(st), EInvalidNetworkMode);
         let sender = iota::tx_context::sender(ctx);
         upsert_oracle_node(st, sender, oracle_addr, pubkey, accepted_template_ids);
     }
-    */
+    
 
     public entry fun unregister_oracle_node(st: &mut State, ctx: &mut TxContext) {
         let sender = iota::tx_context::sender(ctx);
@@ -576,7 +568,9 @@ module iota_oracle_system_state::systemState {
         contains_u64(&n.accepted_template_ids, template_id)
     }
     public fun oracle_node_accepted_templates(n: &OracleNode): &vector<u64> { &n.accepted_template_ids }
-    public fun payload(st: &State): &vector<u8> { &st.payload }
+    // Backward compatibility for older readers expecting `payload`.
+    public fun payload(st: &State): &vector<u8> { &st.network }
+    public fun network(st: &State): &vector<u8> { &st.network }
 
     public fun system_fee_bps(st: &State): u64 { st.system_fee_bps }
     public fun min_payment(st: &State): u64 { st.min_payment }
@@ -816,18 +810,28 @@ module iota_oracle_system_state::systemState {
         if (a >= b) a - b else 0
     }
 
-    fun validator_address_from_cap(cap: &UnverifiedValidatorOperationCap): address {
-        let bytes = bcs::to_bytes(cap);
-        let n = vector::length(&bytes);
-        let addr_len = address::length();
-        assert!(n >= addr_len, EInvalidCapFormat);
-        let start = n - addr_len;
-        let mut out = vector::empty<u8>();
-        let mut i = start;
-        while (i < n) {
-            vector::push_back(&mut out, *vector::borrow(&bytes, i));
+    fun validator_address_from_delegated_cap(
+        system: &mut IotaSystemState,
+        delegated_cap: &DelegatedControllerCap,
+    ): address {
+        let delegated_validator = validator_cap_delegate::validator_address(delegated_cap);
+        let committee = iota_system::iota_system::committee_validator_addresses(system);
+        if (contains_addr(&committee, delegated_validator)) return delegated_validator;
+        abort ENotInCommittee
+    }
+
+    fun is_devnet(st: &State): bool {
+        let devnet = b"devnet";
+        bytes_eq(&st.network, &devnet)
+    }
+
+    fun bytes_eq(a: &vector<u8>, b: &vector<u8>): bool {
+        if (vector::length(a) != vector::length(b)) return false;
+        let mut i = 0;
+        while (i < vector::length(a)) {
+            if (*vector::borrow(a, i) != *vector::borrow(b, i)) return false;
             i = i + 1;
         };
-        address::from_bytes(out)
+        true
     }
 }

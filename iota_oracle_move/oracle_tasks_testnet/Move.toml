@@ -9,4 +9,3 @@ iota_oracle_system_state = { local = "../oracle_system_state_testnet" }
 
 [addresses]
 iota_oracle_tasks = "0x0"
-iota_oracle_system_state = "0x1c2d7204102ad1d2c544a0fbe54c1fde98198fffe18e9ced0aa7666e5e78ff04"

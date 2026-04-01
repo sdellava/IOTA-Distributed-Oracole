@@ -1,15 +1,23 @@
+Usage:
+
+iota client ptb \
+  --move-call 0x22a21385aa4f2647c1c8d0b8680022ff3faf1b7eec652c3ae04b6aac1a3b6ef1::validator_cap_delegate::mint_delegated_controller_cap \
+  @<UNVERIFIED_VALIDATOR_OPERATION_CAP_ID> \
+  <RECIPIENT_ADDRESS> \
+  --gas-budget 50000000
+
 
 ╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ Object Changes                                                                                   │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
 │ Created Objects:                                                                                 │
 │  ┌──                                                                                             │
-│  │ ObjectID: 0x549195c5391e2bd1f164ee812fd3e782e6f753757ad7c0e7a980b904b722e6b4                  │
+│  │ ObjectID: 0xd86ca66b04c545b4e553d219e318e67475026808fb315c870869a12b89614504                  │
 │  │ Sender: 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb                    │
 │  │ Owner: Account Address ( 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb ) │
 │  │ ObjectType: 0x2::package::UpgradeCap                                                          │
-│  │ Version: 807518087                                                                            │
-│  │ Digest: 5Y8R4U91C1m2Q8tA6j7PKCazffSNbNFDBRTWLCshqYMn                                          │
+│  │ Version: 807625342                                                                            │
+│  │ Digest: kBDQQ6YtdNS5MEGSGDEyfrFeY2jfjt19BDgFmy1UnGa                                           │
 │  └──                                                                                             │
 │ Mutated Objects:                                                                                 │
 │  ┌──                                                                                             │
@@ -17,70 +25,65 @@
 │  │ Sender: 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb                    │
 │  │ Owner: Account Address ( 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb ) │
 │  │ ObjectType: 0x2::coin::Coin<0x2::iota::IOTA>                                                  │
-│  │ Version: 807518087                                                                            │
-│  │ Digest: 2RnxjZhs2GaBdV8avaZ4Zsv9MASwRZnz8HfZtYnMmjpt                                          │
+│  │ Version: 807625342                                                                            │
+│  │ Digest: 4qviFhsEzVEFiTEAPUdK8TtFYKebhZroF66r7pjrGbhP                                          │
 │  └──                                                                                             │
 │ Published Objects:                                                                               │
 │  ┌──                                                                                             │
-│  │ PackageID: 0xeead58b272d9ec8f3d746b01b25b811373dbf971ba40b6e959554508b7162bc1                 │
+│  │ PackageID: 0x22a21385aa4f2647c1c8d0b8680022ff3faf1b7eec652c3ae04b6aac1a3b6ef1                 │
 │  │ Version: 1                                                                                    │
-│  │ Digest: A5DCzaT3VGfNsXnwVkzaBSdXkF4CUjvXq2rKRJJ45UJB                                          │
+│  │ Digest: AA9aVyhn73ZiC3TVWnvzh7z2StBfk9ogCYiGSPZHDzeu                                          │
 │  │ Modules: validator_cap_delegate                                                               │
 │  └──                                                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭───────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ Balance Changes                                                                                   │
-├───────────────────────────────────────────────────────────────────────────────────────────────────┤
-│  ┌──                                                                                              │
-│  │ Owner: Account Address ( 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb )  │
-│  │ CoinType: 0x2::iota::IOTA                                                                      │
-│  │ Amount: -9398000                                                                               │
-│  └──                                                                                              │
-╰───────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 
-
-iota client ptb \
-  --move-call 0xeead58b272d9ec8f3d746b01b25b811373dbf971ba40b6e959554508b7162bc1::validator_cap_delegate::mint_delegated_controller_cap \
-  @<UNVERIFIED_VALIDATOR_OPERATION_CAP_ID> \
-  <RECIPIENT_ADDRESS> \
-  --gas-budget 50000000
 
 
 to find the UNVERIFIED_VALIDATOR_OPERATION_CAP_ID knowing the address (in this example 0x13f11.... )
 
-ADDR=0x13f11b0548895a8514324f9f3c07c8f50725491f30c39d374ee7952a74cf9585
-iota client objects "$ADDR" --json | jq -r '
+VALIDATOR_ADDR=0x13f11b0548895a8514324f9f3c07c8f50725491f30c39d374ee7952a74cf9585
+iota client objects "$VALIDATOR_ADDR" --json | jq -r '
   .[] | .data
   | select(.type | test("Validator.*Cap|Unverified.*Cap"; "i"))
   | "\(.objectId)  \(.type)"
 '
+
+Result:
+
 [warn] Client/Server api version mismatch, client api version: 1.18.1-rc, server api version: 1.19.1-rc
 0xf21a123d59e610336b78e8e644d58864faa8d9cd9942202c7e1d0911375eab79  0x3::validator_cap::UnverifiedValidatorOperationCap
 
 Then:
 
-iota client switch --address 0x13f11b0548895a8514324f9f3c07c8f50725491f30c39d374ee7952a74cf9585
+VALIDATOR_CONTROLLER_CAP_ID=0xf21a123d59e610336b78e8e644d58864faa8d9cd9942202c7e1d0911375eab79
+
+ORACLE_NODE_ADDRESS=0x13f11b0548895a8514324f9f3c07c8f50725491f30c39d374ee7952a74cf9585
+
+iota client switch --address $VALIDATOR_ADDR
 
 iota client call \
-  --package 0xeead58b272d9ec8f3d746b01b25b811373dbf971ba40b6e959554508b7162bc1 \
+  --package 0x22a21385aa4f2647c1c8d0b8680022ff3faf1b7eec652c3ae04b6aac1a3b6ef1 \
   --module validator_cap_delegate \
   --function mint_delegated_controller_cap \
-  --args 0xf21a123d59e610336b78e8e644d58864faa8d9cd9942202c7e1d0911375eab79 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb \
+  --args $VALIDATOR_CONTROLLER_CAP_ID $ORACLE_NODE_ADDRESS \
   --gas-budget 50000000
 
+
+
+Result:
 
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ Object Changes                                                                                                                     │
 ├────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
 │ Created Objects:                                                                                                                   │
 │  ┌──                                                                                                                               │
-│  │ ObjectID: 0xdd06156e818284b8cdfdc8ea55d01c89821d6fdfa579ebf3bdcd475a78425bc9                                                    │
+│  │ ObjectID: 0xd82d08b0c8195a61e6ff05c3e0c1c4d975ebe0e706d9a16c7448f4247d62995a                                                    │
 │  │ Sender: 0x13f11b0548895a8514324f9f3c07c8f50725491f30c39d374ee7952a74cf9585                                                      │
-│  │ Owner: Account Address ( 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb )                                   │
-│  │ ObjectType: 0xeead58b272d9ec8f3d746b01b25b811373dbf971ba40b6e959554508b7162bc1::validator_cap_delegate::DelegatedControllerCap  │
-│  │ Version: 807518090                                                                                                              │
-│  │ Digest: 8qUV1PFvBwCVMwZNo8Xp8pLZE6ZpM9x81UCgzDpXLZdh                                                                            │
+│  │ Owner: Account Address ( 0x13f11b0548895a8514324f9f3c07c8f50725491f30c39d374ee7952a74cf9585 )                                   │
+│  │ ObjectType: 0x22a21385aa4f2647c1c8d0b8680022ff3faf1b7eec652c3ae04b6aac1a3b6ef1::validator_cap_delegate::DelegatedControllerCap  │
+│  │ Version: 807625359                                                                                                              │
+│  │ Digest: 8qLWCu3pWiBmTwGUH9Jr1J35U7v8ijmnfikMU1Fgtqjc                                                                            │
 │  └──                                                                                                                               │
 │ Mutated Objects:                                                                                                                   │
 │  ┌──                                                                                                                               │
@@ -88,15 +91,15 @@ iota client call \
 │  │ Sender: 0x13f11b0548895a8514324f9f3c07c8f50725491f30c39d374ee7952a74cf9585                                                      │
 │  │ Owner: Account Address ( 0x13f11b0548895a8514324f9f3c07c8f50725491f30c39d374ee7952a74cf9585 )                                   │
 │  │ ObjectType: 0x2::coin::Coin<0x2::iota::IOTA>                                                                                    │
-│  │ Version: 807518090                                                                                                              │
-│  │ Digest: 2Cz5YkXhCfo1ptFk25uZ5KqKTAa726uhzBcTafxo2iUY                                                                            │
+│  │ Version: 807625359                                                                                                              │
+│  │ Digest: 78JRYmBiKnrTAXEZbc6wyNZQVNwjMGx6Bpj4VKLkN5MH                                                                            │
 │  └──                                                                                                                               │
 │  ┌──                                                                                                                               │
 │  │ ObjectID: 0xf21a123d59e610336b78e8e644d58864faa8d9cd9942202c7e1d0911375eab79                                                    │
 │  │ Sender: 0x13f11b0548895a8514324f9f3c07c8f50725491f30c39d374ee7952a74cf9585                                                      │
 │  │ Owner: Account Address ( 0x13f11b0548895a8514324f9f3c07c8f50725491f30c39d374ee7952a74cf9585 )                                   │
 │  │ ObjectType: 0x3::validator_cap::UnverifiedValidatorOperationCap                                                                 │
-│  │ Version: 807518090                                                                                                              │
-│  │ Digest: 2ChMaEGZF8oncvgxo8vczzTRdUrMpqzG1jEYotgEn144                                                                            │
+│  │ Version: 807625359                                                                                                              │
+│  │ Digest: AJphkxjxtFFor7ZJv1fiNhqnnVfWDiJy5ouUM5xSNPpd                                                                            │
 │  └──                                                                                                                               │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

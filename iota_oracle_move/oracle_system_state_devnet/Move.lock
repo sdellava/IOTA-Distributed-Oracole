@@ -2,7 +2,7 @@
 
 [move]
 version = 3
-manifest_digest = "318D1810AED74FBBE4C5C15C6C61E15F1A3055E1ED6E73AFF90F753E044D200C"
+manifest_digest = "066F6FFA333583742B9E0941D4108B6A26DE2E23D230ABD7605146BC35E48C63"
 deps_digest = "397E6A9F7A624706DBDFEE056CE88391A15876868FD18A88504DA74EB458D697"
 dependencies = [
   { id = "Iota", name = "Iota" },
@@ -44,7 +44,7 @@ dependencies = [
 
 [[move.package]]
 id = "iota_oracle_validator_cap_delegate"
-source = { local = "../oracle_validator_cap_delegate" }
+source = { local = "../oracle_validator_cap_delegate_devnet" }
 
 dependencies = [
   { id = "Iota", name = "Iota" },

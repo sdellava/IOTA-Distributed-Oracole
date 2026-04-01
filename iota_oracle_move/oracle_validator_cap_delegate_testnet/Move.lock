@@ -2,14 +2,13 @@
 
 [move]
 version = 3
-manifest_digest = "4D159A86F13EE76882DB1D3468A2AE4685A3FA1BA7B89FA8E40570920DB1FCE1"
-deps_digest = "397E6A9F7A624706DBDFEE056CE88391A15876868FD18A88504DA74EB458D697"
+manifest_digest = "E22B42D83543CFA3799AAC8AC11AD0C4D86E0EA96C779A8B7B039B32B536BDFF"
+deps_digest = "F9B494B64F0615AED0E98FC12A85B85ECD2BC5185C22D30E7F67786BB52E507C"
 dependencies = [
   { id = "Iota", name = "Iota" },
   { id = "IotaSystem", name = "IotaSystem" },
   { id = "MoveStdlib", name = "MoveStdlib" },
   { id = "Stardust", name = "Stardust" },
-  { id = "iota_oracle_system_state", name = "iota_oracle_system_state" },
 ]
 
 [[move.package]]
@@ -42,29 +41,6 @@ dependencies = [
   { id = "MoveStdlib", name = "MoveStdlib" },
 ]
 
-[[move.package]]
-id = "iota_oracle_system_state"
-source = { local = "../oracle_system_state_testnet" }
-
-dependencies = [
-  { id = "Iota", name = "Iota" },
-  { id = "IotaSystem", name = "IotaSystem" },
-  { id = "MoveStdlib", name = "MoveStdlib" },
-  { id = "Stardust", name = "Stardust" },
-  { id = "iota_oracle_validator_cap_delegate", name = "iota_oracle_validator_cap_delegate" },
-]
-
-[[move.package]]
-id = "iota_oracle_validator_cap_delegate"
-source = { local = "../oracle_validator_cap_delegate_testnet" }
-
-dependencies = [
-  { id = "Iota", name = "Iota" },
-  { id = "IotaSystem", name = "IotaSystem" },
-  { id = "MoveStdlib", name = "MoveStdlib" },
-  { id = "Stardust", name = "Stardust" },
-]
-
 [move.toolchain-version]
 compiler-version = "1.18.1-rc"
 edition = "2024.beta"
@@ -74,18 +50,12 @@ flavor = "iota"
 
 [env.testnet]
 chain-id = "2304aa97"
-original-published-id = "0xf1daeab1abd895d8bd37389ff3b1a64f618e0a4a34f2b71e00aed100e66b3fc4"
-latest-published-id = "0xf1daeab1abd895d8bd37389ff3b1a64f618e0a4a34f2b71e00aed100e66b3fc4"
-published-version = "1"
-
-[env.mainnet]
-chain-id = "6364aad5"
-original-published-id = "0x6148d3674590634d59f8f972d71dd6148e014dd9c036c048d446853dd80049f4"
-latest-published-id = "0x6148d3674590634d59f8f972d71dd6148e014dd9c036c048d446853dd80049f4"
+original-published-id = "0x22a21385aa4f2647c1c8d0b8680022ff3faf1b7eec652c3ae04b6aac1a3b6ef1"
+latest-published-id = "0x22a21385aa4f2647c1c8d0b8680022ff3faf1b7eec652c3ae04b6aac1a3b6ef1"
 published-version = "1"
 
 [env.devnet]
 chain-id = "daf90477"
-original-published-id = "0x7521e5910c2cec19b8fbe12f8b2827145ed882812ecd3aef33e7ab81c9b0c630"
-latest-published-id = "0x7521e5910c2cec19b8fbe12f8b2827145ed882812ecd3aef33e7ab81c9b0c630"
+original-published-id = "0x69a6f9fe8112cfa273685844d5f62b71567a3b3d0af1e91d743cea9dbff80cc5"
+latest-published-id = "0x69a6f9fe8112cfa273685844d5f62b71567a3b3d0af1e91d743cea9dbff80cc5"
 published-version = "1"
