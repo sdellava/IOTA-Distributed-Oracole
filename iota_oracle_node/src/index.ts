@@ -1,4 +1,9 @@
 import "dotenv/config";
+import { Agent, setGlobalDispatcher } from "undici";
+
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+setGlobalDispatcher(new Agent({ connect: { rejectUnauthorized: false } as any }));
+console.warn("[oracle-node] TLS certificate verification is DISABLED globally");
 
 import { requestFaucetIfEnabled } from "./faucet";
 import { iotaClient } from "./iota";

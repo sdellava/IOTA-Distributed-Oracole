@@ -1,6 +1,6 @@
 import { Agent } from "undici";
 
-const ipv4Agent = new Agent({ connect: { family: 4 } as any });
+const ipv4Agent = new Agent({ connect: { family: 4, rejectUnauthorized: false } as any });
 
 export async function fetchUrl(url: string, headers?: Record<string, string>) {
   try {
