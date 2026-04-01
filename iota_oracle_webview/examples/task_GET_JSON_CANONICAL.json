@@ -4,7 +4,7 @@
   "requested_nodes": 3,
   "request": {
     "method": "GET",
-    "url": "https://api.coindesk.com/v1/bpi/currentprice.json",
+    "url": "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd",
     "headers": {
       "accept": "application/json,*/*"
     }
