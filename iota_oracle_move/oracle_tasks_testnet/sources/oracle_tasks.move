@@ -8,6 +8,7 @@ module iota_oracle_tasks::oracle_tasks {
     use std::hash;
 
     use iota_oracle_system_state::systemState;
+    use iota_oracle_validator_cap_delegate::validator_cap_delegate::DelegatedControllerCap;
     use iota_oracle_tasks::oracle_task_config as task_config;
     use iota_oracle_tasks::oracle_task_consensus as consensus;
     use iota_oracle_tasks::oracle_task_runtime as task_runtime;
@@ -453,7 +454,7 @@ module iota_oracle_tasks::oracle_tasks {
     }
 
     public entry fun sweep_task_escrow_to_treasury_emergency(
-        _cap: &systemState::ControllerCap,
+        _cap: &DelegatedControllerCap,
         treasury: &mut systemState::OracleTreasury,
         task: &mut Task,
         ctx: &mut TxContext

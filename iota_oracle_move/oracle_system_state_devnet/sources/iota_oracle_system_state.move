@@ -192,7 +192,7 @@ module iota_oracle_system_state::systemState {
     }
 
     public entry fun set_global_economic_config(
-        _cap: &ControllerCap,
+        _cap: &DelegatedControllerCap,
         st: &mut State,
         system_fee_bps: u64,
         min_payment: u64,
@@ -208,7 +208,7 @@ module iota_oracle_system_state::systemState {
     // =========================================================
 
     public entry fun propose_task_template_upsert(
-        _cap: &ControllerCap,
+        _cap: &DelegatedControllerCap,
         st: &mut State,
         clock: &Clock,
         proposal_timeout_ms: u64,
@@ -273,7 +273,7 @@ module iota_oracle_system_state::systemState {
     }
 
     public entry fun propose_task_template_remove(
-        _cap: &ControllerCap,
+        _cap: &DelegatedControllerCap,
         st: &mut State,
         clock: &Clock,
         proposal_timeout_ms: u64,
@@ -611,7 +611,7 @@ module iota_oracle_system_state::systemState {
     }
 
     public entry fun withdraw_treasury_iota(
-        _cap: &ControllerCap,
+        _cap: &DelegatedControllerCap,
         treasury: &mut OracleTreasury,
         amount: u64,
         to: address,

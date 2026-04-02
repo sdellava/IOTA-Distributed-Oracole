@@ -52,3 +52,59 @@
 │  │ Modules: systemState                                                                                         │
 │  └──                                                                                                            │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+mew:
+
+╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Object Changes                                                                                                  │
+├─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ Created Objects:                                                                                                │
+│  ┌──                                                                                                            │
+│  │ ObjectID: 0x26e7856f368b6c44de187ce045849d3977ac730be526ea17e2764725acbcf275                                 │
+│  │ Sender: 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb                                   │
+│  │ Owner: Account Address ( 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb )                │
+│  │ ObjectType: 0x2::package::UpgradeCap                                                                         │
+│  │ Version: 807625343                                                                                           │
+│  │ Digest: 2CtyhzgGxktaxMC11dTp8gANUJTfKkHzz6oSHi67Vsgv                                                         │
+│  └──                                                                                                            │
+│  ┌──                                                                                                            │
+│  │ ObjectID: 0x93d2286b949f17b0e0462d108c164f2ffc60d6917023e023205e957949dd551f                                 │
+│  │ Sender: 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb                                   │
+│  │ Owner: Shared( 807625343 )                                                                                   │
+│  │ ObjectType: 0x8c8b08c639c2ad9a7789309837eacfb76efd04b3cd0643eb0030e3f3e93de9a9::systemState::State           │
+│  │ Version: 807625343                                                                                           │
+│  │ Digest: BLsTpyaViJGq6muy6NALXudLPnzWtP4iizcAV9rbr456                                                         │
+│  └──                                                                                                            │
+│  ┌──                                                                                                            │
+│  │ ObjectID: 0xdb30503c5489e8b7492e74d14959817a46a03968c0dc0d8b1b37bcb5981fd801                                 │
+│  │ Sender: 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb                                   │
+│  │ Owner: Shared( 807625343 )                                                                                   │
+│  │ ObjectType: 0x8c8b08c639c2ad9a7789309837eacfb76efd04b3cd0643eb0030e3f3e93de9a9::systemState::OracleTreasury  │
+│  │ Version: 807625343                                                                                           │
+│  │ Digest: 3zR9xumkVj1BggatAnZ1ySpUKr7zYCSBpokVLJAiNDPb                                                         │
+│  └──                                                                                                            │
+│  ┌──                                                                                                            │
+│  │ ObjectID: 0xe83659df31c3a13ea7537b62dbd3eb8475101de94c4d6f487de7760799ce7546                                 │
+│  │ Sender: 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb                                   │
+│  │ Owner: Account Address ( 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb )                │
+│  │ ObjectType: 0x8c8b08c639c2ad9a7789309837eacfb76efd04b3cd0643eb0030e3f3e93de9a9::systemState::ControllerCap   │
+│  │ Version: 807625343                                                                                           │
+│  │ Digest: E1BgD59gHXgmm6rYncjaHRuzvviNaCRyCpYigXLuf5Xq                                                         │
+│  └──                                                                                                            │
+│ Mutated Objects:                                                                                                │
+│  ┌──                                                                                                            │
+│  │ ObjectID: 0x677b66e4ee2be00117345af6ff934b06eebc6bcc07cc0ef670f1d25f1cddf3f9                                 │
+│  │ Sender: 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb                                   │
+│  │ Owner: Account Address ( 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb )                │
+│  │ ObjectType: 0x2::coin::Coin<0x2::iota::IOTA>                                                                 │
+│  │ Version: 807625343                                                                                           │
+│  │ Digest: Ah9N6andjyHtPjvWqUskxv93yEGfyeseNBSkD2YdDFA7                                                         │
+│  └──                                                                                                            │
+│ Published Objects:                                                                                              │
+│  ┌──                                                                                                            │
+│  │ PackageID: 0x8c8b08c639c2ad9a7789309837eacfb76efd04b3cd0643eb0030e3f3e93de9a9                                │
+│  │ Version: 1                                                                                                   │
+│  │ Digest: GBHoE3xZksMuR7aUp8Gugy9vbKcqyEz4Lm1LcrZYA1Lg                                                         │
+│  │ Modules: systemState                                                                                         │
+│  └──                                                                                                            │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
