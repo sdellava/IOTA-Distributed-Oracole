@@ -1,0 +1,37 @@
+{
+  "template_id": 10,
+  "type": "GET_JSON_CANONICAL",
+  "requested_nodes": 3,
+  "request": {
+    "method": "GET",
+    "url": "https://api.open-meteo.com/v1/forecast?latitude=41.9028&longitude=12.4964&current=temperature_2m&timezone=Europe%2FRome",
+    "headers": {
+      "accept": "application/json,*/*"
+    }
+  },
+  "normalization": {
+    "kind": "json",
+    "canonical": true,
+    "dropNulls": true,
+    "dropKeys": [
+      "time",
+      "timezone",
+      "timezone_abbreviation",
+      "utc_offset_seconds",
+      "generationtime_ms",
+      "elevation",
+      "current.time"
+    ],
+    "sortArrays": false
+  },
+  "consensus": {
+    "mode": "exact_hash",
+    "quorum": {
+      "type": "pct",
+      "value": 0.67
+    }
+  },
+  "timeouts": {
+    "step1Ms": 10000
+  }
+}
