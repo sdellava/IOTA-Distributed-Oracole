@@ -67,6 +67,18 @@ function formatPriceProfile(template: OracleTemplateCost): string {
   return parts.length ? parts.join(" | ") : "-";
 }
 
+function buildPriceProfileLines(template: OracleTemplateCost): string[] {
+  return [
+    profileLine("base", template.basePriceIota),
+    profileLine("download/byte", template.pricePerDownloadByteIota),
+    profileLine("retention/day", template.pricePerRetentionDayIota),
+  ].filter(Boolean) as string[];
+}
+
+function templateLabel(template: OracleTemplateCost): string {
+  return template.taskType ? `${template.templateId} - ${template.taskType}` : template.templateId;
+}
+
 export default function App() {
   const [status, setStatus] = useState<OracleStatus | null>(null);
   const [examples, setExamples] = useState<ExampleTask[]>([]);
@@ -154,6 +166,19 @@ export default function App() {
     if (!status?.lastRefreshIso) return "-";
     return new Date(status.lastRefreshIso).toLocaleString();
   }, [status?.lastRefreshIso]);
+
+  const availableTemplates = status?.costs.templates ?? [];
+
+  const selectedTemplate = useMemo(() => {
+    if (!selectedTemplateId) return null;
+    return availableTemplates.find((template) => template.templateId === selectedTemplateId) ?? null;
+  }, [availableTemplates, selectedTemplateId]);
+
+  const selectedTemplateProfileLines = useMemo(
+    () => (selectedTemplate ? buildPriceProfileLines(selectedTemplate) : []),
+    [selectedTemplate],
+  );
+
   async function onNetworkChange(nextValue: string) {
     const next = normalizeNetwork(nextValue);
     if (next === activeNetwork) return;
@@ -327,60 +352,78 @@ export default function App() {
             <div className="subsection-title" style={{ marginTop: 18 }}>
               Task templates
             </div>
-            <div className="table-wrap table-wrap-wide">
-              <table className="responsive-table">
-                <thead>
-                  <tr>
-                    <th>Template</th>
-                    <th>Enabled</th>
-                    <th>Base price</th>
-                    <th>Price profile (USD)</th>
-                    <th>Input bytes max</th>
-                    <th>Output bytes max</th>
-                    <th>Included download bytes</th>
-                    <th>Price / download byte</th>
-                    <th>Storage</th>
-                    <th>Min retention days</th>
-                    <th>Max retention days</th>
-                    <th>Price / retention day</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {!status?.costs.templates?.length ? (
-                    <tr>
-                      <td colSpan={12} className="empty">
-                        No task template costs found.
-                      </td>
-                    </tr>
-                  ) : (
-                    (status?.costs.templates ?? []).map((template) => {
-                      const isSelected = selectedTemplateId === template.templateId;
-                      return (
-                        <tr
-                          key={template.templateId}
-                          style={isSelected ? { background: "rgba(34, 197, 94, 0.08)" } : undefined}
-                        >
-                          <td data-label="Template">
-                            {template.taskType ? `${template.templateId} - ${template.taskType}` : template.templateId}
-                          </td>
-                          <td data-label="Enabled">{template.isEnabled ? "yes" : "no"}</td>
-                          <td data-label="Base price">{template.basePriceIota ?? "-"}</td>
-                          <td data-label="Price profile (USD)">{formatPriceProfile(template)}</td>
-                          <td data-label="Input bytes max">{template.maxInputBytes ?? "-"}</td>
-                          <td data-label="Output bytes max">{template.maxOutputBytes ?? "-"}</td>
-                          <td data-label="Included download bytes">{template.includedDownloadBytes ?? "-"}</td>
-                          <td data-label="Price / download byte">{template.pricePerDownloadByteIota ?? "-"}</td>
-                          <td data-label="Storage">{template.allowStorage ? "yes" : "no"}</td>
-                          <td data-label="Min retention days">{template.minRetentionDays ?? "-"}</td>
-                          <td data-label="Max retention days">{template.maxRetentionDays ?? "-"}</td>
-                          <td data-label="Price / retention day">{template.pricePerRetentionDayIota ?? "-"}</td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+            {!availableTemplates.length ? (
+              <div className="empty">No task template costs found.</div>
+            ) : !selectedTemplateId ? (
+              <div className="template-empty-state">Select or load a task template to view its pricing details.</div>
+            ) : !selectedTemplate ? (
+              <div className="template-empty-state">
+                Template <span className="mono">{selectedTemplateId}</span> is not available on this network.
+              </div>
+            ) : (
+              <div className="template-details-card">
+                <div className="template-details-head">
+                  <span className="template-details-title">{templateLabel(selectedTemplate)}</span>
+                  <span className={`template-status-badge ${selectedTemplate.isEnabled ? "is-on" : "is-off"}`}>
+                    {selectedTemplate.isEnabled ? "Enabled" : "Disabled"}
+                  </span>
+                </div>
+                <div className="template-details-grid">
+                  <div className="template-kv-item">
+                    <span className="template-kv-label">Base price</span>
+                    <span className="template-kv-value mono">{selectedTemplate.basePriceIota ?? "-"}</span>
+                  </div>
+                  <div className="template-kv-item">
+                    <span className="template-kv-label">Storage</span>
+                    <span className="template-kv-value">{selectedTemplate.allowStorage ? "yes" : "no"}</span>
+                  </div>
+                  <div className="template-kv-item">
+                    <span className="template-kv-label">Input bytes max</span>
+                    <span className="template-kv-value mono">{selectedTemplate.maxInputBytes ?? "-"}</span>
+                  </div>
+                  <div className="template-kv-item">
+                    <span className="template-kv-label">Output bytes max</span>
+                    <span className="template-kv-value mono">{selectedTemplate.maxOutputBytes ?? "-"}</span>
+                  </div>
+                  <div className="template-kv-item">
+                    <span className="template-kv-label">Included download bytes</span>
+                    <span className="template-kv-value mono">{selectedTemplate.includedDownloadBytes ?? "-"}</span>
+                  </div>
+                  <div className="template-kv-item">
+                    <span className="template-kv-label">Price / download byte</span>
+                    <span className="template-kv-value mono">{selectedTemplate.pricePerDownloadByteIota ?? "-"}</span>
+                  </div>
+                  <div className="template-kv-item">
+                    <span className="template-kv-label">Min retention days</span>
+                    <span className="template-kv-value mono">{selectedTemplate.minRetentionDays ?? "-"}</span>
+                  </div>
+                  <div className="template-kv-item">
+                    <span className="template-kv-label">Max retention days</span>
+                    <span className="template-kv-value mono">{selectedTemplate.maxRetentionDays ?? "-"}</span>
+                  </div>
+                  <div className="template-kv-item">
+                    <span className="template-kv-label">Price / retention day</span>
+                    <span className="template-kv-value mono">{selectedTemplate.pricePerRetentionDayIota ?? "-"}</span>
+                  </div>
+                  <div className="template-kv-item">
+                    <span className="template-kv-label">Price profile (USD)</span>
+                    <span className="template-kv-value">{formatPriceProfile(selectedTemplate)}</span>
+                  </div>
+                </div>
+                <div className="template-price-profile">
+                  <div className="template-kv-label">Price profile breakdown</div>
+                  <ul className="template-price-list">
+                    {selectedTemplateProfileLines.length ? (
+                      selectedTemplateProfileLines.map((line) => (
+                        <li key={line}>{line}</li>
+                      ))
+                    ) : (
+                      <li>-</li>
+                    )}
+                  </ul>
+                </div>
+              </div>
+            )}
           </section>
 
           <ActivityTable nodes={status?.nodeActivity ?? []} events={status?.recentEvents ?? []} />

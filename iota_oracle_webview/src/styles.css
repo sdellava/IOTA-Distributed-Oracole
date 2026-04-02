@@ -349,6 +349,99 @@ th {
   text-align: center;
 }
 
+.template-empty-state {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--theme-input-bg, #0f1730);
+  border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
+  color: var(--theme-muted-text, #aab6d3);
+}
+
+.template-details-card {
+  margin-top: 10px;
+  border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
+  border-radius: 14px;
+  background: var(--theme-primary-bg, #121e3d);
+  padding: 16px;
+}
+
+.template-details-head {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.template-details-title {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.template-status-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.template-status-badge.is-on {
+  background: rgba(16, 185, 129, 0.16);
+  color: #86efac;
+  border: 1px solid rgba(16, 185, 129, 0.28);
+}
+
+.template-status-badge.is-off {
+  background: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.template-details-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.template-kv-item {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--theme-input-bg, #0f1730);
+}
+
+.template-kv-label {
+  color: var(--theme-accent-text, #8fa2d0);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.template-kv-value {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.template-price-profile {
+  margin-top: 14px;
+  border-top: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
+  padding-top: 14px;
+}
+
+.template-price-list {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -404,6 +497,10 @@ th {
 
   .wallet-status {
     text-align: left;
+  }
+
+  .template-details-grid {
+    grid-template-columns: 1fr;
   }
 }
 .task-card {
