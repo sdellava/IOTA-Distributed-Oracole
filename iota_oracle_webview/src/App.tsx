@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { ConnectButton, useCurrentAccount } from "@iota/dapp-kit";
 import Menu, { Item as RcMenuItem, Divider } from "rc-menu";
 import ActivityTable from "./components/ActivityTable";
 import MetricCard from "./components/MetricCard";
 import TaskRunner from "./components/TaskRunner";
 import { fetchExamples, fetchNetworkConfig, fetchStatus, updateActiveNetwork } from "./lib/api";
-import type { ExampleTask, OracleNetwork, OracleStatus } from "./types";
+import type { ExampleTask, OracleNetwork, OracleStatus, OracleTemplateCost } from "./types";
 import ValidateTaskPage from "./pages/ValidateTaskPage";
 
 const REFRESH_MS = 10_000;
+const IOTA_USD_PRICE = 0.05;
+const TREASURY_BPS = 500;
 
 type PageMode = "run" | "validate";
 const FALLBACK_NETWORKS: OracleNetwork[] = ["mainnet", "testnet", "devnet"];
@@ -26,6 +29,42 @@ function shortAddress(address: string, start = 6, end = 4): string {
   return `${address.slice(0, start)}...${address.slice(-end)}`;
 }
 
+function parseIotaAtomic(value: string | null | undefined): bigint | null {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  return BigInt(trimmed);
+}
+
+function formatUsd(value: number): string {
+  return value.toLocaleString(undefined, {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 6,
+  });
+}
+
+function profileLine(label: string, atomicValue: string | null | undefined): string | null {
+  const atomic = parseIotaAtomic(atomicValue);
+  if (atomic == null || atomic === 0n) return null;
+
+  const iota = Number(atomic) / 1_000_000_000;
+  const grossUsd = iota * IOTA_USD_PRICE;
+  const treasuryUsd = grossUsd * (TREASURY_BPS / 10_000);
+  const netUsd = grossUsd - treasuryUsd;
+
+  return `${label}: gross $${formatUsd(grossUsd)}, treasury $${formatUsd(treasuryUsd)}, net $${formatUsd(netUsd)}`;
+}
+
+function formatPriceProfile(template: OracleTemplateCost): string {
+  const parts = [
+    profileLine("base", template.basePriceIota),
+    profileLine("download/byte", template.pricePerDownloadByteIota),
+    profileLine("retention/day", template.pricePerRetentionDayIota),
+  ].filter(Boolean) as string[];
+
+  return parts.length ? parts.join(" | ") : "-";
+}
+
 export default function App() {
   const [status, setStatus] = useState<OracleStatus | null>(null);
   const [examples, setExamples] = useState<ExampleTask[]>([]);
@@ -39,6 +78,19 @@ export default function App() {
   const [activeNetwork, setActiveNetworkState] = useState<OracleNetwork>("mainnet");
   const [networkLoading, setNetworkLoading] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const hostingText = import.meta.env.VITE_HOSTING_TEXT?.trim() || "";
+  const themeStyle = {
+    "--theme-page-bg": import.meta.env.VITE_THEME_PAGE_BG?.trim() || "#0b1020",
+    "--theme-text": import.meta.env.VITE_THEME_TEXT?.trim() || "#ebeff8",
+    "--theme-muted-text": import.meta.env.VITE_THEME_MUTED_TEXT?.trim() || "#aab6d3",
+    "--theme-accent-text": import.meta.env.VITE_THEME_ACCENT_TEXT?.trim() || "#8fa2d0",
+    "--theme-card-bg": import.meta.env.VITE_THEME_CARD_BG?.trim() || "rgba(12, 18, 36, 0.88)",
+    "--theme-card-border": import.meta.env.VITE_THEME_CARD_BORDER?.trim() || "rgba(143, 162, 208, 0.14)",
+    "--theme-input-bg": import.meta.env.VITE_THEME_INPUT_BG?.trim() || "#0f1730",
+    "--theme-input-border": import.meta.env.VITE_THEME_INPUT_BORDER?.trim() || "rgba(143, 162, 208, 0.18)",
+    "--theme-primary-bg": import.meta.env.VITE_THEME_PRIMARY_BG?.trim() || "#121e3d",
+    "--theme-primary-text": import.meta.env.VITE_THEME_PRIMARY_TEXT?.trim() || "#d8e2f7",
+  } as CSSProperties;
 
   async function refreshStatus() {
     try {
@@ -109,11 +161,12 @@ export default function App() {
   }
 
   return (
-    <div className="page">
+    <div className="page" style={themeStyle}>
       <header className="hero card">
         <div className="hero-top">
           <div className="hero-main">
             <h1>IOTA distributed oracle</h1>
+            {hostingText ? <p className="hero-hosting-text">{hostingText}</p> : null}
           </div>
 
           <div className="hero-side">
@@ -271,6 +324,7 @@ export default function App() {
                     <th>Template</th>
                     <th>Enabled</th>
                     <th>Base price</th>
+                    <th>Price profile (USD)</th>
                     <th>Input bytes max</th>
                     <th>Output bytes max</th>
                     <th>Included download bytes</th>
@@ -282,46 +336,39 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {!selectedTemplateId ? (
+                  {!status?.costs.templates?.length ? (
                     <tr>
-                      <td colSpan={11} className="empty">
-                        Select a task example to view its template costs.
+                      <td colSpan={12} className="empty">
+                        No task template costs found.
                       </td>
                     </tr>
                   ) : (
-                    (() => {
-                      const selectedTemplate = (status?.costs.templates ?? []).find(
-                        (template) => template.templateId === selectedTemplateId,
-                      );
-                      if (!selectedTemplate) {
-                        return (
-                          <tr>
-                            <td colSpan={11} className="empty">
-                              No task template costs found for the selected task.
-                            </td>
-                          </tr>
-                        );
-                      }
+                    (status?.costs.templates ?? []).map((template) => {
+                      const isSelected = selectedTemplateId === template.templateId;
                       return (
-                        <tr key={selectedTemplate.templateId}>
+                        <tr
+                          key={template.templateId}
+                          style={isSelected ? { background: "rgba(34, 197, 94, 0.08)" } : undefined}
+                        >
                           <td data-label="Template">
-                            {selectedTemplate.taskType
-                              ? `${selectedTemplate.templateId} - ${selectedTemplate.taskType}`
-                              : selectedTemplate.templateId}
+                            {template.taskType
+                              ? `${template.templateId} - ${template.taskType}`
+                              : template.templateId}
                           </td>
-                          <td data-label="Enabled">{selectedTemplate.isEnabled ? "yes" : "no"}</td>
-                          <td data-label="Base price">{selectedTemplate.basePriceIota ?? "-"}</td>
-                          <td data-label="Input bytes max">{selectedTemplate.maxInputBytes ?? "-"}</td>
-                          <td data-label="Output bytes max">{selectedTemplate.maxOutputBytes ?? "-"}</td>
-                          <td data-label="Included download bytes">{selectedTemplate.includedDownloadBytes ?? "-"}</td>
-                          <td data-label="Price / download byte">{selectedTemplate.pricePerDownloadByteIota ?? "-"}</td>
-                          <td data-label="Storage">{selectedTemplate.allowStorage ? "yes" : "no"}</td>
-                          <td data-label="Min retention days">{selectedTemplate.minRetentionDays ?? "-"}</td>
-                          <td data-label="Max retention days">{selectedTemplate.maxRetentionDays ?? "-"}</td>
-                          <td data-label="Price / retention day">{selectedTemplate.pricePerRetentionDayIota ?? "-"}</td>
+                          <td data-label="Enabled">{template.isEnabled ? "yes" : "no"}</td>
+                          <td data-label="Base price">{template.basePriceIota ?? "-"}</td>
+                          <td data-label="Price profile (USD)">{formatPriceProfile(template)}</td>
+                          <td data-label="Input bytes max">{template.maxInputBytes ?? "-"}</td>
+                          <td data-label="Output bytes max">{template.maxOutputBytes ?? "-"}</td>
+                          <td data-label="Included download bytes">{template.includedDownloadBytes ?? "-"}</td>
+                          <td data-label="Price / download byte">{template.pricePerDownloadByteIota ?? "-"}</td>
+                          <td data-label="Storage">{template.allowStorage ? "yes" : "no"}</td>
+                          <td data-label="Min retention days">{template.minRetentionDays ?? "-"}</td>
+                          <td data-label="Max retention days">{template.maxRetentionDays ?? "-"}</td>
+                          <td data-label="Price / retention day">{template.pricePerRetentionDayIota ?? "-"}</td>
                         </tr>
                       );
-                    })()
+                    })
                   )}
                 </tbody>
               </table>

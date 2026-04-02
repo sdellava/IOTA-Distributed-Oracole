@@ -1,8 +1,8 @@
 :root {
   color-scheme: dark;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #0b1020;
-  color: #ebeff8;
+  background: var(--theme-page-bg, #0b1020);
+  color: var(--theme-text, #ebeff8);
   --page-padding: 24px;
   --card-padding: 20px;
   --card-radius: 18px;
@@ -19,7 +19,7 @@ body {
   min-height: 100vh;
   overflow-x: hidden;
   -webkit-text-size-adjust: 100%;
-  background: #0b1020;
+  background: var(--theme-page-bg, #0b1020);
 }
 
 button,
@@ -75,7 +75,14 @@ textarea {
 .hero p {
   margin: 0;
   max-width: 720px;
-  color: #aab6d3;
+  color: var(--theme-muted-text, #aab6d3);
+}
+
+.hero-hosting-text {
+  margin-top: 8px;
+  color: var(--theme-muted-text, #aab6d3);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .hero-meta {
@@ -95,7 +102,7 @@ textarea {
   padding: 10px 12px;
   border-radius: 14px;
   background: rgba(9, 16, 31, 0.7);
-  border: 1px solid rgba(143, 162, 208, 0.12);
+  border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
 }
 
 .wallet-toolbar {
@@ -117,13 +124,13 @@ textarea {
 }
 
 .wallet-status {
-  color: #aab6d3;
+  color: var(--theme-muted-text, #aab6d3);
   font-size: 13px;
   text-align: right;
 }
 
 .wallet-status-label {
-  color: #8fa2d0;
+  color: var(--theme-accent-text, #8fa2d0);
 }
 
 .eyebrow {
@@ -136,8 +143,8 @@ textarea {
 
 .card {
   min-width: 0;
-  background: rgba(12, 18, 36, 0.88);
-  border: 1px solid rgba(143, 162, 208, 0.14);
+  background: var(--theme-card-bg, rgba(12, 18, 36, 0.88));
+  border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
   border-radius: var(--card-radius);
   padding: var(--card-padding);
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18);
@@ -159,7 +166,7 @@ textarea {
 }
 
 .metric-label {
-  color: #8fa2d0;
+  color: var(--theme-accent-text, #8fa2d0);
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -173,7 +180,7 @@ textarea {
 
 .metric-hint {
   margin-top: 8px;
-  color: #aab6d3;
+  color: var(--theme-muted-text, #aab6d3);
   font-size: 13px;
 }
 
@@ -194,7 +201,7 @@ textarea {
 .task-toolbar label {
   display: grid;
   gap: 8px;
-  color: #aab6d3;
+  color: var(--theme-muted-text, #aab6d3);
   min-width: 280px;
   flex: 1 1 280px;
 }
@@ -206,8 +213,8 @@ button {
   width: 100%;
   max-width: 100%;
   border-radius: 12px;
-  border: 1px solid rgba(143, 162, 208, 0.18);
-  background: #0f1730;
+  border: 1px solid var(--theme-input-border, rgba(143, 162, 208, 0.18));
+  background: var(--theme-input-bg, #0f1730);
   color: inherit;
 }
 
@@ -270,7 +277,7 @@ button:disabled {
 }
 
 .result-list dt {
-  color: #8fa2d0;
+  color: var(--theme-accent-text, #8fa2d0);
 }
 
 .result-list dd {
@@ -331,14 +338,14 @@ td {
 }
 
 th {
-  color: #8fa2d0;
+  color: var(--theme-accent-text, #8fa2d0);
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .empty {
-  color: #aab6d3;
+  color: var(--theme-muted-text, #aab6d3);
   text-align: center;
 }
 
@@ -405,7 +412,7 @@ th {
 
 .task-intro {
   margin-bottom: 14px;
-  color: #aab6d3;
+  color: var(--theme-muted-text, #aab6d3);
   font-size: 14px;
 }
 
@@ -424,7 +431,7 @@ th {
 }
 
 .wallet-hint-text {
-  color: #aab6d3;
+  color: var(--theme-muted-text, #aab6d3);
   font-size: 13px;
 }
 
@@ -667,7 +674,7 @@ th {
 }
 
 .summary-label {
-  color: #8fa2d0;
+  color: var(--theme-accent-text, #8fa2d0);
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -683,7 +690,7 @@ th {
 
 .summary-hint {
   margin-top: 8px;
-  color: #aab6d3;
+  color: var(--theme-muted-text, #aab6d3);
   font-size: 12px;
 }
 
@@ -723,7 +730,7 @@ th {
 }
 
 .task-status-detail {
-  color: #aab6d3;
+  color: var(--theme-muted-text, #aab6d3);
   font-size: 14px;
 }
 
@@ -852,9 +859,9 @@ th {
   width: auto;
   padding: 10px 18px;
   border-radius: 12px;
-  border: 1px solid rgba(143, 162, 208, 0.2);
-  background: #0f1730;
-  color: #d8e2f7;
+  border: 1px solid var(--theme-input-border, rgba(143, 162, 208, 0.18));
+  background: var(--theme-primary-bg, #121e3d);
+  color: var(--theme-primary-text, #d8e2f7);
   font-weight: 600;
   cursor: pointer;
 }
@@ -890,9 +897,9 @@ th {
   min-width: 116px;
   padding: 10px 36px 10px 14px;
   border-radius: 999px;
-  border: 1px solid rgba(143, 162, 208, 0.24);
-  background: rgba(15, 23, 48, 0.9);
-  color: #c8d7fb;
+  border: 1px solid var(--theme-input-border, rgba(143, 162, 208, 0.18));
+  background: var(--theme-input-bg, #0f1730);
+  color: var(--theme-primary-text, #d8e2f7);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -932,9 +939,9 @@ th {
   left: 0;
   z-index: 2000;
   min-width: 180px;
-  border: 1px solid rgba(143, 162, 208, 0.2);
+  border: 1px solid var(--theme-input-border, rgba(143, 162, 208, 0.18));
   border-radius: 12px;
-  background: #0f1730;
+  background: var(--theme-input-bg, #0f1730);
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35);
   overflow: hidden;
 }
@@ -947,7 +954,7 @@ th {
 
 .page-switcher-popup .rc-menu-item {
   padding: 10px 14px !important;
-  color: #d8e2f7;
+  color: var(--theme-primary-text, #d8e2f7);
   cursor: pointer;
 }
 
@@ -1013,7 +1020,7 @@ th {
 
 .validator-summary-label {
   margin-bottom: 10px;
-  color: #8fa2d0;
+  color: var(--theme-accent-text, #8fa2d0);
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1028,7 +1035,7 @@ th {
 
 .validator-summary-hint {
   margin-top: 8px;
-  color: #aab6d3;
+  color: var(--theme-muted-text, #aab6d3);
   font-size: 13px;
 }
 
@@ -1097,7 +1104,7 @@ th {
 }
 
 .event-card-description {
-  color: #aab6d3;
+  color: var(--theme-muted-text, #aab6d3);
   line-height: 1.5;
 }
 
@@ -1106,12 +1113,12 @@ th {
   gap: 6px;
   justify-items: end;
   text-align: right;
-  color: #aab6d3;
+  color: var(--theme-muted-text, #aab6d3);
   font-size: 13px;
 }
 
 .event-card-kind {
-  color: #8fa2d0;
+  color: var(--theme-accent-text, #8fa2d0);
   font-size: 12px;
 }
 
@@ -1139,7 +1146,7 @@ th {
 
 .event-raw summary {
   cursor: pointer;
-  color: #8fa2d0;
+  color: var(--theme-accent-text, #8fa2d0);
 }
 
 .event-raw-grid {
@@ -1150,7 +1157,7 @@ th {
 
 .event-raw-label {
   margin-bottom: 6px;
-  color: #8fa2d0;
+  color: var(--theme-accent-text, #8fa2d0);
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
