@@ -17,7 +17,9 @@ type PageMode = "run" | "validate";
 const FALLBACK_NETWORKS: OracleNetwork[] = ["mainnet", "testnet", "devnet"];
 
 function normalizeNetwork(value: string | null | undefined): OracleNetwork {
-  const raw = String(value ?? "").trim().toLowerCase();
+  const raw = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (raw === "devnet" || raw === "dev") return "devnet";
   if (raw === "testnet" || raw === "test") return "testnet";
   return "mainnet";
@@ -108,9 +110,9 @@ export default function App() {
     async function init() {
       try {
         const networkConfig = await fetchNetworkConfig();
-        const supported = (networkConfig.supportedNetworks?.length ? networkConfig.supportedNetworks : FALLBACK_NETWORKS).map((item) =>
-          normalizeNetwork(item),
-        );
+        const supported = (
+          networkConfig.supportedNetworks?.length ? networkConfig.supportedNetworks : FALLBACK_NETWORKS
+        ).map((item) => normalizeNetwork(item));
         setSupportedNetworks(Array.from(new Set(supported)));
         setActiveNetworkState(normalizeNetwork(networkConfig.activeNetwork));
       } catch (err) {
@@ -165,7 +167,7 @@ export default function App() {
       <header className="hero card">
         <div className="hero-top">
           <div className="hero-main">
-            <h1>IOTA distributed oracle</h1>
+            <h1>IOTA Distributed Oracle</h1>
             {hostingText ? <p className="hero-hosting-text">{hostingText}</p> : null}
           </div>
 
@@ -351,9 +353,7 @@ export default function App() {
                           style={isSelected ? { background: "rgba(34, 197, 94, 0.08)" } : undefined}
                         >
                           <td data-label="Template">
-                            {template.taskType
-                              ? `${template.templateId} - ${template.taskType}`
-                              : template.templateId}
+                            {template.taskType ? `${template.templateId} - ${template.taskType}` : template.templateId}
                           </td>
                           <td data-label="Enabled">{template.isEnabled ? "yes" : "no"}</td>
                           <td data-label="Base price">{template.basePriceIota ?? "-"}</td>
