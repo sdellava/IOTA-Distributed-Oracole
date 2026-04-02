@@ -94,6 +94,14 @@ export default function App() {
     "--theme-primary-text": import.meta.env.VITE_THEME_PRIMARY_TEXT?.trim() || "#d8e2f7",
   } as CSSProperties;
 
+  useEffect(() => {
+    const root = document.documentElement;
+    const entries = Object.entries(themeStyle).filter((entry): entry is [string, string] => typeof entry[1] === "string");
+    for (const [key, value] of entries) {
+      root.style.setProperty(key, value);
+    }
+  }, [themeStyle]);
+
   async function refreshStatus() {
     try {
       const data = await fetchStatus();
