@@ -13,7 +13,15 @@
     "kind": "json",
     "canonical": true,
     "dropNulls": true,
-    "dropKeys": ["time", "timestamp", "updated", "updatedISO", "updateduk", "disclaimer", "chartName"],
+    "dropKeys": [
+      "time",
+      "timestamp",
+      "updated",
+      "updatedISO",
+      "updateduk",
+      "disclaimer",
+      "chartName"
+    ],
     "sortArrays": false
   },
   "consensus": {
@@ -25,5 +33,19 @@
   },
   "timeouts": {
     "step1Ms": 10000
+  },
+  "template": {
+    "type": "GET_JSON_CANONICAL",
+    "template_id": 10,
+    "is_enabled": 1,
+    "base_price_iota": 1000000000,
+    "max_input_bytes": 8192,
+    "max_output_bytes": 8192,
+    "included_download_bytes": 8192,
+    "price_per_download_byte_iota": 0,
+    "allow_storage": 0,
+    "min_retention_days": 0,
+    "max_retention_days": 0,
+    "price_per_retention_day_iota": 0
   }
 }

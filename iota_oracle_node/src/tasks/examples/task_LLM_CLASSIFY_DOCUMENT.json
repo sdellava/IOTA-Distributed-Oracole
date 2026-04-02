@@ -5,7 +5,7 @@
   "source": {
     "kind": "document_url",
     "mimeType": "application/pdf",
-    "url": "https://oma.od.nih.gov/Lists/DMSFormsList/Attachments/414/NH1884-1.pdf",
+    "url": "https://raw.githubusercontent.com/invoice-x/invoice2data/master/tests/compare/AmazonWebServices.pdf",
     "pdf": {
       "pageRange": [
         1,
@@ -85,5 +85,19 @@
   },
   "timeouts": {
     "step1Ms": 20000
+  },
+  "template": {
+    "type": "LLM_CLASSIFY_DOCUMENT",
+    "template_id": 6,
+    "is_enabled": 1,
+    "base_price_iota": 1000000000,
+    "max_input_bytes": 8192,
+    "max_output_bytes": 8192,
+    "included_download_bytes": 8192,
+    "price_per_download_byte_iota": 0,
+    "allow_storage": 0,
+    "min_retention_days": 0,
+    "max_retention_days": 0,
+    "price_per_retention_day_iota": 0
   }
 }
