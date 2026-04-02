@@ -14,6 +14,7 @@ SYSTEM_PKG="${SYSTEM_PKG:-${ORACLE_SYSTEM_PACKAGE_ID:-}}"
 STATE_ID="${STATE_ID:-${ORACLE_STATE_ID:-}}"
 CONTROLLER_CAP_ID="${CONTROLLER_CAP_ID:-}"
 CLOCK_ID="${CLOCK_ID:-0x6}"
+NETWORK=""
 
 usage() {
   cat <<'EOF'
@@ -35,6 +36,7 @@ Options:
   --state-id <id>               Oracle state object id
   --controller-cap-id <id>      Oracle controller cap id
   --clock-id <id>               Clock object id (default: 0x6)
+  --network <name>              Network for listTemplates check (devnet|testnet|mainnet)
   -h, --help                    Show help
 EOF
 }
@@ -94,6 +96,11 @@ while [[ $# -gt 0 ]]; do
       [[ $# -gt 0 ]] || { echo "[error] missing value for --clock-id" >&2; usage; exit 1; }
       CLOCK_ID="$1"
       ;;
+    --network)
+      shift
+      [[ $# -gt 0 ]] || { echo "[error] missing value for --network" >&2; usage; exit 1; }
+      NETWORK="$1"
+      ;;
     -h|--help)
       usage
       exit 0
@@ -115,17 +122,70 @@ if [[ -z "$ENV_FILE" && -f "${PROJECT_DIR}/.env" ]]; then
 fi
 if [[ -n "$ENV_FILE" ]]; then
   [[ -f "$ENV_FILE" ]] || { echo "[error] env file not found: $ENV_FILE" >&2; exit 1; }
+  for k in \
+    DEVNET_IOTA_RPC_URL DEVNET_IOTA_RPC_URLS DEVNET_IOTA_CLOCK_ID DEVNET_ORACLE_TASKS_PACKAGE_ID DEVNET_ORACLE_SYSTEM_PACKAGE_ID DEVNET_ORACLE_STATE_ID DEVNET_CONTROLLER_CAP_ID DEVNET_CONTROLLER_ADDRESS_OR_ALIAS DEVNET_ORACLE_CONTROLLER_ADDRESS \
+    TESTNET_IOTA_RPC_URL TESTNET_IOTA_RPC_URLS TESTNET_IOTA_CLOCK_ID TESTNET_ORACLE_TASKS_PACKAGE_ID TESTNET_ORACLE_SYSTEM_PACKAGE_ID TESTNET_ORACLE_STATE_ID TESTNET_CONTROLLER_CAP_ID TESTNET_CONTROLLER_ADDRESS_OR_ALIAS TESTNET_ORACLE_CONTROLLER_ADDRESS \
+    MAINNET_IOTA_RPC_URL MAINNET_IOTA_RPC_URLS MAINNET_IOTA_CLOCK_ID MAINNET_ORACLE_TASKS_PACKAGE_ID MAINNET_ORACLE_SYSTEM_PACKAGE_ID MAINNET_ORACLE_STATE_ID MAINNET_CONTROLLER_CAP_ID MAINNET_CONTROLLER_ADDRESS_OR_ALIAS MAINNET_ORACLE_CONTROLLER_ADDRESS
+  do
+    unset "$k" || true
+  done
   set -a
   # shellcheck disable=SC1090
   source <(sed 's/\r$//' "$ENV_FILE")
   set +a
 fi
 
-SYSTEM_PKG="${SYSTEM_PKG:-${ORACLE_SYSTEM_PACKAGE_ID:-}}"
-STATE_ID="${STATE_ID:-${ORACLE_STATE_ID:-}}"
-CONTROLLER_CAP_ID="${CONTROLLER_CAP_ID:-}"
+NETWORK="$(echo "${NETWORK:-${IOTA_NETWORK:-}}" | tr '[:upper:]' '[:lower:]' | xargs)"
+case "$NETWORK" in
+  "") ;;
+  dev|local|localnet) NETWORK="devnet" ;;
+  test) NETWORK="testnet" ;;
+  main) NETWORK="mainnet" ;;
+esac
+[[ -z "$NETWORK" || "$NETWORK" == "devnet" || "$NETWORK" == "testnet" || "$NETWORK" == "mainnet" ]] || {
+  echo "[error] invalid --network value: ${NETWORK}. Use devnet|testnet|mainnet" >&2
+  exit 1
+}
+if [[ -n "$NETWORK" ]]; then
+  export IOTA_NETWORK="$NETWORK"
+fi
+
+NET_PREFIX=""
+if [[ -n "$NETWORK" ]]; then
+  NET_PREFIX="$(echo "$NETWORK" | tr '[:lower:]' '[:upper:]')"
+fi
+
+get_prefixed_env() {
+  local key="$1"
+  if [[ -n "$NET_PREFIX" ]]; then
+    local prefixed="${NET_PREFIX}_${key}"
+    local pv="${!prefixed:-}"
+    if [[ -n "$pv" ]]; then
+      printf "%s" "$pv"
+      return 0
+    fi
+  fi
+  printf "%s" "${!key:-}"
+}
+
+if [[ -z "$SYSTEM_PKG" ]]; then
+  SYSTEM_PKG="$(get_prefixed_env ORACLE_SYSTEM_PACKAGE_ID)"
+fi
+if [[ -z "$STATE_ID" ]]; then
+  STATE_ID="$(get_prefixed_env ORACLE_STATE_ID)"
+fi
+if [[ -z "$CONTROLLER_CAP_ID" ]]; then
+  CONTROLLER_CAP_ID="$(get_prefixed_env CONTROLLER_CAP_ID)"
+fi
+if [[ -z "$CLOCK_ID" || "$CLOCK_ID" == "0x6" ]]; then
+  CLOCK_ID="$(get_prefixed_env IOTA_CLOCK_ID)"
+  CLOCK_ID="${CLOCK_ID:-0x6}"
+fi
 if [[ -z "$CONTROLLER_ADDRESS_OR_ALIAS" ]]; then
-  CONTROLLER_ADDRESS_OR_ALIAS="${ORACLE_CONTROLLER_ADDRESS:-${CONTROLLER_ADDRESS_OR_ALIAS:-}}"
+  CONTROLLER_ADDRESS_OR_ALIAS="$(get_prefixed_env CONTROLLER_ADDRESS_OR_ALIAS)"
+fi
+if [[ -z "$CONTROLLER_ADDRESS_OR_ALIAS" ]]; then
+  CONTROLLER_ADDRESS_OR_ALIAS="$(get_prefixed_env ORACLE_CONTROLLER_ADDRESS)"
 fi
 
 [[ -n "$TEMPLATE_JSON" ]] || { echo "[error] --file is required" >&2; usage; exit 1; }
@@ -165,7 +225,11 @@ process.stdout.write(String(v));
 }
 
 template_status() {
-  (cd "${PROJECT_DIR}" && npm exec -- tsx src/tools/listTemplates.ts --json) \
+  local args=(--json)
+  if [[ -n "$NETWORK" ]]; then
+    args+=(--network "$NETWORK")
+  fi
+  (cd "${PROJECT_DIR}" && npm exec -- tsx src/tools/listTemplates.ts "${args[@]}") \
     | node -e '
 const fs = require("fs");
 const templateId = Number(process.argv[1]);
@@ -243,6 +307,7 @@ fi
 
 echo "[info] project: ${PROJECT_DIR}"
 echo "[info] json: ${FULL_JSON_PATH}"
+[[ -n "$NETWORK" ]] && echo "[info] network: ${NETWORK}"
 echo "[info] template_id: ${TEMPLATE_ID}"
 echo "[info] task_type: ${TASK_TYPE}"
 
@@ -271,4 +336,3 @@ iota client ptb \
 PROPOSAL_ID="$(current_proposal_counter || true)"
 echo "[ok] proposal created for template_id=${TEMPLATE_ID}."
 [[ -n "${PROPOSAL_ID}" ]] && echo "[ok] proposal_id=${PROPOSAL_ID}"
-

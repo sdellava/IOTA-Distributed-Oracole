@@ -23,14 +23,53 @@ type PendingProposal = {
   deadlineIso: string | null;
 };
 
+type OracleNetwork = "devnet" | "testnet" | "mainnet";
+
 function parseArgs(argv: string[]) {
-  const flags = new Set(argv.slice(2).map((x) => x.trim().toLowerCase()));
+  const raw = argv.slice(2);
+  const flags = new Set<string>();
+  let network: OracleNetwork | null = null;
+
+  for (let i = 0; i < raw.length; i += 1) {
+    const token = String(raw[i] ?? "").trim();
+    const normalized = token.toLowerCase();
+
+    if (normalized === "--network") {
+      const next = String(raw[i + 1] ?? "").trim();
+      if (!next) throw new Error("Missing value for --network");
+      i += 1;
+      const v = normalizeNetwork(next);
+      if (!v) throw new Error(`Invalid --network value: ${next}. Use devnet|testnet|mainnet`);
+      network = v;
+      continue;
+    }
+
+    if (normalized.startsWith("--network=")) {
+      const next = normalized.slice("--network=".length).trim();
+      const v = normalizeNetwork(next);
+      if (!v) throw new Error(`Invalid --network value: ${next}. Use devnet|testnet|mainnet`);
+      network = v;
+      continue;
+    }
+
+    flags.add(normalized);
+  }
+
   return {
     pending: flags.has("--pending"),
     pendingOnly: flags.has("--pending-only"),
     json: flags.has("--json"),
     help: flags.has("--help") || flags.has("-h"),
+    network,
   };
+}
+
+function normalizeNetwork(value: string): OracleNetwork | null {
+  const v = String(value ?? "").trim().toLowerCase();
+  if (v === "dev" || v === "devnet" || v === "local" || v === "localnet") return "devnet";
+  if (v === "test" || v === "testnet") return "testnet";
+  if (v === "main" || v === "mainnet") return "mainnet";
+  return null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -213,9 +252,10 @@ function getPendingProposals(fields: Record<string, unknown>): PendingProposal[]
 
 function printHelp() {
   console.log(`Usage:
-  npm exec tsx src/tools/listTemplates.ts [--pending] [--pending-only] [--json]
+  npm exec tsx src/tools/listTemplates.ts [--network devnet|testnet|mainnet] [--pending] [--pending-only] [--json]
 
 Options:
+  --network      Force network for env resolution (sets IOTA_NETWORK for this process)
   --pending       Also show pending template proposals
   --pending-only  Show only pending proposal details
   --json          Print JSON output
@@ -229,11 +269,17 @@ async function main() {
     return;
   }
 
+  if (args.network) {
+    process.env.IOTA_NETWORK = args.network;
+  }
+
   const { client, stateId, fields } = await getStateFields();
   const pending = getPendingProposals(fields);
   const approved = await listTemplateDynamicFields(client, stateId);
+  const resolvedNetwork = normalizeNetwork(String(process.env.IOTA_NETWORK ?? "")) ?? "mainnet";
 
   const out = {
+    network: resolvedNetwork,
     stateId,
     approvedTemplates: approved,
     pendingProposals: pending,
@@ -245,6 +291,7 @@ async function main() {
   }
 
   if (!args.pendingOnly) {
+    console.log(`Network: ${resolvedNetwork}`);
     console.log(`State: ${stateId}`);
     console.log(`Approved templates: ${approved.length}`);
     for (const t of approved) {

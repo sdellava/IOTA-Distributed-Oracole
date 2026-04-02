@@ -73,6 +73,15 @@ if [[ -z "$EXAMPLES_DIR" ]]; then
 fi
 [[ -d "$EXAMPLES_DIR" ]] || { echo "[error] examples dir not found: $EXAMPLES_DIR" >&2; exit 1; }
 
+# Prevent stale exported network vars from caller shell from leaking in.
+for k in \
+  DEVNET_IOTA_RPC_URL DEVNET_IOTA_RPC_URLS DEVNET_IOTA_CLOCK_ID DEVNET_ORACLE_TASKS_PACKAGE_ID DEVNET_ORACLE_SYSTEM_PACKAGE_ID DEVNET_ORACLE_STATE_ID DEVNET_CONTROLLER_CAP_ID DEVNET_CONTROLLER_ADDRESS_OR_ALIAS DEVNET_ORACLE_CONTROLLER_ADDRESS \
+  TESTNET_IOTA_RPC_URL TESTNET_IOTA_RPC_URLS TESTNET_IOTA_CLOCK_ID TESTNET_ORACLE_TASKS_PACKAGE_ID TESTNET_ORACLE_SYSTEM_PACKAGE_ID TESTNET_ORACLE_STATE_ID TESTNET_CONTROLLER_CAP_ID TESTNET_CONTROLLER_ADDRESS_OR_ALIAS TESTNET_ORACLE_CONTROLLER_ADDRESS \
+  MAINNET_IOTA_RPC_URL MAINNET_IOTA_RPC_URLS MAINNET_IOTA_CLOCK_ID MAINNET_ORACLE_TASKS_PACKAGE_ID MAINNET_ORACLE_SYSTEM_PACKAGE_ID MAINNET_ORACLE_STATE_ID MAINNET_CONTROLLER_CAP_ID MAINNET_CONTROLLER_ADDRESS_OR_ALIAS MAINNET_ORACLE_CONTROLLER_ADDRESS
+do
+  unset "$k" || true
+done
+
 set -a
 # shellcheck disable=SC1090
 source <(sed 's/\r$//' "$ENV_FILE")
@@ -133,6 +142,7 @@ echo "[info] state_id=${STATE_ID}"
 echo "[info] controller=${CONTROLLER_ADDRESS_OR_ALIAS}"
 echo "[info] controller_cap_id=${CONTROLLER_CAP_ID}"
 echo "[info] examples_dir=${EXAMPLES_DIR}"
+export IOTA_NETWORK="$NETWORK"
 echo ""
 echo "Available templates:"
 for i in "${!JSON_FILES[@]}"; do
@@ -175,6 +185,7 @@ for file in "${SELECTED_FILES[@]}"; do
   echo "============================================================"
   bash "$PROPOSER_SCRIPT" \
     --file "$file" \
+    --network "$NETWORK" \
     --env-file "$ENV_FILE" \
     --controller "$CONTROLLER_ADDRESS_OR_ALIAS" \
     --system-pkg "$SYSTEM_PKG" \
