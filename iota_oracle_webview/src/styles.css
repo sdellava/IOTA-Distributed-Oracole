@@ -101,7 +101,7 @@ textarea {
   min-width: 0;
   padding: 10px 12px;
   border-radius: 14px;
-  background: rgba(9, 16, 31, 0.7);
+  background: var(--theme-primary-bg, #121e3d);
   border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
 }
 
@@ -138,7 +138,7 @@ textarea {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 12px;
-  color: #8fa2d0;
+  color: var(--theme-accent-text, #8fa2d0);
 }
 
 .card {
@@ -294,9 +294,9 @@ pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
-  background: #09101f;
+  background: var(--theme-primary-bg, #121e3d);
   border-radius: 12px;
-  border: 1px solid rgba(143, 162, 208, 0.14);
+  border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
 }
 
 .two-col {
@@ -330,7 +330,7 @@ table {
 th,
 td {
   padding: 10px 12px;
-  border-bottom: 1px solid rgba(143, 162, 208, 0.12);
+  border-bottom: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
   text-align: left;
   vertical-align: top;
   overflow-wrap: anywhere;
@@ -573,9 +573,9 @@ th {
   }
 
   .table-wrap table.responsive-table tr {
-    border: 1px solid rgba(143, 162, 208, 0.12);
+    border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
     border-radius: 14px;
-    background: rgba(9, 16, 31, 0.72);
+    background: var(--theme-primary-bg, #121e3d);
     overflow: hidden;
   }
 
@@ -584,12 +584,12 @@ th {
     grid-template-columns: minmax(110px, 42%) minmax(0, 1fr);
     gap: 10px;
     padding: 9px 12px;
-    border-bottom: 1px solid rgba(143, 162, 208, 0.08);
+    border-bottom: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
   }
 
   .table-wrap table.responsive-table td::before {
     content: attr(data-label);
-    color: #8fa2d0;
+    color: var(--theme-accent-text, #8fa2d0);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.04em;
@@ -667,8 +667,8 @@ th {
 
 .task-summary-card,
 .task-status-panel {
-  background: #09101f;
-  border: 1px solid rgba(143, 162, 208, 0.14);
+  background: var(--theme-primary-bg, #121e3d);
+  border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
   border-radius: 14px;
   padding: 14px;
 }
@@ -867,7 +867,7 @@ th {
 }
 
 .page-switcher-trigger:hover {
-  background: #121e3d;
+  background: var(--theme-input-bg, #0f1730);
 }
 
 .page-switcher-trigger:focus-visible {
@@ -910,8 +910,8 @@ th {
   -webkit-appearance: none;
   -moz-appearance: none;
   background-image:
-    linear-gradient(45deg, transparent 50%, #8fa2d0 50%),
-    linear-gradient(135deg, #8fa2d0 50%, transparent 50%);
+    linear-gradient(45deg, transparent 50%, var(--theme-accent-text, #8fa2d0) 50%),
+    linear-gradient(135deg, var(--theme-accent-text, #8fa2d0) 50%, transparent 50%);
   background-position:
     calc(100% - 18px) calc(50% - 3px),
     calc(100% - 12px) calc(50% - 3px);
@@ -920,7 +920,7 @@ th {
 }
 
 .network-select:hover {
-  background-color: rgba(18, 30, 61, 0.92);
+  background-color: var(--theme-primary-bg, #121e3d);
 }
 
 .network-select:focus-visible {
@@ -1014,8 +1014,8 @@ th {
 .validator-summary-card {
   padding: 16px 18px;
   border-radius: 16px;
-  background: rgba(12, 18, 36, 0.88);
-  border: 1px solid rgba(143, 162, 208, 0.14);
+  background: var(--theme-card-bg, rgba(12, 18, 36, 0.88));
+  border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
 }
 
 .validator-summary-label {
@@ -1073,8 +1073,8 @@ th {
 .event-card {
   padding: 14px;
   border-radius: 14px;
-  background: #09101f;
-  border: 1px solid rgba(143, 162, 208, 0.14);
+  background: var(--theme-primary-bg, #121e3d);
+  border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
 }
 
 .event-card-head {
@@ -1126,8 +1126,8 @@ th {
   margin-top: 12px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: rgba(15, 23, 48, 0.88);
-  border: 1px solid rgba(143, 162, 208, 0.14);
+  background: var(--theme-input-bg, #0f1730);
+  border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
   line-height: 1.5;
 }
 
@@ -1140,8 +1140,23 @@ th {
 
 .event-raw {
   margin-top: 12px;
-  border-top: 1px solid rgba(143, 162, 208, 0.12);
+  border-top: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
   padding-top: 12px;
+}
+
+/* Override dapp-kit wallet button to follow runtime theme vars. */
+.wallet-top-row > button:last-child,
+.wallet-top-row [class*="connect"] button,
+.wallet-top-row button[class*="iui"] {
+  background: var(--theme-primary-bg, #121e3d) !important;
+  color: var(--theme-primary-text, #d8e2f7) !important;
+  border: 1px solid var(--theme-input-border, rgba(143, 162, 208, 0.18)) !important;
+}
+
+.wallet-top-row > button:last-child:hover,
+.wallet-top-row [class*="connect"] button:hover,
+.wallet-top-row button[class*="iui"]:hover {
+  background: var(--theme-input-bg, #0f1730) !important;
 }
 
 .event-raw summary {
