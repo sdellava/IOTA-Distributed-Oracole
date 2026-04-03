@@ -222,9 +222,21 @@ VALIDATOR_CAP_ID="$(echo "$VALIDATOR_CAP_ID" | tr '[:upper:]' '[:lower:]')"
 
 echo "[info] validator cap id: $VALIDATOR_CAP_ID"
 echo "[info] creating delegated controller cap..."
-iota client ptb \
-  --move-call "${SYSTEM_PKG}::systemState::mint_delegated_controller_cap" "@${VALIDATOR_CAP_ID}" "$NODE_ADDRESS" \
-  --gas-budget "$GAS_BUDGET"
+
+run_mint_with_recipient() {
+  local recipient_arg="$1"
+  iota client ptb \
+    --move-call "${SYSTEM_PKG}::systemState::mint_delegated_controller_cap" "@${VALIDATOR_CAP_ID}" "$recipient_arg" \
+    --gas-budget "$GAS_BUDGET"
+}
+
+if ! run_mint_with_recipient "$NODE_ADDRESS"; then
+  echo "[warn] PTB recipient format '$NODE_ADDRESS' failed, retrying with typed address..."
+  if ! run_mint_with_recipient "address:${NODE_ADDRESS}"; then
+    echo "[warn] typed format failed, retrying with '@' address literal..."
+    run_mint_with_recipient "@${NODE_ADDRESS}"
+  fi
+fi
 
 echo ""
 echo "[ok] delegated cap mint transaction submitted."
