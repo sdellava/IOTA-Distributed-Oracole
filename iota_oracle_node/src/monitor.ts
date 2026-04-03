@@ -21,40 +21,52 @@ export type MonitorRuntimeState = {
 
 export function startMonitorServer(ctx: NodeContext, state: MonitorRuntimeState): Server {
   const server = createServer((req, res) => {
-    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? `${MONITOR_HOST}:${MONITOR_PORT}`}`);
+    void (async () => {
+      const url = new URL(req.url ?? "/", `http://${req.headers.host ?? `${MONITOR_HOST}:${MONITOR_PORT}`}`);
 
-    if (req.method !== "GET") {
-      res.writeHead(405, { "content-type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify({ error: "method_not_allowed" }));
-      return;
-    }
+      if (req.method !== "GET") {
+        res.writeHead(405, { "content-type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ error: "method_not_allowed" }));
+        return;
+      }
 
-    if (url.pathname !== "/health" && url.pathname !== "/status") {
-      res.writeHead(404, { "content-type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify({ error: "not_found" }));
-      return;
-    }
+      if (url.pathname !== "/health" && url.pathname !== "/status") {
+        res.writeHead(404, { "content-type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ error: "not_found" }));
+        return;
+      }
 
-    const uptimeMs = Date.now() - ctx.startupMs;
-    const body = {
-      status: state.booting ? "booting" : "ok",
-      nodeId: ctx.nodeId,
-      address: ctx.identity.address,
-      acceptedTemplateIds: ctx.acceptedTemplateIds,
-      pollMs: ctx.pollMs,
-      startupMs: ctx.startupMs,
-      uptimeMs,
-      runtime: state,
-      monitor: {
-        host: MONITOR_HOST,
-        port: MONITOR_PORT,
-        path: url.pathname,
-      },
-    };
+      const uptimeMs = Date.now() - ctx.startupMs;
+      const taskStats = ctx.stats.getTaskStats();
+      const balance = await ctx.stats.getBalanceSnapshot(ctx.client, ctx.identity.address);
+      const body = {
+        status: state.booting ? "booting" : "ok",
+        nodeId: ctx.nodeId,
+        address: ctx.identity.address,
+        acceptedTemplateIds: ctx.acceptedTemplateIds,
+        pollMs: ctx.pollMs,
+        startupMs: ctx.startupMs,
+        uptimeMs,
+        runtime: state,
+        tasks: taskStats,
+        balance: {
+          ...balance.data,
+          error: balance.error,
+        },
+        monitor: {
+          host: MONITOR_HOST,
+          port: MONITOR_PORT,
+          path: url.pathname,
+        },
+      };
 
-    const code = state.booting ? 503 : 200;
-    res.writeHead(code, { "content-type": "application/json; charset=utf-8" });
-    res.end(JSON.stringify(body, null, 2));
+      const code = state.booting ? 503 : 200;
+      res.writeHead(code, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify(body, null, 2));
+    })().catch((e: any) => {
+      res.writeHead(500, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ error: "monitor_failed", message: String(e?.message ?? e) }, null, 2));
+    });
   });
 
   server.listen(MONITOR_PORT, MONITOR_HOST, () => {

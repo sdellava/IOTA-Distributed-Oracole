@@ -2,6 +2,7 @@ import type { IotaClient } from "@iota/iota-sdk/client";
 
 import type { NodeIdentity } from "./keys";
 import type { TaskCache } from "./cache/taskCache";
+import type { NodeStats } from "./stats";
 
 export type NodeContext = {
   client: IotaClient;
@@ -16,4 +17,5 @@ export type NodeContext = {
   mediationType: string;
   msgType: string;
   cache: TaskCache;
+  stats: NodeStats;
 };

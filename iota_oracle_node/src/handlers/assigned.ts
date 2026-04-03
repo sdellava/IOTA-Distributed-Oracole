@@ -53,7 +53,7 @@ export async function runConsensusRound(
     varianceMax: number;
     numericValueU64: number | null;
   },
-): Promise<void> {
+): Promise<boolean> {
   const { client, identity, nodeId, myAddr } = ctx;
   const {
     taskId,
@@ -105,7 +105,7 @@ export async function runConsensusRound(
         }
       }
     }
-    return;
+    return false;
   }
 
   const tx3 = await publishReveal({
@@ -145,7 +145,7 @@ export async function runConsensusRound(
 
         if (md) {
           console.log(`[node ${nodeId}] mediation started tx=${md} mean=${mean} variance=${variance}`);
-          return;
+          return false;
         }
       }
     }
@@ -166,13 +166,13 @@ export async function runConsensusRound(
 
       if (digest) console.log(`[node ${nodeId}] abort no quorum tx=${digest}`);
     }
-    return;
+    return false;
   }
 
   console.log(
     `[node ${nodeId}] winning hash=${reveal.resultHashHex} approvals=${reveal.supporters.length}/${assignedNodes.length}`,
   );
-  if (resultHashHex !== reveal.resultHashHex) return;
+  if (resultHashHex !== reveal.resultHashHex) return false;
 
   const tx4 = await publishPartialSignature({ client, keypair: identity.keypair, taskId, round, resultHashHex });
   console.log(`[node ${nodeId}] partial signature published tx=${tx4}`);
@@ -209,11 +209,11 @@ export async function runConsensusRound(
 
       if (digest) console.log(`[node ${nodeId}] abort partial timeout tx=${digest}`);
     }
-    return;
+    return false;
   }
 
   const chosenSigners = [...partials.partials.keys()].sort().slice(0, quorumK);
-  if (myAddr !== leaderAddr) return;
+  if (myAddr !== leaderAddr) return true;
 
   // usa le pubkey registrate on-chain e costruisci il multisig
   // con TUTTI gli assigned nodes ordinati, coerentemente con taskSignFlow.ts
@@ -270,6 +270,7 @@ export async function runConsensusRound(
   }).catch(() => null);
 
   if (digest) console.log(`[node ${nodeId}] finalize tx=${digest}`);
+  return Boolean(digest);
 }
 
 async function maybeAbortCommitNoQuorum(opts: {
@@ -317,7 +318,7 @@ async function maybeAbortCommitNoQuorum(opts: {
 }
 
 export async function processAssigned(ctx: NodeContext, taskId: string, creator: string): Promise<void> {
-  const { client, identity, nodeId, myAddr, acceptedTemplateIds, cache } = ctx;
+  const { client, identity, nodeId, myAddr, acceptedTemplateIds, cache, stats } = ctx;
 
   const bundle = await loadTaskBundle(client, taskId);
   const { taskFields, configFields, runtimeFields, configId, runtimeId } = bundle;
@@ -376,6 +377,13 @@ export async function processAssigned(ctx: NodeContext, taskId: string, creator:
   } catch (e: any) {
     const errMsg = String(e?.message ?? e);
     console.error(`[node ${nodeId}] task execution failed: ${errMsg}`);
+    stats.recordTaskCompleted({
+      outcome: "not_ok",
+      taskId,
+      round,
+      taskType,
+      error: errMsg,
+    });
     try {
       const tx = await publishNoCommit({
         client,
@@ -407,7 +415,7 @@ export async function processAssigned(ctx: NodeContext, taskId: string, creator:
     `[node ${nodeId}] numeric extract source=${numericExtract.source} path=${numericExtract.path ?? "-"} raw=${numericExtract.value ?? "-"} scale=${numericScale} u64=${numericValueU64 ?? "-"}`,
   );
 
-  await runConsensusRound(ctx, {
+  const ok = await runConsensusRound(ctx, {
     taskId,
     round,
     normalized,
@@ -418,6 +426,14 @@ export async function processAssigned(ctx: NodeContext, taskId: string, creator:
     mediationMode,
     varianceMax,
     numericValueU64,
+  });
+
+  stats.recordTaskCompleted({
+    outcome: ok ? "ok" : "not_ok",
+    taskId,
+    round,
+    taskType,
+    error: ok ? null : "Consensus/finalization did not complete successfully",
   });
 }
 

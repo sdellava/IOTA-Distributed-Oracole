@@ -12,6 +12,7 @@ import { optBool, optInt, parseAcceptedTemplateIds } from "./nodeConfig";
 import { registerOracleNode, unregisterOracleNode } from "./oracleTx";
 import { TaskCache } from "./cache/taskCache";
 import { defaultEventType, parseNodeId } from "./config/env";
+import { NodeStats } from "./stats";
 import {
   listenOracleMessages,
   listenTaskAssigned,
@@ -46,6 +47,7 @@ function buildContext(): NodeContext {
     mediationType: defaultEventType("TASK_MEDIATION_STARTED_EVENT_TYPE", "oracle_tasks::TaskLifecycleEvent"),
     msgType: defaultEventType("MESSAGE_EVENT_TYPE", "oracle_messages::OracleMessage"),
     cache: new TaskCache(),
+    stats: new NodeStats(),
   };
 }
 
