@@ -10,6 +10,7 @@ NODE_ADDRESS=""
 VALIDATOR_CAP_ID=""
 SYSTEM_PKG="${SYSTEM_PKG:-}"
 GAS_BUDGET="${GAS_BUDGET:-50000000}"
+DRY_RUN=0
 
 usage() {
   cat <<'EOF'
@@ -32,6 +33,7 @@ Options:
   --validator-cap-id <id>     optional UnverifiedValidatorOperationCap object id
   --system-pkg <id>           optional system package id (default from .env)
   --gas-budget <u64>          gas budget (default: 50000000)
+  --dry-run                   build/simulate tx without executing
   --env-file <path>           env file (default: ./ .env)
   -h, --help                  show help
 EOF
@@ -73,6 +75,9 @@ while [[ $# -gt 0 ]]; do
       shift
       [[ $# -gt 0 ]] || { echo "[error] missing value for --env-file" >&2; usage; exit 1; }
       ENV_FILE="$1"
+      ;;
+    --dry-run)
+      DRY_RUN=1
       ;;
     -h|--help)
       usage
@@ -223,19 +228,29 @@ VALIDATOR_CAP_ID="$(echo "$VALIDATOR_CAP_ID" | tr '[:upper:]' '[:lower:]')"
 echo "[info] validator cap id: $VALIDATOR_CAP_ID"
 echo "[info] creating delegated controller cap..."
 
-run_mint_with_recipient() {
+run_mint_call() {
   local recipient_arg="$1"
-  iota client ptb \
-    --move-call "${SYSTEM_PKG}::systemState::mint_delegated_controller_cap" "@${VALIDATOR_CAP_ID}" "$recipient_arg" \
-    --gas-budget "$GAS_BUDGET"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    iota client call \
+      --package "$SYSTEM_PKG" \
+      --module systemState \
+      --function mint_delegated_controller_cap \
+      --args "$VALIDATOR_CAP_ID" "$recipient_arg" \
+      --gas-budget "$GAS_BUDGET" \
+      --dry-run
+  else
+    iota client call \
+      --package "$SYSTEM_PKG" \
+      --module systemState \
+      --function mint_delegated_controller_cap \
+      --args "$VALIDATOR_CAP_ID" "$recipient_arg" \
+      --gas-budget "$GAS_BUDGET"
+  fi
 }
 
-if ! run_mint_with_recipient "$NODE_ADDRESS"; then
-  echo "[warn] PTB recipient format '$NODE_ADDRESS' failed, retrying with typed address..."
-  if ! run_mint_with_recipient "address:${NODE_ADDRESS}"; then
-    echo "[warn] typed format failed, retrying with '@' address literal..."
-    run_mint_with_recipient "@${NODE_ADDRESS}"
-  fi
+if ! run_mint_call "$NODE_ADDRESS"; then
+  echo "[warn] iota client call with plain node address failed, retrying with quoted address..."
+  run_mint_call "\"${NODE_ADDRESS}\""
 fi
 
 echo ""
