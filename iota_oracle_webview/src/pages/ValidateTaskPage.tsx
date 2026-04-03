@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import TaskValidator from "../components/TaskValidator";
 
@@ -44,7 +43,7 @@ export default function ValidateTaskPage() {
   async function handleValidate() {
     const normalizedTaskId = taskId.trim();
     if (!normalizedTaskId) {
-      setError("Inserisci un task id.");
+      setError("Insert a task id.");
       setTask(null);
       setTaskEvents([]);
       return;
@@ -69,9 +68,7 @@ export default function ValidateTaskPage() {
         throw new Error(taskData?.error || `HTTP ${taskRes.status}`);
       }
 
-      const eventsRes = await fetch(
-        `${API_BASE}/api/task/${encodeURIComponent(normalizedTaskId)}/events`,
-      );
+      const eventsRes = await fetch(`${API_BASE}/api/task/${encodeURIComponent(normalizedTaskId)}/events`);
       const eventsContentType = eventsRes.headers.get("content-type") || "";
       const eventsText = await eventsRes.text();
 
