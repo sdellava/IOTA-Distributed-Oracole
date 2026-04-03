@@ -32,6 +32,16 @@ or:
 npm run dev -- --node 1
 ```
 
+The node now exposes a local monitoring endpoint by default:
+
+```bash
+curl http://127.0.0.1:9080/health
+curl http://127.0.0.1:9080/status
+```
+
+`/health` returns `503` while boot is still in progress, then `200` once listeners are active.
+`/status` returns the same status plus runtime details such as registration outcome, uptime, node id, and accepted template ids.
+
 On non-dev networks (`IOTA_NETWORK` not `dev`/`devnet`/`local`/`localnet`), registration is forced to `systemState::register_oracle_node` and requires a `systemState::DelegatedControllerCap` + signer key.
 If `DELEGATED_CONTROLLER_CAP_ID` is not configured, node auto-detects an owned `systemState::DelegatedControllerCap` from the signer address.
 

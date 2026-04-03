@@ -5,13 +5,11 @@ import Menu, { Item as RcMenuItem, Divider } from "rc-menu";
 import ActivityTable from "./components/ActivityTable";
 import MetricCard from "./components/MetricCard";
 import TaskRunner from "./components/TaskRunner";
-import { fetchExamples, fetchNetworkConfig, fetchStatus, updateActiveNetwork } from "./lib/api";
-import type { ExampleTask, OracleNetwork, OracleStatus, OracleTemplateCost } from "./types";
+import { fetchExamples, fetchIotaMarketPrice, fetchNetworkConfig, fetchStatus, updateActiveNetwork } from "./lib/api";
+import type { ExampleTask, IotaMarketPriceResponse, OracleNetwork, OracleStatus, OracleTemplateCost } from "./types";
 import ValidateTaskPage from "./pages/ValidateTaskPage";
 
 const REFRESH_MS = 10_000;
-const IOTA_USD_PRICE = 0.05;
-const TREASURY_BPS = 500;
 
 type PageMode = "run" | "validate";
 const FALLBACK_NETWORKS: OracleNetwork[] = ["mainnet", "testnet", "devnet"];
@@ -45,34 +43,38 @@ function formatUsd(value: number): string {
   });
 }
 
-function profileLine(label: string, atomicValue: string | null | undefined): string | null {
+function parseBps(value: string | null | undefined): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return n;
+}
+
+function profileLine(
+  label: string,
+  atomicValue: string | null | undefined,
+  iotaUsdPrice: number | null,
+  treasuryBps: number,
+): string | null {
+  if (iotaUsdPrice == null || iotaUsdPrice <= 0) return null;
   const atomic = parseIotaAtomic(atomicValue);
   if (atomic == null || atomic === 0n) return null;
 
   const iota = Number(atomic) / 1_000_000_000;
-  const grossUsd = iota * IOTA_USD_PRICE;
-  const treasuryUsd = grossUsd * (TREASURY_BPS / 10_000);
+  const grossUsd = iota * iotaUsdPrice;
+  const treasuryUsd = grossUsd * (treasuryBps / 10_000);
   const netUsd = grossUsd - treasuryUsd;
 
   return `${label}: gross $${formatUsd(grossUsd)}, treasury $${formatUsd(treasuryUsd)}, net $${formatUsd(netUsd)}`;
 }
 
-function formatPriceProfile(template: OracleTemplateCost): string {
+function formatPriceProfile(template: OracleTemplateCost, iotaUsdPrice: number | null, treasuryBps: number): string {
   const parts = [
-    profileLine("base", template.basePriceIota),
-    profileLine("download/byte", template.pricePerDownloadByteIota),
-    profileLine("retention/day", template.pricePerRetentionDayIota),
+    profileLine("base", template.basePriceIota, iotaUsdPrice, treasuryBps),
+    profileLine("download/byte", template.pricePerDownloadByteIota, iotaUsdPrice, treasuryBps),
+    profileLine("retention/day", template.pricePerRetentionDayIota, iotaUsdPrice, treasuryBps),
   ].filter(Boolean) as string[];
 
   return parts.length ? parts.join(" | ") : "-";
-}
-
-function buildPriceProfileLines(template: OracleTemplateCost): string[] {
-  return [
-    profileLine("base", template.basePriceIota),
-    profileLine("download/byte", template.pricePerDownloadByteIota),
-    profileLine("retention/day", template.pricePerRetentionDayIota),
-  ].filter(Boolean) as string[];
 }
 
 function templateLabel(template: OracleTemplateCost): string {
@@ -91,6 +93,7 @@ export default function App() {
   const [supportedNetworks, setSupportedNetworks] = useState<OracleNetwork[]>(FALLBACK_NETWORKS);
   const [activeNetwork, setActiveNetworkState] = useState<OracleNetwork>("mainnet");
   const [networkLoading, setNetworkLoading] = useState(false);
+  const [iotaMarketPrice, setIotaMarketPrice] = useState<IotaMarketPriceResponse | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const hostingText = import.meta.env.VITE_HOSTING_TEXT?.trim() || "";
   const themeStyle = {
@@ -126,6 +129,15 @@ export default function App() {
     }
   }
 
+  async function refreshIotaPrice() {
+    try {
+      const data = await fetchIotaMarketPrice();
+      setIotaMarketPrice(data);
+    } catch {
+      // Keep previous value if market API is temporarily unavailable.
+    }
+  }
+
   useEffect(() => {
     async function init() {
       try {
@@ -138,12 +150,17 @@ export default function App() {
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
+      await refreshIotaPrice();
       await refreshStatus();
     }
 
     void init();
-    const timer = window.setInterval(() => void refreshStatus(), REFRESH_MS);
-    return () => window.clearInterval(timer);
+    const statusTimer = window.setInterval(() => void refreshStatus(), REFRESH_MS);
+    const priceTimer = window.setInterval(() => void refreshIotaPrice(), REFRESH_MS);
+    return () => {
+      window.clearInterval(statusTimer);
+      window.clearInterval(priceTimer);
+    };
   }, []);
 
   useEffect(() => {
@@ -174,10 +191,15 @@ export default function App() {
     return availableTemplates.find((template) => template.templateId === selectedTemplateId) ?? null;
   }, [availableTemplates, selectedTemplateId]);
 
-  const selectedTemplateProfileLines = useMemo(
-    () => (selectedTemplate ? buildPriceProfileLines(selectedTemplate) : []),
-    [selectedTemplate],
-  );
+  const iotaPriceText = useMemo(() => {
+    if (!iotaMarketPrice) return "IOTA price unavailable";
+    return `1 IOTA = $${iotaMarketPrice.usdPrice.toFixed(8)} USD`;
+  }, [iotaMarketPrice]);
+
+  const iotaPriceUpdatedText = useMemo(() => {
+    if (!iotaMarketPrice?.fetchedAtIso) return "-";
+    return new Date(iotaMarketPrice.fetchedAtIso).toLocaleString();
+  }, [iotaMarketPrice?.fetchedAtIso]);
 
   async function onNetworkChange(nextValue: string) {
     const next = normalizeNetwork(nextValue);
@@ -407,26 +429,36 @@ export default function App() {
                   </div>
                   <div className="template-kv-item">
                     <span className="template-kv-label">Price profile (USD)</span>
-                    <span className="template-kv-value">{formatPriceProfile(selectedTemplate)}</span>
+                    <span className="template-kv-value">
+                      {formatPriceProfile(
+                        selectedTemplate,
+                        iotaMarketPrice?.usdPrice ?? null,
+                        parseBps(status?.costs.systemFeeBps ?? null),
+                      )}
+                    </span>
                   </div>
                 </div>
                 <div className="template-price-profile">
-                  <div className="template-kv-label">Price profile breakdown</div>
-                  <ul className="template-price-list">
-                    {selectedTemplateProfileLines.length ? (
-                      selectedTemplateProfileLines.map((line) => (
-                        <li key={line}>{line}</li>
-                      ))
-                    ) : (
-                      <li>-</li>
-                    )}
-                  </ul>
+                  <div className="template-kv-label">IOTA current price</div>
+                  <div className="template-kv-value">{iotaPriceText}</div>
+                  <div className="summary-hint" style={{ marginTop: 8 }}>
+                    Source:{" "}
+                    <a href={iotaMarketPrice?.sourceUrl ?? "https://coinmarketcap.com/currencies/iota/"} target="_blank" rel="noreferrer">
+                      CoinMarketCap
+                    </a>
+                    {" • "}
+                    Updated: {iotaPriceUpdatedText}
+                  </div>
                 </div>
               </div>
             )}
           </section>
 
-          <ActivityTable nodes={status?.nodeActivity ?? []} events={status?.recentEvents ?? []} />
+          <ActivityTable
+            nodes={status?.nodeActivity ?? []}
+            events={status?.recentEvents ?? []}
+            activeNetwork={activeNetwork}
+          />
         </>
       ) : (
         <ValidateTaskPage />

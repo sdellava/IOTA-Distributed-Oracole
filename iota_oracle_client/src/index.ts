@@ -75,6 +75,8 @@ type PreparedWalletTransaction = {
   gasBudget: string;
   requiredPayment: string;
   rawPrice: string;
+  systemFee: string;
+  totalPrice: string;
   downloadPrice: string;
   extraDownloadBytes: string;
   balance: string;
@@ -99,8 +101,16 @@ type PreparedWalletTransaction = {
 };
 
 const EMediationVarianceTooHigh = 401;
+const IOTA_DECIMALS = 1_000_000_000n;
+const CMC_IOTA_SOURCE_URL = "https://coinmarketcap.com/currencies/iota/";
+const CMC_PUBLIC_QUOTE_URL = "https://api.coinmarketcap.com/data-api/v3/cryptocurrency/quote/latest?id=1720";
 
 type StructRef = { address: string; module: string; name: string };
+type IotaUsdQuote = {
+  usdPrice: number;
+  fetchedAtIso: string;
+  sourceUrl: string;
+};
 
 function mustEnv(k: string): string {
   const v = process.env[k]?.trim();
@@ -406,6 +416,60 @@ function asNumber(v: unknown, fallback = 0): number {
   return Math.floor(n);
 }
 
+function asFiniteNumber(v: unknown): number | null {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
+function extractUsdPriceFromCoinMarketCapPayload(payload: unknown): number | null {
+  const root = payload as any;
+
+  const directCandidates: unknown[] = [
+    root?.data?.[0]?.quotes?.[0]?.price,
+    root?.data?.[0]?.quote?.USD?.price,
+    root?.data?.[1720]?.quote?.USD?.price,
+    root?.data?.["1720"]?.quote?.USD?.price,
+    root?.data?.IOTA?.[0]?.quote?.USD?.price,
+    root?.data?.IOTA?.quote?.USD?.price,
+  ];
+
+  for (const candidate of directCandidates) {
+    const v = asFiniteNumber(candidate);
+    if (v != null) return v;
+  }
+
+  const candidates = Array.isArray(root?.data?.quotes) ? root.data.quotes : [];
+  for (const q of candidates) {
+    const symbol = String(q?.name ?? q?.symbol ?? "").trim().toUpperCase();
+    if (symbol !== "USD") continue;
+    const v = asFiniteNumber(q?.price);
+    if (v != null) return v;
+  }
+
+  return null;
+}
+
+async function fetchIotaUsdQuoteFromCoinMarketCap(): Promise<IotaUsdQuote | null> {
+  try {
+    const res = await fetch(CMC_PUBLIC_QUOTE_URL, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return null;
+    const payload = await res.json();
+    const usdPrice = extractUsdPriceFromCoinMarketCapPayload(payload);
+    if (usdPrice == null) return null;
+    return {
+      usdPrice,
+      fetchedAtIso: new Date().toISOString(),
+      sourceUrl: CMC_IOTA_SOURCE_URL,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function collectStructRefsFromNormalizedType(typeNode: unknown): StructRef[] {
   const out: StructRef[] = [];
 
@@ -673,8 +737,10 @@ function validateAgainstTemplate(prepared: PreparedTask, template: TaskTemplateI
   const downloadPrice = extraDownloadBytes * template.pricePerDownloadByteIota;
   const rawPrice =
     template.basePriceIota + downloadPrice + BigInt(prepared.retentionDays) * template.pricePerRetentionDayIota;
-  const requiredPayment = rawPrice > economics.minPayment ? rawPrice : economics.minPayment;
-  return { rawPrice, requiredPayment, downloadPrice, extraDownloadBytes };
+  const systemFee = (rawPrice * economics.systemFeeBps + 9_999n) / 10_000n;
+  const totalPrice = rawPrice + systemFee;
+  const requiredPayment = totalPrice > economics.minPayment ? totalPrice : economics.minPayment;
+  return { rawPrice, systemFee, totalPrice, requiredPayment, downloadPrice, extraDownloadBytes };
 }
 
 async function fetchIotaBalance(client: AnyClient, owner: string): Promise<bigint> {
@@ -1225,7 +1291,7 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
   }
 
   const economics = await getStateEconomics(client, stateId);
-  const { rawPrice, requiredPayment, downloadPrice, extraDownloadBytes } = validateAgainstTemplate(
+  const { rawPrice, systemFee, totalPrice, requiredPayment, downloadPrice, extraDownloadBytes } = validateAgainstTemplate(
     prepared,
     template,
     economics,
@@ -1262,6 +1328,8 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
     template,
     economics,
     rawPrice,
+    systemFee,
+    totalPrice,
     requiredPayment,
     downloadPrice,
     extraDownloadBytes,
@@ -1295,6 +1363,8 @@ async function runPrepareWebview(taskArg: string | undefined, sender: string | u
     gasBudget: plan.gasBudget.toString(),
     requiredPayment: plan.requiredPayment.toString(),
     rawPrice: plan.rawPrice.toString(),
+    systemFee: plan.systemFee.toString(),
+    totalPrice: plan.totalPrice.toString(),
     downloadPrice: plan.downloadPrice.toString(),
     extraDownloadBytes: plan.extraDownloadBytes.toString(),
     balance: plan.balance.toString(),
@@ -1329,13 +1399,30 @@ async function runCliCreate(taskArg?: string) {
   await requestFaucetIfEnabled(id.address);
 
   const plan = await prepareCreateTaskPlan(client, id.address, taskArg);
+  const quote = await fetchIotaUsdQuoteFromCoinMarketCap();
 
   console.log(
     `[client] template=${plan.template.templateId} template_task_type=${plan.template.taskType || "<empty>"} requested_type=${plan.prepared.taskType} treasury=${plan.treasuryId}`,
   );
   console.log(
-    `[client] price raw=${plan.rawPrice.toString()} download_price=${plan.downloadPrice.toString()} extra_download_bytes=${plan.extraDownloadBytes.toString()} min_payment=${plan.economics.minPayment.toString()} required=${plan.requiredPayment.toString()} retention_days=${plan.prepared.retentionDays} declared_download_bytes=${plan.prepared.declaredDownloadBytes.toString()}`,
+    `[client] price raw=${plan.rawPrice.toString()} system_fee=${plan.systemFee.toString()} total=${plan.totalPrice.toString()} download_price=${plan.downloadPrice.toString()} extra_download_bytes=${plan.extraDownloadBytes.toString()} min_payment=${plan.economics.minPayment.toString()} required=${plan.requiredPayment.toString()} retention_days=${plan.prepared.retentionDays} declared_download_bytes=${plan.prepared.declaredDownloadBytes.toString()}`,
   );
+  if (quote) {
+    const requiredIota = Number(plan.requiredPayment) / Number(IOTA_DECIMALS);
+    const rawIota = Number(plan.rawPrice) / Number(IOTA_DECIMALS);
+    const feeIota = Number(plan.systemFee) / Number(IOTA_DECIMALS);
+    const usdRaw = rawIota * quote.usdPrice;
+    const usdFee = feeIota * quote.usdPrice;
+    const usdRequired = requiredIota * quote.usdPrice;
+    console.log(
+      `[client] cmc_iota_usd=${quote.usdPrice.toFixed(8)} source=${quote.sourceUrl} fetched_at=${quote.fetchedAtIso}`,
+    );
+    console.log(
+      `[client] price_usd raw=${usdRaw.toFixed(6)} fee=${usdFee.toFixed(6)} required=${usdRequired.toFixed(6)}`,
+    );
+  } else {
+    console.log("[client] cmc_iota_usd unavailable (source fetch failed)");
+  }
 
   const needed = plan.requiredPayment + plan.gasBudget;
   console.log(`[client] balance=${plan.balance.toString()} need_at_least=${needed.toString()} (payment + gas_budget)`);

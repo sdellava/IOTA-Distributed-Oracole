@@ -1,8 +1,9 @@
-import type { NodeActivity, OracleEventItem } from '../types';
+import type { NodeActivity, OracleEventItem, OracleNetwork } from '../types';
 
 type Props = {
   nodes: NodeActivity[];
   events: OracleEventItem[];
+  activeNetwork: OracleNetwork;
 };
 
 function formatTs(value: string | null): string {
@@ -12,7 +13,15 @@ function formatTs(value: string | null): string {
   return new Date(n).toLocaleString();
 }
 
-export default function ActivityTable({ nodes, events }: Props) {
+function getTransactionExplorerUrl(digest: string, activeNetwork: OracleNetwork): string {
+  const url = new URL(`https://explorer.iota.org/txblock/${encodeURIComponent(digest)}`);
+  if (activeNetwork !== 'mainnet') {
+    url.searchParams.set('network', activeNetwork);
+  }
+  return url.toString();
+}
+
+export default function ActivityTable({ nodes, events, activeNetwork }: Props) {
   return (
     <div className="grid two-col">
       <section className="card">
@@ -78,7 +87,20 @@ export default function ActivityTable({ nodes, events }: Props) {
                     <td data-label="Module">{event.module}</td>
                     <td className="mono" data-label="Sender">{event.sender}</td>
                     <td className="mono" data-label="Type">{event.eventType}</td>
-                    <td className="mono" data-label="Digest">{event.txDigest}</td>
+                    <td className="mono" data-label="Digest">
+                      {event.txDigest ? (
+                        <a
+                          className="digest-link"
+                          href={getTransactionExplorerUrl(event.txDigest, activeNetwork)}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {event.txDigest}
+                        </a>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
                   </tr>
                 ))
               )}

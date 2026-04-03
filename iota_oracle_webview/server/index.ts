@@ -16,6 +16,7 @@ import {
   prepareOracleTaskForWallet,
   readExampleTask,
 } from "./services/oracleClient.js";
+import { getIotaMarketPrice } from "./services/marketData.js";
 import { getOracleStatus } from "./services/oracleStatus.js";
 
 const app = express();
@@ -175,6 +176,15 @@ app.get("/api/examples/:name", async (req, res) => {
     res.json(item);
   } catch (error) {
     sendApiError(res, 404, error);
+  }
+});
+
+app.get("/api/market/iota-price", async (_req, res) => {
+  try {
+    const price = await getIotaMarketPrice();
+    res.json(price);
+  } catch (error) {
+    sendApiError(res, 502, error);
   }
 });
 

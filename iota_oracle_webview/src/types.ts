@@ -97,6 +97,8 @@ export type PreparedWalletTaskResponse = {
   gasBudget: string;
   requiredPayment: string;
   rawPrice: string;
+  systemFee: string;
+  totalPrice: string;
   downloadPrice: string;
   extraDownloadBytes: string;
   balance: string;
@@ -125,6 +127,16 @@ export type PreparedWalletTaskResponse = {
   exitCode: number | null;
   startedAt: string;
   finishedAt: string;
+};
+
+export type IotaMarketPriceResponse = {
+  symbol: "IOTA";
+  quoteCurrency: "USD";
+  usdPrice: number;
+  sourceName: "CoinMarketCap";
+  sourceUrl: string;
+  fetchedAtIso: string;
+  cacheTtlMs: number;
 };
 
 export type NetworkConfigResponse = {

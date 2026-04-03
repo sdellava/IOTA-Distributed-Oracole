@@ -21,6 +21,7 @@ import {
 import { processAssigned } from "./handlers/assigned";
 import { processDataRequested } from "./handlers/dataRequested";
 import { processMediationStarted } from "./handlers/mediationStarted";
+import { startMonitorServer, type MonitorRuntimeState } from "./monitor";
 import type { NodeContext } from "./nodeContext";
 
 function buildContext(): NodeContext {
@@ -48,7 +49,7 @@ function buildContext(): NodeContext {
   };
 }
 
-async function registerNode(ctx: NodeContext): Promise<void> {
+async function registerNode(ctx: NodeContext): Promise<string | null> {
   try {
     const digest = await registerOracleNode({
       client: ctx.client,
@@ -57,9 +58,11 @@ async function registerNode(ctx: NodeContext): Promise<void> {
       oraclePubkeyRaw32: ctx.identity.publicKeyBytes,
     });
     if (digest) console.log(`[node ${ctx.nodeId}] registered tx=${digest}`);
+    return digest ?? null;
   } catch (e: any) {
     const msg = String(e?.message ?? e);
     console.warn(`[node ${ctx.nodeId}] register failed (continue): ${msg}`);
+    throw e;
   }
 }
 
@@ -157,18 +160,48 @@ function startListeners(ctx: NodeContext): void {
 
 async function main() {
   const ctx = buildContext();
+  const runtimeState: MonitorRuntimeState = {
+    booting: true,
+    listenersStarted: false,
+    shutdownRequested: false,
+    autoRegister: false,
+    autoUnregister: false,
+    registration: {
+      attempted: false,
+      succeeded: false,
+      txDigest: null,
+      lastError: null,
+    },
+  };
   logStartup(ctx);
+  const monitorServer = startMonitorServer(ctx, runtimeState);
 
   await requestFaucetIfEnabled(ctx.identity.address);
 
   const autoUnregister = optBool("AUTO_UNREGISTER", true);
   const autoRegister = optBool("AUTO_REGISTER", true);
+  runtimeState.autoRegister = autoRegister;
+  runtimeState.autoUnregister = autoUnregister;
 
   installShutdownHooks(ctx, autoUnregister);
 
-  if (autoRegister) await registerNode(ctx);
+  if (autoRegister) {
+    runtimeState.registration.attempted = true;
+    try {
+      runtimeState.registration.txDigest = await registerNode(ctx);
+      runtimeState.registration.succeeded = true;
+    } catch (e: any) {
+      runtimeState.registration.lastError = String(e?.message ?? e);
+    }
+  }
 
   startListeners(ctx);
+  runtimeState.listenersStarted = true;
+  runtimeState.booting = false;
+
+  monitorServer.on("close", () => {
+    runtimeState.shutdownRequested = true;
+  });
 }
 
 main().catch((e) => {
