@@ -311,6 +311,25 @@ echo "[info] json: ${FULL_JSON_PATH}"
 echo "[info] template_id: ${TEMPLATE_ID}"
 echo "[info] task_type: ${TASK_TYPE}"
 
+CAP_OWNER_ADDRESS="$(
+  iota client object "${CONTROLLER_CAP_ID}" --json \
+    | node -e '
+const fs = require("fs");
+const txt = fs.readFileSync(0, "utf8");
+const data = JSON.parse(txt);
+const owner = data?.owner?.AddressOwner ?? "";
+if (owner && /^0x[0-9a-fA-F]+$/.test(String(owner))) {
+  process.stdout.write(String(owner));
+}
+'
+)"
+
+if [[ -n "$CAP_OWNER_ADDRESS" && "$CAP_OWNER_ADDRESS" != "$CONTROLLER_ADDRESS_OR_ALIAS" ]]; then
+  echo "[warn] controller/address mismatch: provided=${CONTROLLER_ADDRESS_OR_ALIAS} cap_owner=${CAP_OWNER_ADDRESS}"
+  echo "[info] using ControllerCap owner address for signing."
+  CONTROLLER_ADDRESS_OR_ALIAS="$CAP_OWNER_ADDRESS"
+fi
+
 iota client switch --address "$CONTROLLER_ADDRESS_OR_ALIAS" >/dev/null
 
 iota client ptb \

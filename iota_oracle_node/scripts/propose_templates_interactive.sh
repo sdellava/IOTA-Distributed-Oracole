@@ -132,6 +132,24 @@ fi
 [[ -n "$CONTROLLER_CAP_ID" ]] || { echo "[error] missing ${NET_PREFIX}_CONTROLLER_CAP_ID (or CONTROLLER_CAP_ID) in env" >&2; exit 1; }
 [[ -n "$CONTROLLER_ADDRESS_OR_ALIAS" ]] || { echo "[error] missing controller address/alias in env and active-address unavailable" >&2; exit 1; }
 
+CAP_OWNER_ADDRESS="$(
+  iota client object "${CONTROLLER_CAP_ID}" --json \
+    | node -e '
+const fs = require("fs");
+const txt = fs.readFileSync(0, "utf8");
+const data = JSON.parse(txt);
+const owner = data?.owner?.AddressOwner ?? "";
+if (owner && /^0x[0-9a-fA-F]+$/.test(String(owner))) {
+  process.stdout.write(String(owner));
+}
+'
+)"
+if [[ -n "$CAP_OWNER_ADDRESS" && "$CAP_OWNER_ADDRESS" != "$CONTROLLER_ADDRESS_OR_ALIAS" ]]; then
+  echo "[warn] controller/address mismatch from env: provided=${CONTROLLER_ADDRESS_OR_ALIAS} cap_owner=${CAP_OWNER_ADDRESS}"
+  echo "[info] using ControllerCap owner address for signing."
+  CONTROLLER_ADDRESS_OR_ALIAS="$CAP_OWNER_ADDRESS"
+fi
+
 mapfile -t JSON_FILES < <(find "$EXAMPLES_DIR" -maxdepth 1 -type f -name '*.json' | sort)
 [[ ${#JSON_FILES[@]} -gt 0 ]] || { echo "[error] no json files found in $EXAMPLES_DIR" >&2; exit 1; }
 
