@@ -29,6 +29,7 @@ function readCommand(argv: string[]): string {
 
 function printHelp() {
   console.log(`Usage:
+  npm run cli -- show-node-address --node 1
   npm run cli -- accept-template-proposal --node 1 [--proposal-id 12] [--template-id 4]
   npm run cli -- set-accepted-templates --node 1 --templates 1,2,3,4,5,6,7`);
 }
@@ -129,12 +130,33 @@ async function cmdSetAcceptedTemplates(argv: string[]) {
   );
 }
 
+async function cmdShowNodeAddress(argv: string[]) {
+  const args = parseArgs(argv);
+  const nodeId = String(args.node ?? process.env.NODE_ID ?? "1").trim();
+  if (!/^[0-9]+$/.test(nodeId)) throw new Error(`--node must be numeric (got "${nodeId}")`);
+
+  const identity = loadOrCreateNodeIdentity(nodeId);
+  console.log(
+    JSON.stringify(
+      {
+        ok: true,
+        command: "show-node-address",
+        nodeId,
+        address: identity.address,
+      },
+      null,
+      2,
+    ),
+  );
+}
+
 async function main() {
   const command = readCommand(process.argv);
   if (command === "help" || command === "--help" || command === "-h") {
     printHelp();
     return;
   }
+  if (command === "show-node-address") return cmdShowNodeAddress(process.argv);
   if (command === "accept-template-proposal") return cmdAcceptTemplateProposal(process.argv);
   if (command === "set-accepted-templates") return cmdSetAcceptedTemplates(process.argv);
   throw new Error(`Unknown command: ${command}`);
