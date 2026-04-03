@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 
 import type { NodeContext } from "./nodeContext";
 
-const MONITOR_HOST = "127.0.0.1";
+const MONITOR_HOST = "0.0.0.0";
 const MONITOR_PORT = 9080;
 
 export type MonitorRuntimeState = {
