@@ -186,14 +186,25 @@ if [[ -z "$VALIDATOR_CAP_ID" ]]; then
   )
 
   if [[ ${#CANDIDATE_CAPS[@]} -eq 0 ]]; then
-    echo "[error] no UnverifiedValidatorOperationCap found for validator address ${VALIDATOR_ADDRESS}" >&2
-    echo "[hint] pass --validator-cap-id <id> explicitly if needed." >&2
-    exit 1
+    echo "[warn] no UnverifiedValidatorOperationCap found among owned objects; trying validator metadata..."
+    META_CAP_ID="$(
+      iota validator display-metadata "$VALIDATOR_ADDRESS" 2>/dev/null \
+        | sed -n 's/^[[:space:]]*operationCapId:[[:space:]]*"\(0x[0-9a-fA-F]\+\)".*/\1/p' \
+        | head -n1
+    )"
+    if [[ -n "$META_CAP_ID" ]]; then
+      VALIDATOR_CAP_ID="$META_CAP_ID"
+      echo "[info] found operationCapId from metadata: $VALIDATOR_CAP_ID"
+    else
+      echo "[error] unable to discover validator cap id for ${VALIDATOR_ADDRESS}" >&2
+      echo "[hint] pass --validator-cap-id <id> explicitly (for your validator it's likely operationCapId)." >&2
+      exit 1
+    fi
   fi
 
-  if [[ ${#CANDIDATE_CAPS[@]} -eq 1 ]]; then
+  if [[ -z "$VALIDATOR_CAP_ID" && ${#CANDIDATE_CAPS[@]} -eq 1 ]]; then
     VALIDATOR_CAP_ID="${CANDIDATE_CAPS[0]}"
-  else
+  elif [[ -z "$VALIDATOR_CAP_ID" ]]; then
     echo "Found multiple validator caps. Select one:"
     for i in "${!CANDIDATE_CAPS[@]}"; do
       printf "  %2d) %s\n" "$((i+1))" "${CANDIDATE_CAPS[$i]}"
