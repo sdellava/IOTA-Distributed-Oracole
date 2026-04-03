@@ -1,20 +1,14 @@
-
-cd ./oracle_tasks
-iota client switch --env devnet
-iota client switch --address OID_groundcontrol
-iota client publish --dry-run
-
 ╭───────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ Object Changes                                                                                            │
 ├───────────────────────────────────────────────────────────────────────────────────────────────────────────┤
 │ Created Objects:                                                                                          │
 │  ┌──                                                                                                      │
-│  │ ObjectID: 0x126cea3f9b4746dcf883f6216c11acfd6cb5d2534a06ecdfdf35668d128504ae                           │
+│  │ ObjectID: 0xc953939fbc7a6eef92f4be09dab7967e749070326b3c8d32c4832a0aeaa6660e                           │
 │  │ Sender: 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb                             │
 │  │ Owner: Account Address ( 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb )          │
 │  │ ObjectType: 0x2::package::UpgradeCap                                                                   │
-│  │ Version: 48622007                                                                                      │
-│  │ Digest: CQHEkA1ubccTwovXku2u5vZ3NuHq2eWdBe2xEMv4Ken6                                                   │
+│  │ Version: 53312062                                                                                      │
+│  │ Digest: BUSBTH3QP3cgKHZ41xkP44w9Yhz42YACXpxkXZ42eTLb                                                   │
 │  └──                                                                                                      │
 │ Mutated Objects:                                                                                          │
 │  ┌──                                                                                                      │
@@ -22,14 +16,23 @@ iota client publish --dry-run
 │  │ Sender: 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb                             │
 │  │ Owner: Account Address ( 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb )          │
 │  │ ObjectType: 0x2::coin::Coin<0x2::iota::IOTA>                                                           │
-│  │ Version: 48622007                                                                                      │
-│  │ Digest: 9RwFDfVJwUwLXkMcaNiUgL4uWrJuJqyGPughy3fSHwpG                                                   │
+│  │ Version: 53312062                                                                                      │
+│  │ Digest: HbpoevzH1yzWLgkLpkJKEo7xk7FoBfRsb4B6SV9tMjTR                                                   │
 │  └──                                                                                                      │
 │ Published Objects:                                                                                        │
 │  ┌──                                                                                                      │
-│  │ PackageID: 0x2cb81f3e2e41a51342015c4393d56315b342d593fbaa6cae61d997e1ceab7a33                          │
+│  │ PackageID: 0xfb47fb64a3098eb4467bb2311d59db7c700a594f9f0907f277ff23d816164b63                          │
 │  │ Version: 1                                                                                             │
-│  │ Digest: GeGJdXSzYhJv5ojnhxJdEDrKrBzjvUKjrQ97NvuP78eQ                                                   │
+│  │ Digest: 2j2xjwFfTktXwanxAv7Vr81PN3MxQfdvkonWd7E8Xu67                                                   │
 │  │ Modules: oracle_messages, oracle_task_config, oracle_task_consensus, oracle_task_runtime, oracle_tasks │
 │  └──                                                                                                      │
 ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Balance Changes                                                                                   │
+├───────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  ┌──                                                                                              │
+│  │ Owner: Account Address ( 0x68cb07526bbedbd239856856d210fc4de8c1f7256adbebfca6cde6d6abf2bdcb )  │
+│  │ CoinType: 0x2::iota::IOTA                                                                      │
+│  │ Amount: -90771200                                                                              │
+│  └──                                                                                              │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────╯

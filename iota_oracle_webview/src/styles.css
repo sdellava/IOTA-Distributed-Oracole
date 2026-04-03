@@ -151,6 +151,10 @@ textarea {
   backdrop-filter: blur(10px);
 }
 
+.card-spaced {
+  margin-top: 18px;
+}
+
 .grid {
   display: grid;
   gap: 18px;
@@ -1244,14 +1248,24 @@ th {
 /* Override dapp-kit wallet button to follow runtime theme vars. */
 .wallet-top-row > button:last-child,
 .wallet-top-row [class*="connect"] button,
+.wallet-top-row [class*="connect"] [role="button"],
+.wallet-top-row [class*="connect"] a,
 .wallet-top-row button[class*="iui"] {
   background: var(--theme-primary-bg, #121e3d) !important;
   color: var(--theme-primary-text, #d8e2f7) !important;
   border: 1px solid var(--theme-input-border, rgba(143, 162, 208, 0.18)) !important;
 }
 
+.wallet-top-row [class*="connect"] button *,
+.wallet-top-row [class*="connect"] [role="button"] *,
+.wallet-top-row [class*="connect"] a * {
+  color: var(--theme-primary-text, #d8e2f7) !important;
+}
+
 .wallet-top-row > button:last-child:hover,
 .wallet-top-row [class*="connect"] button:hover,
+.wallet-top-row [class*="connect"] [role="button"]:hover,
+.wallet-top-row [class*="connect"] a:hover,
 .wallet-top-row button[class*="iui"]:hover {
   background: var(--theme-input-bg, #0f1730) !important;
 }

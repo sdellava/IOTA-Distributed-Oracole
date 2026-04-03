@@ -32,8 +32,8 @@ or:
 npm run dev -- --node 1
 ```
 
-On non-dev networks (`IOTA_NETWORK` not `dev`/`devnet`/`local`/`localnet`), registration is forced to `systemState::register_oracle_node` and requires a `validator_cap_delegate::DelegatedControllerCap` + signer key.
-If `DELEGATED_CONTROLLER_CAP_ID` is not configured, node auto-detects an owned `validator_cap_delegate::DelegatedControllerCap` from the signer address.
+On non-dev networks (`IOTA_NETWORK` not `dev`/`devnet`/`local`/`localnet`), registration is forced to `systemState::register_oracle_node` and requires a `systemState::DelegatedControllerCap` + signer key.
+If `DELEGATED_CONTROLLER_CAP_ID` is not configured, node auto-detects an owned `systemState::DelegatedControllerCap` from the signer address.
 
 ## CLI commands
 

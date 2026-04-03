@@ -325,7 +325,7 @@ export default function App() {
             onTemplateIdChange={setSelectedTemplateId}
           />
 
-          <section className="card">
+          <section className="card card-spaced">
             <div className="section-title">Configured costs</div>
 
             <div className="table-wrap">

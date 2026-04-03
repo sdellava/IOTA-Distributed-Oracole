@@ -67,8 +67,7 @@ for (const p of pending) {
   const kind = String(p?.kind ?? "");
   const approvals = Number(p?.approvals ?? 0);
   const needed = Number(p?.approvalsNeeded ?? 0);
-  const dl = Number(p?.deadlineMs ?? 0);
-  process.stdout.write(`${id}\t${tid}\t${kind}\t${approvals}\t${needed}\t${dl}\n`);
+  process.stdout.write(`${id}\t${tid}\t${kind}\t${approvals}\t${needed}\n`);
 }
 ')
 
@@ -77,38 +76,16 @@ if [[ ${#PENDING[@]} -eq 0 ]]; then
   exit 0
 fi
 
-NOW_MS="$(node -e 'process.stdout.write(String(Date.now()))')"
-OPEN=()
-EXPIRED=0
-for line in "${PENDING[@]}"; do
-  dl_ms="$(printf "%s" "$line" | cut -f6)"
-  if [[ "$dl_ms" =~ ^[0-9]+$ ]] && (( dl_ms > NOW_MS )); then
-    OPEN+=("$line")
-  else
-    EXPIRED=$((EXPIRED + 1))
-  fi
-done
-
-if [[ ${#OPEN[@]} -eq 0 ]]; then
-  echo "[info] no open proposals to approve. Expired proposals found: ${EXPIRED}."
-  echo "[hint] run: bash ./scripts/close_expired_template_proposals.sh"
-  exit 0
-fi
-
-echo "Open proposals:"
+OPEN=("${PENDING[@]}")
+echo "Pending proposals:"
 for i in "${!OPEN[@]}"; do
   pid="$(printf "%s" "${OPEN[$i]}" | cut -f1)"
   tid="$(printf "%s" "${OPEN[$i]}" | cut -f2)"
   kind="$(printf "%s" "${OPEN[$i]}" | cut -f3)"
   approvals="$(printf "%s" "${OPEN[$i]}" | cut -f4)"
   needed="$(printf "%s" "${OPEN[$i]}" | cut -f5)"
-  dl_ms="$(printf "%s" "${OPEN[$i]}" | cut -f6)"
-  dl_iso="$(node -e "const n=Number(process.argv[1]||0); process.stdout.write(n>0?new Date(n).toISOString():'-')" "$dl_ms")"
-  printf "  %2d) proposal_id=%s kind=%s template_id=%s approvals=%s/%s deadline=%s\n" "$((i+1))" "$pid" "$kind" "$tid" "$approvals" "$needed" "$dl_iso"
+  printf "  %2d) proposal_id=%s kind=%s template_id=%s approvals=%s/%s\n" "$((i+1))" "$pid" "$kind" "$tid" "$approvals" "$needed"
 done
-if (( EXPIRED > 0 )); then
-  echo "[info] expired proposals hidden: ${EXPIRED} (cleanup with close_expired script)."
-fi
 
 echo ""
 echo "Select proposals to approve:"
@@ -144,9 +121,7 @@ for line in "${SELECTED_LINES[@]}"; do
   kind="$(printf "%s" "$line" | cut -f3)"
   approvals="$(printf "%s" "$line" | cut -f4)"
   needed="$(printf "%s" "$line" | cut -f5)"
-  deadline_ms="$(printf "%s" "$line" | cut -f6)"
-  deadline_iso="$(node -e "const n=Number(process.argv[1]||0); process.stdout.write(n>0?new Date(n).toISOString():'-')" "$deadline_ms")"
-  echo "  - proposal_id=${pid} kind=${kind} template_id=${tid} approvals=${approvals}/${needed} deadline=${deadline_iso}"
+  echo "  - proposal_id=${pid} kind=${kind} template_id=${tid} approvals=${approvals}/${needed}"
 done
 echo "  node: ${NODE_ID}"
 echo ""

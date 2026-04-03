@@ -2,14 +2,13 @@
 
 [move]
 version = 3
-manifest_digest = "BBE819914F6B37899CCBF7B6C2C3818DEDF111D8027D100447A23C052200CFCB"
-deps_digest = "397E6A9F7A624706DBDFEE056CE88391A15876868FD18A88504DA74EB458D697"
+manifest_digest = "A940C12D68314A55E6D671546783E27E90A35545E7211A991D7FA820ECE06160"
+deps_digest = "F9B494B64F0615AED0E98FC12A85B85ECD2BC5185C22D30E7F67786BB52E507C"
 dependencies = [
   { id = "Iota", name = "Iota" },
   { id = "IotaSystem", name = "IotaSystem" },
   { id = "MoveStdlib", name = "MoveStdlib" },
   { id = "Stardust", name = "Stardust" },
-  { id = "iota_oracle_validator_cap_delegate", name = "iota_oracle_validator_cap_delegate" },
 ]
 
 [[move.package]]
@@ -42,17 +41,6 @@ dependencies = [
   { id = "MoveStdlib", name = "MoveStdlib" },
 ]
 
-[[move.package]]
-id = "iota_oracle_validator_cap_delegate"
-source = { local = "../oracle_validator_cap_delegate_testnet" }
-
-dependencies = [
-  { id = "Iota", name = "Iota" },
-  { id = "IotaSystem", name = "IotaSystem" },
-  { id = "MoveStdlib", name = "MoveStdlib" },
-  { id = "Stardust", name = "Stardust" },
-]
-
 [move.toolchain-version]
 compiler-version = "1.18.1-rc"
 edition = "2024.beta"
@@ -62,18 +50,6 @@ flavor = "iota"
 
 [env.testnet]
 chain-id = "2304aa97"
-original-published-id = "0x8c8b08c639c2ad9a7789309837eacfb76efd04b3cd0643eb0030e3f3e93de9a9"
-latest-published-id = "0x8c8b08c639c2ad9a7789309837eacfb76efd04b3cd0643eb0030e3f3e93de9a9"
-published-version = "1"
-
-[env.mainnet]
-chain-id = "6364aad5"
-original-published-id = "0x6148d3674590634d59f8f972d71dd6148e014dd9c036c048d446853dd80049f4"
-latest-published-id = "0x6148d3674590634d59f8f972d71dd6148e014dd9c036c048d446853dd80049f4"
-published-version = "1"
-
-[env.devnet]
-chain-id = "daf90477"
-original-published-id = "0xbfc326f5d151be3c5f7544efd2a49b62c6276e25deefbe0e950e3f13e50d6434"
-latest-published-id = "0xbfc326f5d151be3c5f7544efd2a49b62c6276e25deefbe0e950e3f13e50d6434"
+original-published-id = "0x100a8ab1b8c3033a36ff505b898e577f61d180a5b63d0766ebe7a2d4aca70517"
+latest-published-id = "0x100a8ab1b8c3033a36ff505b898e577f61d180a5b63d0766ebe7a2d4aca70517"
 published-version = "1"

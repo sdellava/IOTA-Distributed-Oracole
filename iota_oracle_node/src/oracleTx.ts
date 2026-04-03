@@ -116,7 +116,7 @@ async function findOwnedDelegatedCapId(
       const objectId = String(item?.data?.objectId ?? item?.objectId ?? "").trim();
       const typ = String(item?.data?.type ?? item?.type ?? "").trim();
       if (!objectId || !typ) continue;
-      const isDelegatedCap = typ.includes("::validator_cap_delegate::DelegatedControllerCap");
+      const isDelegatedCap = typ.endsWith("::DelegatedControllerCap");
       const matchesExpected = !expectedType || typ.toLowerCase() === expectedType.toLowerCase();
       if (isDelegatedCap && matchesExpected) {
         found.push(objectId);
@@ -191,7 +191,7 @@ export async function registerOracleNode(opts: {
   if (mode === "prod") {
     const signer = oracleKeypair;
     const signerAddress = signer.getPublicKey().toIotaAddress().toLowerCase();
-    const delegatedCapTypeMarker = "::validator_cap_delegate::DelegatedControllerCap";
+    const delegatedCapTypeMarker = "::DelegatedControllerCap";
     const expectedCapType = await expectedDelegatedCapType(client, pkg);
 
     let delegatedCapId = optEnvByNetwork("DELEGATED_CONTROLLER_CAP_ID");
@@ -213,7 +213,12 @@ export async function registerOracleNode(opts: {
     }
     if (expectedCapType && capInfo.type.toLowerCase() !== expectedCapType.toLowerCase()) {
       throw new Error(
-        `DelegatedControllerCap type mismatch: got ${capInfo.type}, expected ${expectedCapType}. Mint/use a delegated cap from the validator_cap_delegate package linked to ORACLE_SYSTEM_PACKAGE_ID=${pkg}.`,
+        `DelegatedControllerCap type mismatch: got ${capInfo.type}, expected ${expectedCapType}. Mint/use a delegated cap from ORACLE_SYSTEM_PACKAGE_ID=${pkg}.`,
+      );
+    }
+    if (expectedCapType && !expectedCapType.endsWith(delegatedCapTypeMarker)) {
+      throw new Error(
+        `register_oracle_node expects ${expectedCapType}, which is not a DelegatedControllerCap type.`,
       );
     }
     if (capInfo.ownerAddress && capInfo.ownerAddress !== signerAddress) {
@@ -360,7 +365,6 @@ type PendingTemplateProposal = {
   kind: number;
   approvals: number;
   electorateSize: number;
-  deadlineMs: number;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -417,7 +421,6 @@ function parsePendingTemplateProposals(stateFields: Record<string, unknown>): Pe
       kind: toNumber(fields.proposal_kind) ?? 0,
       approvals: toNumber(fields.approvals) ?? 0,
       electorateSize: toNumber(fields.electorate_size) ?? 0,
-      deadlineMs: toNumber(fields.deadline_ms) ?? 0,
     });
   }
 
@@ -436,7 +439,6 @@ function parsePendingTemplateProposals(stateFields: Record<string, unknown>): Pe
         kind: toNumber(stateFields.template_proposal_kind) ?? 0,
         approvals: toNumber(stateFields.template_proposal_approvals) ?? 0,
         electorateSize: toNumber(stateFields.template_proposal_electorate_size) ?? 0,
-        deadlineMs: toNumber(stateFields.template_proposal_deadline_ms) ?? 0,
       });
     }
   }

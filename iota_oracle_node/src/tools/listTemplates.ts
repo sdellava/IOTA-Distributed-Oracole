@@ -19,8 +19,6 @@ type PendingProposal = {
   approvals: number;
   electorateSize: number;
   approvalsNeeded: number;
-  deadlineMs: number;
-  deadlineIso: string | null;
 };
 
 type OracleNetwork = "devnet" | "testnet" | "mainnet";
@@ -204,8 +202,6 @@ function getPendingProposals(fields: Record<string, unknown>): PendingProposal[]
     const approvals = toNum(p.approvals);
     const electorateSize = toNum(p.electorate_size);
     const approvalsNeeded = majorityThreshold(electorateSize);
-    const deadlineMs = toNum(p.deadline_ms);
-
     if (proposalId <= 0 || templateId <= 0) continue;
 
     out.push({
@@ -215,8 +211,6 @@ function getPendingProposals(fields: Record<string, unknown>): PendingProposal[]
       approvals,
       electorateSize,
       approvalsNeeded,
-      deadlineMs,
-      deadlineIso: deadlineMs > 0 ? new Date(deadlineMs).toISOString() : null,
     });
   }
 
@@ -233,7 +227,6 @@ function getPendingProposals(fields: Record<string, unknown>): PendingProposal[]
     const approvals = toNum(fields.template_proposal_approvals);
     const electorateSize = toNum(fields.template_proposal_electorate_size);
     const approvalsNeeded = majorityThreshold(electorateSize);
-    const deadlineMs = toNum(fields.template_proposal_deadline_ms);
     if (proposalId > 0 && templateId > 0) {
       out.push({
         proposalId,
@@ -242,8 +235,6 @@ function getPendingProposals(fields: Record<string, unknown>): PendingProposal[]
         approvals,
         electorateSize,
         approvalsNeeded,
-        deadlineMs,
-        deadlineIso: deadlineMs > 0 ? new Date(deadlineMs).toISOString() : null,
       });
     }
   }
@@ -308,7 +299,7 @@ async function main() {
     } else {
       console.log(`Pending proposals: ${pending.length}`);
       for (const p of pending) {
-        console.log(`- proposal_id=${p.proposalId} kind=${p.kind} template_id=${p.templateId} approvals=${p.approvals}/${p.approvalsNeeded} deadline=${p.deadlineIso ?? "-"}`);
+        console.log(`- proposal_id=${p.proposalId} kind=${p.kind} template_id=${p.templateId} approvals=${p.approvals}/${p.approvalsNeeded}`);
       }
     }
   }

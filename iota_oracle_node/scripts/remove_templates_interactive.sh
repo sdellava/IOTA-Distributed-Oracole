@@ -33,8 +33,6 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CLOSE_EXPIRED_SCRIPT="${SCRIPT_DIR}/close_expired_template_proposals.sh"
-[[ -f "$CLOSE_EXPIRED_SCRIPT" ]] || { echo "[error] missing script: $CLOSE_EXPIRED_SCRIPT" >&2; exit 1; }
 
 if [[ -z "$ENV_FILE" && -f "${PROJECT_DIR}/.env" ]]; then
   ENV_FILE="${PROJECT_DIR}/.env"
@@ -103,7 +101,7 @@ const data = JSON.parse(fs.readFileSync(0, "utf8"));
 const pending = Array.isArray(data?.pendingProposals) ? data.pendingProposals : [];
 pending.sort((a,b) => Number(a.proposalId)-Number(b.proposalId));
 for (const p of pending) {
-  process.stdout.write(`${Number(p.proposalId)}\t${Number(p.templateId)}\t${String(p.kind ?? "")}\t${Number(p.deadlineMs ?? 0)}\n`);
+  process.stdout.write(`${Number(p.proposalId)}\t${Number(p.templateId)}\t${String(p.kind ?? "")}\n`);
 }
 ')
 
@@ -139,10 +137,9 @@ for (const p of chunks.sort()) {
 
 echo "Choose mode:"
 echo "  1) propose template removals (independent from approved/pending state)"
-echo "  2) clean expired pending proposals"
 read -r -p "> " MODE
 MODE="$(echo "$MODE" | xargs)"
-[[ "$MODE" == "1" || "$MODE" == "2" ]] || { echo "[error] invalid mode" >&2; exit 1; }
+[[ "$MODE" == "1" ]] || { echo "[error] invalid mode" >&2; exit 1; }
 
 if [[ "$MODE" == "1" ]]; then
   mapfile -t CANDIDATES < <(
@@ -262,44 +259,3 @@ if [[ "$MODE" == "1" ]]; then
   echo "[ok] remove proposals submitted."
   exit 0
 fi
-
-if [[ ${#PENDING_LINES[@]} -eq 0 ]]; then
-  echo "[info] no pending proposals."
-  exit 0
-fi
-
-now_ms="$(node -e 'process.stdout.write(String(Date.now()))')"
-expired_count=0
-echo "Pending proposals:"
-for i in "${!PENDING_LINES[@]}"; do
-  pid="$(printf "%s" "${PENDING_LINES[$i]}" | cut -f1)"
-  tid="$(printf "%s" "${PENDING_LINES[$i]}" | cut -f2)"
-  kind="$(printf "%s" "${PENDING_LINES[$i]}" | cut -f3)"
-  deadline_ms="$(printf "%s" "${PENDING_LINES[$i]}" | cut -f4)"
-  status="open"
-  if [[ "$deadline_ms" =~ ^[0-9]+$ ]] && (( deadline_ms <= now_ms )); then
-    status="expired"
-    expired_count=$((expired_count + 1))
-  fi
-  printf "  - proposal_id=%s template_id=%s kind=%s status=%s\n" "$pid" "$tid" "$kind" "$status"
-done
-
-if (( expired_count == 0 )); then
-  echo ""
-  echo "[info] no expired pending proposals to remove yet."
-  exit 0
-fi
-
-echo ""
-echo "Expired pending proposals found: ${expired_count}"
-read -r -p "Run close_expired_task_template_proposal now? [y/N] " CONFIRM
-CONFIRM="$(echo "$CONFIRM" | tr '[:upper:]' '[:lower:]' | xargs)"
-if [[ "$CONFIRM" != "y" && "$CONFIRM" != "yes" ]]; then
-  echo "[info] cancelled."
-  exit 0
-fi
-
-bash "$CLOSE_EXPIRED_SCRIPT" ${ENV_FILE:+--env-file "$ENV_FILE"}
-
-echo ""
-echo "[ok] expired pending proposals cleanup executed."

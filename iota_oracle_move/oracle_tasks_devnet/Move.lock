@@ -51,18 +51,6 @@ dependencies = [
   { id = "IotaSystem", name = "IotaSystem" },
   { id = "MoveStdlib", name = "MoveStdlib" },
   { id = "Stardust", name = "Stardust" },
-  { id = "iota_oracle_validator_cap_delegate", name = "iota_oracle_validator_cap_delegate" },
-]
-
-[[move.package]]
-id = "iota_oracle_validator_cap_delegate"
-source = { local = "../oracle_validator_cap_delegate" }
-
-dependencies = [
-  { id = "Iota", name = "Iota" },
-  { id = "IotaSystem", name = "IotaSystem" },
-  { id = "MoveStdlib", name = "MoveStdlib" },
-  { id = "Stardust", name = "Stardust" },
 ]
 
 [move.toolchain-version]
@@ -72,20 +60,8 @@ flavor = "iota"
 
 [env]
 
-[env.testnet]
-chain-id = "2304aa97"
-original-published-id = "0xca69402ec6deba4e0b100cb8ec489bcbf8a08e121e2ffbe345fe84fd16f1dd94"
-latest-published-id = "0xca69402ec6deba4e0b100cb8ec489bcbf8a08e121e2ffbe345fe84fd16f1dd94"
-published-version = "1"
-
-[env.mainnet]
-chain-id = "6364aad5"
-original-published-id = "0x6148d3674590634d59f8f972d71dd6148e014dd9c036c048d446853dd80049f4"
-latest-published-id = "0x6148d3674590634d59f8f972d71dd6148e014dd9c036c048d446853dd80049f4"
-published-version = "1"
-
 [env.devnet]
 chain-id = "daf90477"
-original-published-id = "0x2cb81f3e2e41a51342015c4393d56315b342d593fbaa6cae61d997e1ceab7a33"
-latest-published-id = "0x2cb81f3e2e41a51342015c4393d56315b342d593fbaa6cae61d997e1ceab7a33"
+original-published-id = "0xfb47fb64a3098eb4467bb2311d59db7c700a594f9f0907f277ff23d816164b63"
+latest-published-id = "0xfb47fb64a3098eb4467bb2311d59db7c700a594f9f0907f277ff23d816164b63"
 published-version = "1"

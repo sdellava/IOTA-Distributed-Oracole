@@ -118,8 +118,7 @@ for (const p of pending) {
   const kind = String(p?.kind ?? "");
   const approvals = Number(p?.approvals ?? 0);
   const needed = Number(p?.approvalsNeeded ?? 0);
-  const dl = Number(p?.deadlineMs ?? 0);
-  process.stdout.write(`${id}\t${tid}\t${kind}\t${approvals}\t${needed}\t${dl}\n`);
+  process.stdout.write(`${id}\t${tid}\t${kind}\t${approvals}\t${needed}\n`);
 }
 ')
 
@@ -135,9 +134,7 @@ for i in "${!PENDING[@]}"; do
   kind="$(printf "%s" "${PENDING[$i]}" | cut -f3)"
   approvals="$(printf "%s" "${PENDING[$i]}" | cut -f4)"
   needed="$(printf "%s" "${PENDING[$i]}" | cut -f5)"
-  dl_ms="$(printf "%s" "${PENDING[$i]}" | cut -f6)"
-  dl_iso="$(node -e "const n=Number(process.argv[1]||0); process.stdout.write(n>0?new Date(n).toISOString():'-')" "$dl_ms")"
-  printf "  %2d) proposal_id=%s kind=%s template_id=%s approvals=%s/%s deadline=%s\n" "$((i+1))" "$pid" "$kind" "$tid" "$approvals" "$needed" "$dl_iso"
+  printf "  %2d) proposal_id=%s kind=%s template_id=%s approvals=%s/%s\n" "$((i+1))" "$pid" "$kind" "$tid" "$approvals" "$needed"
 done
 
 echo ""

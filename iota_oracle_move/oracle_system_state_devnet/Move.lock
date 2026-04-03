@@ -2,14 +2,13 @@
 
 [move]
 version = 3
-manifest_digest = "066F6FFA333583742B9E0941D4108B6A26DE2E23D230ABD7605146BC35E48C63"
-deps_digest = "397E6A9F7A624706DBDFEE056CE88391A15876868FD18A88504DA74EB458D697"
+manifest_digest = "A940C12D68314A55E6D671546783E27E90A35545E7211A991D7FA820ECE06160"
+deps_digest = "F9B494B64F0615AED0E98FC12A85B85ECD2BC5185C22D30E7F67786BB52E507C"
 dependencies = [
   { id = "Iota", name = "Iota" },
   { id = "IotaSystem", name = "IotaSystem" },
   { id = "MoveStdlib", name = "MoveStdlib" },
   { id = "Stardust", name = "Stardust" },
-  { id = "iota_oracle_validator_cap_delegate", name = "iota_oracle_validator_cap_delegate" },
 ]
 
 [[move.package]]
@@ -42,17 +41,6 @@ dependencies = [
   { id = "MoveStdlib", name = "MoveStdlib" },
 ]
 
-[[move.package]]
-id = "iota_oracle_validator_cap_delegate"
-source = { local = "../oracle_validator_cap_delegate_devnet" }
-
-dependencies = [
-  { id = "Iota", name = "Iota" },
-  { id = "IotaSystem", name = "IotaSystem" },
-  { id = "MoveStdlib", name = "MoveStdlib" },
-  { id = "Stardust", name = "Stardust" },
-]
-
 [move.toolchain-version]
 compiler-version = "1.18.1-rc"
 edition = "2024.beta"
@@ -60,20 +48,8 @@ flavor = "iota"
 
 [env]
 
-[env.testnet]
-chain-id = "2304aa97"
-original-published-id = "0x0000000000000000000000000000000000000000000000000000000000000000"
-latest-published-id = "0xf0ce329c6f779d060208e35ab49fe9edea2c4dd263d630f7c47486d685f725ae"
-published-version = "1"
-
-[env.mainnet]
-chain-id = "6364aad5"
-original-published-id = "0x6148d3674590634d59f8f972d71dd6148e014dd9c036c048d446853dd80049f4"
-latest-published-id = "0x6148d3674590634d59f8f972d71dd6148e014dd9c036c048d446853dd80049f4"
-published-version = "1"
-
 [env.devnet]
 chain-id = "daf90477"
-original-published-id = "0xcc7e6f781045c89820dd36b5d5510e35789ac631b6a3b7e88e3d8f0851bb5353"
-latest-published-id = "0xcc7e6f781045c89820dd36b5d5510e35789ac631b6a3b7e88e3d8f0851bb5353"
+original-published-id = "0x39d6a1a90a5d966ed6f14a4b534437fdcb8f632bbaa217c006774ce80c53b8f0"
+latest-published-id = "0x39d6a1a90a5d966ed6f14a4b534437fdcb8f632bbaa217c006774ce80c53b8f0"
 published-version = "1"

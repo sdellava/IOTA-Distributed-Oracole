@@ -26,8 +26,8 @@ npm run daemon -- --node 1
 ```
 
 Registration rule:
-- if `IOTA_NETWORK` is not `dev`/`devnet` (or `local`/`localnet`), node registration is forced to `systemState::register_oracle_node` and requires a `validator_cap_delegate::DelegatedControllerCap` + signer key.
-- in prod mode, if `DELEGATED_CONTROLLER_CAP_ID` is not set, node tries to auto-detect an owned `validator_cap_delegate::DelegatedControllerCap` from the signer address.
+- if `IOTA_NETWORK` is not `dev`/`devnet` (or `local`/`localnet`), node registration is forced to `systemState::register_oracle_node` and requires a `systemState::DelegatedControllerCap` + signer key.
+- in prod mode, if `DELEGATED_CONTROLLER_CAP_ID` is not set, node tries to auto-detect an owned `systemState::DelegatedControllerCap` from the signer address.
 
 ## CLI commands
 
