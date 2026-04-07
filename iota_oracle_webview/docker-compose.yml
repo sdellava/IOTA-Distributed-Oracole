@@ -25,7 +25,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik_proxy"
 
-      - "traefik.http.routers.oracle.rule=Host(`oracle.objectid.io`)"
+      - "traefik.http.routers.oracle.rule=Host(`${TRAEFIK_ORACLE_HOST}`)"
       - "traefik.http.routers.oracle.entrypoints=websecure"
       - "traefik.http.routers.oracle.tls=true"
       - "traefik.http.routers.oracle.tls.certresolver=myresolver"
