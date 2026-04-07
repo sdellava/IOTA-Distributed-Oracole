@@ -8,22 +8,19 @@ services:
     image: iota_oracle_webview:latest
     container_name: iota_oracle_webview
     build:
-      context: .
-      dockerfile: ./Dockerfile
+      context: ..
+      dockerfile: ./iota_oracle_webview/Dockerfile
     restart: unless-stopped
     env_file:
       - .env
     environment:
       PORT: "3000"
       NODE_ENV: "production"
-      ORACLE_CLIENT_DIR: "/iota_oracle_client"
-      ORACLE_EXAMPLES_DIR: "/app/examples"
+      ORACLE_CLIENT_DIR: "/workspace/iota_oracle_client"
+      ORACLE_EXAMPLES_DIR: "/workspace/iota_oracle_webview/examples"
     command: ["npm", "run", "start"]
     networks:
       - traefik_proxy
-    volumes:
-      - ../iota_oracle_client:/iota_oracle_client
-      - ./examples:/app/examples:ro
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik_proxy"

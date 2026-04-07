@@ -1,0 +1,10 @@
+.git
+.codex
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/.env
+**/storage
+**/runs
+**/*.log
