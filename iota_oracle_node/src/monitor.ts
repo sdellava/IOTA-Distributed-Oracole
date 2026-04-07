@@ -2,8 +2,8 @@ import { createServer, type Server } from "node:http";
 
 import type { NodeContext } from "./nodeContext";
 
-const MONITOR_HOST = "0.0.0.0";
-const MONITOR_PORT = 9080;
+const DEFAULT_MONITOR_HOST = "0.0.0.0";
+const DEFAULT_MONITOR_PORT = 9080;
 
 export type MonitorRuntimeState = {
   booting: boolean;
@@ -19,10 +19,27 @@ export type MonitorRuntimeState = {
   };
 };
 
+function resolveMonitorHost(): string {
+  return String(process.env.MONITOR_HOST ?? DEFAULT_MONITOR_HOST).trim() || DEFAULT_MONITOR_HOST;
+}
+
+function resolveMonitorPort(ctx: NodeContext): number {
+  const raw = String(process.env.MONITOR_PORT ?? "").trim();
+  if (raw) {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) return Math.floor(n);
+  }
+  const nodeIndex = Number(ctx.nodeId);
+  const offset = Number.isFinite(nodeIndex) && nodeIndex > 0 ? Math.floor(nodeIndex) - 1 : 0;
+  return DEFAULT_MONITOR_PORT + offset;
+}
+
 export function startMonitorServer(ctx: NodeContext, state: MonitorRuntimeState): Server {
+  const monitorHost = resolveMonitorHost();
+  const monitorPort = resolveMonitorPort(ctx);
   const server = createServer((req, res) => {
     void (async () => {
-      const url = new URL(req.url ?? "/", `http://${req.headers.host ?? `${MONITOR_HOST}:${MONITOR_PORT}`}`);
+      const url = new URL(req.url ?? "/", `http://${req.headers.host ?? `${monitorHost}:${monitorPort}`}`);
 
       if (req.method !== "GET") {
         res.writeHead(405, { "content-type": "application/json; charset=utf-8" });
@@ -54,8 +71,8 @@ export function startMonitorServer(ctx: NodeContext, state: MonitorRuntimeState)
           error: balance.error,
         },
         monitor: {
-          host: MONITOR_HOST,
-          port: MONITOR_PORT,
+          host: monitorHost,
+          port: monitorPort,
           path: url.pathname,
         },
       };
@@ -69,8 +86,8 @@ export function startMonitorServer(ctx: NodeContext, state: MonitorRuntimeState)
     });
   });
 
-  server.listen(MONITOR_PORT, MONITOR_HOST, () => {
-    console.log(`[node ${ctx.nodeId}] monitor listening on http://${MONITOR_HOST}:${MONITOR_PORT}`);
+  server.listen(monitorPort, monitorHost, () => {
+    console.log(`[node ${ctx.nodeId}] monitor listening on http://${monitorHost}:${monitorPort}`);
   });
 
   return server;

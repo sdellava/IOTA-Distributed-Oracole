@@ -89,6 +89,7 @@ export async function resolvePdfSource(payload: any): Promise<ResolvedPdfSource>
 
 export async function extractPdfText(pdfBytes: Buffer, pageRange: PdfPageRange | null): Promise<string> {
   const bin = process.env.LLM_PDFTOTEXT_BIN?.trim() || "pdftotext";
+  const timeoutMs = envInt("LLM_PDFTOTEXT_TIMEOUT_MS", 60_000);
   const dir = await mkdtemp(path.join(tmpdir(), "oracle-llm-pdf-"));
   const inputPath = path.join(dir, "input.pdf");
   const outputPath = path.join(dir, "output.txt");
@@ -102,7 +103,11 @@ export async function extractPdfText(pdfBytes: Buffer, pageRange: PdfPageRange |
     }
     args.push(inputPath, outputPath);
 
-    await execFile(bin, args, { maxBuffer: envInt("LLM_PDFTOTEXT_MAX_BUFFER_BYTES", 10_000_000) });
+    await execFile(bin, args, {
+      timeout: timeoutMs,
+      killSignal: "SIGKILL",
+      maxBuffer: envInt("LLM_PDFTOTEXT_MAX_BUFFER_BYTES", 10_000_000),
+    });
     const text = await readFile(outputPath, "utf8");
 
     return normalizeText(text, {

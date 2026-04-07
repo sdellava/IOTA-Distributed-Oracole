@@ -1,9 +1,12 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import dotenv from "dotenv";
 import { config, getRuntimeConfig } from "../config.js";
+
+const activeChildren = new Set<ChildProcess>();
+let cleanupHooksInstalled = false;
 
 function npmCommand(): string {
   return "npm";
@@ -60,6 +63,89 @@ async function spawnClientCommand(args: string[]) {
     cwd: config.oracleClientDir,
     shell: false,
     env,
+  });
+}
+
+function childTimeoutMs(): number {
+  const raw = process.env.WEBVIEW_CLIENT_TIMEOUT_MS?.trim();
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 120_000;
+}
+
+function terminateChild(child: ChildProcess, reason: string) {
+  if (child.killed || child.exitCode != null) return;
+
+  try {
+    if (process.platform === "win32") {
+      void spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
+        stdio: "ignore",
+        shell: false,
+      });
+      return;
+    }
+
+    child.kill("SIGTERM");
+    setTimeout(() => {
+      if (!child.killed && child.exitCode == null) {
+        child.kill("SIGKILL");
+      }
+    }, 5_000).unref();
+  } catch {
+    console.warn(`[iota_oracle_webview] failed to terminate child (${reason}) pid=${String(child.pid ?? "?")}`);
+  }
+}
+
+function installCleanupHooks() {
+  if (cleanupHooksInstalled) return;
+  cleanupHooksInstalled = true;
+
+  const cleanup = (reason: string) => {
+    for (const child of activeChildren) {
+      terminateChild(child, reason);
+    }
+  };
+
+  process.on("exit", () => cleanup("exit"));
+  process.on("SIGINT", () => cleanup("SIGINT"));
+  process.on("SIGTERM", () => cleanup("SIGTERM"));
+}
+
+async function runChildCommand(childPromise: Promise<ChildProcess>) {
+  installCleanupHooks();
+
+  const child = await childPromise;
+  activeChildren.add(child);
+
+  return new Promise<{
+    stdout: string;
+    stderr: string;
+    exitCode: number | null;
+  }>((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    const timeout = setTimeout(() => {
+      terminateChild(child, "timeout");
+    }, childTimeoutMs());
+
+    child.stdout?.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+
+    child.stderr?.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      activeChildren.delete(child);
+      reject(error);
+    });
+
+    child.on("close", (exitCode) => {
+      clearTimeout(timeout);
+      activeChildren.delete(child);
+      resolve({ stdout, stderr, exitCode });
+    });
   });
 }
 
@@ -191,53 +277,36 @@ export async function prepareOracleTaskForWallet(task: unknown, sender: string) 
   await fs.writeFile(taskFilePath, `${JSON.stringify(normalizedTask, null, 2)}\n`, "utf8");
 
   const startedAt = new Date().toISOString();
+  try {
+    const result = await runChildCommand(spawnPrepareWalletTask(taskFilePath, normalizedSender));
 
-  const result = await new Promise<{
-    stdout: string;
-    stderr: string;
-    exitCode: number | null;
-  }>(async (resolve, reject) => {
-    const child = await spawnPrepareWalletTask(taskFilePath, normalizedSender);
+    if (result.exitCode !== 0) {
+      throw new Error(
+        result.stderr.trim() ||
+          result.stdout.trim() ||
+          `Wallet preparation failed with exit code ${String(result.exitCode)}`,
+      );
+    }
 
-    let stdout = "";
-    let stderr = "";
+    const parsed = extractJsonFromStdout(result.stdout);
 
-    child.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
-    });
-
-    child.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-
-    child.on("error", (error) => reject(error));
-    child.on("close", (exitCode) => resolve({ stdout, stderr, exitCode }));
-  });
-
-  if (result.exitCode !== 0) {
-    throw new Error(
-      result.stderr.trim() ||
-        result.stdout.trim() ||
-        `Wallet preparation failed with exit code ${String(result.exitCode)}`,
-    );
+    return {
+      ...parsed,
+      cwd: config.oracleClientDir,
+      command:
+        process.platform === "win32"
+          ? `cmd.exe /d /s /c npm --silent run create -- prepare-webview ${taskFilePath} ${normalizedSender}`
+          : `${npmCommand()} --silent run create -- prepare-webview ${taskFilePath} ${normalizedSender}`,
+      taskFilePath,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.exitCode,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+    };
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
   }
-
-  const parsed = extractJsonFromStdout(result.stdout);
-
-  return {
-    ...parsed,
-    cwd: config.oracleClientDir,
-    command:
-      process.platform === "win32"
-        ? `cmd.exe /d /s /c npm --silent run create -- prepare-webview ${taskFilePath} ${normalizedSender}`
-        : `${npmCommand()} --silent run create -- prepare-webview ${taskFilePath} ${normalizedSender}`,
-    taskFilePath,
-    stdout: result.stdout,
-    stderr: result.stderr,
-    exitCode: result.exitCode,
-    startedAt,
-    finishedAt: new Date().toISOString(),
-  };
 }
 
 export async function executeOracleTask(task: unknown) {
@@ -253,41 +322,24 @@ export async function executeOracleTask(task: unknown) {
   await fs.writeFile(taskFilePath, `${JSON.stringify(normalizedTask, null, 2)}\n`, "utf8");
 
   const startedAt = new Date().toISOString();
+  try {
+    const result = await runChildCommand(spawnCreateTask(taskFilePath));
 
-  const result = await new Promise<{
-    stdout: string;
-    stderr: string;
-    exitCode: number | null;
-  }>(async (resolve, reject) => {
-    const child = await spawnCreateTask(taskFilePath);
-
-    let stdout = "";
-    let stderr = "";
-
-    child.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
-    });
-
-    child.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-
-    child.on("error", (error) => reject(error));
-    child.on("close", (exitCode) => resolve({ stdout, stderr, exitCode }));
-  });
-
-  return {
-    ok: result.exitCode === 0,
-    cwd: config.oracleClientDir,
-    command:
-      process.platform === "win32"
-        ? `cmd.exe /d /s /c npm --silent run create -- ${taskFilePath}`
-        : `${npmCommand()} --silent run create -- ${taskFilePath}`,
-    taskFilePath,
-    stdout: result.stdout,
-    stderr: result.stderr,
-    exitCode: result.exitCode,
-    startedAt,
-    finishedAt: new Date().toISOString(),
-  };
+    return {
+      ok: result.exitCode === 0,
+      cwd: config.oracleClientDir,
+      command:
+        process.platform === "win32"
+          ? `cmd.exe /d /s /c npm --silent run create -- ${taskFilePath}`
+          : `${npmCommand()} --silent run create -- ${taskFilePath}`,
+      taskFilePath,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.exitCode,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+    };
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
 }

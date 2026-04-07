@@ -77,7 +77,11 @@ async function unregisterNode(ctx: NodeContext): Promise<void> {
   }
 }
 
-function installShutdownHooks(ctx: NodeContext, autoUnregister: boolean): void {
+function installShutdownHooks(
+  ctx: NodeContext,
+  autoUnregister: boolean,
+  wasRegistered: () => boolean,
+): void {
   let shuttingDown = false;
 
   const shutdown = async (reason: string) => {
@@ -85,7 +89,7 @@ function installShutdownHooks(ctx: NodeContext, autoUnregister: boolean): void {
     shuttingDown = true;
 
     console.log(`[node ${ctx.nodeId}] shutdown (${reason})`);
-    if (autoUnregister) await unregisterNode(ctx);
+    if (autoUnregister && wasRegistered()) await unregisterNode(ctx);
     process.exit(0);
   };
 
@@ -185,7 +189,7 @@ async function main() {
   runtimeState.autoRegister = autoRegister;
   runtimeState.autoUnregister = autoUnregister;
 
-  installShutdownHooks(ctx, autoUnregister);
+  installShutdownHooks(ctx, autoUnregister, () => runtimeState.registration.succeeded);
 
   if (autoRegister) {
     runtimeState.registration.attempted = true;

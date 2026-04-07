@@ -28,6 +28,7 @@ module iota_oracle_system_state::systemState {
     const EProposalNotFound: u64 = 67;
     const EValidatorCapAlreadyRegistered: u64 = 68;
     const EDelegatedCapInUse: u64 = 69;
+    const EUnprunedEpoch: u64 = 18446744073709551615;
 
     const PROPOSAL_KIND_NONE: u8 = 0;
     const PROPOSAL_KIND_TEMPLATE_UPSERT: u8 = 1;
@@ -99,6 +100,7 @@ module iota_oracle_system_state::systemState {
         id: object::UID,
         network: vector<u8>,
         oracle_nodes: vector<OracleNode>,
+        last_committee_prune_epoch: u64,
 
         // config economica globale minima
         system_fee_bps: u64,
@@ -173,6 +175,7 @@ module iota_oracle_system_state::systemState {
             id: object::new(ctx),
             network: b"testnet",
             oracle_nodes: vector::empty(),
+            last_committee_prune_epoch: EUnprunedEpoch,
 
             system_fee_bps: 500,
             min_payment: 0,
@@ -528,6 +531,7 @@ module iota_oracle_system_state::systemState {
         // On devnet the controller cap is intentionally optional, so this
         // production path is disabled.
         assert!(!is_devnet(st), EInvalidNetworkMode);
+        prune_oracle_nodes_if_epoch_changed(st, system, ctx);
         let sender = iota::tx_context::sender(ctx);
         assert!(sender == oracle_addr, EOracleSenderMismatch);
         let validator = validator_address_from_delegated_cap(system, delegated_cap);
@@ -577,6 +581,7 @@ module iota_oracle_system_state::systemState {
     }
 
     public fun oracle_nodes(st: &State): &vector<OracleNode> { &st.oracle_nodes }
+    public fun last_committee_prune_epoch(st: &State): u64 { st.last_committee_prune_epoch }
     public fun oracle_node_addr(n: &OracleNode): address { n.addr }
     public fun oracle_node_accepts_template(n: &OracleNode, template_id: u64): bool {
         contains_u64(&n.accepted_template_ids, template_id)
@@ -711,6 +716,21 @@ module iota_oracle_system_state::systemState {
         (n / 2) + 1
     }
 
+    public fun prune_oracle_nodes_if_epoch_changed(
+        st: &mut State,
+        system: &mut IotaSystemState,
+        ctx: &TxContext,
+    ) {
+        if (is_devnet(st)) return;
+
+        let current_epoch = ctx.epoch();
+        if (st.last_committee_prune_epoch == current_epoch) return;
+
+        let committee = iota_system::iota_system::committee_validator_addresses(system);
+        prune_non_committee_oracle_nodes(st, &committee);
+        st.last_committee_prune_epoch = current_epoch;
+    }
+
     fun has_node_ref(st: &State, a: address): bool {
         let mut i = 0;
         while (i < vector::length(&st.oracle_nodes)) {
@@ -765,22 +785,38 @@ module iota_oracle_system_state::systemState {
         });
     }
 
+    fun prune_non_committee_oracle_nodes(st: &mut State, committee: &vector<address>) {
+        let mut i = 0;
+        while (i < vector::length(&st.oracle_nodes)) {
+            let validator = vector::borrow(&st.oracle_nodes, i).validator;
+            if (!contains_addr(committee, validator)) {
+                remove_node_at(st, i);
+            } else {
+                i = i + 1;
+            };
+        };
+    }
+
     fun remove_node(st: &mut State, a: address): bool {
         let mut i = 0;
         while (i < vector::length(&st.oracle_nodes)) {
             let n = vector::borrow(&st.oracle_nodes, i);
             if (n.addr == a) {
-                let last = vector::length(&st.oracle_nodes) - 1;
-                if (i != last) {
-                    let tmp = *vector::borrow(&st.oracle_nodes, last);
-                    *vector::borrow_mut(&mut st.oracle_nodes, i) = tmp;
-                };
-                vector::pop_back(&mut st.oracle_nodes);
+                remove_node_at(st, i);
                 return true
             };
             i = i + 1;
         };
         false
+    }
+
+    fun remove_node_at(st: &mut State, idx: u64) {
+        let last = vector::length(&st.oracle_nodes) - 1;
+        if (idx != last) {
+            let tmp = *vector::borrow(&st.oracle_nodes, last);
+            *vector::borrow_mut(&mut st.oracle_nodes, idx) = tmp;
+        };
+        vector::pop_back(&mut st.oracle_nodes);
     }
 
     fun contains_addr(v: &vector<address>, a: address): bool {

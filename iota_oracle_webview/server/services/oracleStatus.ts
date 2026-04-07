@@ -374,6 +374,7 @@ async function getObjectContent(client: IotaClient, objectId: string, warnings: 
 function parseRegisteredNodes(content: unknown): RegisteredOracleNode[] {
   const stateFields = extractFields(content) ?? {};
   const oracleNodes = Array.isArray(stateFields.oracle_nodes) ? stateFields.oracle_nodes : [];
+  const stateId = toObjectId(stateFields.id);
 
   const out: RegisteredOracleNode[] = [];
   for (const node of oracleNodes) {
@@ -382,13 +383,19 @@ function parseRegisteredNodes(content: unknown): RegisteredOracleNode[] {
     if (!address) continue;
     const pubkey = fields.pubkey ?? null;
     const acceptedTemplateIds = toStringArray(fields.accepted_template_ids ?? fields.supported_template_ids);
-    const delegatedControllerCapId = extractDelegatedControllerCapId(fields);
+    const delegatedControllerCapIdRaw = extractDelegatedControllerCapId(fields);
+    const delegatedControllerCapId =
+      delegatedControllerCapIdRaw && stateId && normalizeAddress(delegatedControllerCapIdRaw) === normalizeAddress(stateId)
+        ? null
+        : delegatedControllerCapIdRaw;
+    const validatorAddress = normalizeAddress(String(fields.validator ?? (fields.validator as any)?.value ?? ""));
     out.push({
       address,
       pubkey,
       pubkeyBytes: toByteArray(pubkey).length,
       acceptedTemplateIds,
       delegatedControllerCapId,
+      validatorId: validatorAddress || null,
     });
   }
 
@@ -561,7 +568,13 @@ async function enrichRegisteredNodesWithValidatorInfo(
 
   return Promise.all(
     nodes.map(async (node) => {
-      if (!node.delegatedControllerCapId) return node;
+      if (!node.delegatedControllerCapId) {
+        const validatorName = node.validatorId ? validatorNameById.get(node.validatorId) ?? null : null;
+        return {
+          ...node,
+          validatorName,
+        };
+      }
       const capContent = await getObjectContent(
         client,
         node.delegatedControllerCapId,
@@ -578,7 +591,7 @@ async function enrichRegisteredNodesWithValidatorInfo(
       }
       return {
         ...node,
-        validatorId,
+        validatorId: validatorId ?? node.validatorId ?? null,
         validatorName,
       };
     }),

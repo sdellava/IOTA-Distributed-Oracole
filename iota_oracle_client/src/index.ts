@@ -58,6 +58,7 @@ type PreparedTask = {
 type CreateTaskContext = {
   tasksPkg: string;
   stateId: string;
+  systemId: string;
   treasuryId: string;
   randomId: string;
   clockId: string;
@@ -518,17 +519,25 @@ async function assertCreateTaskCompatibility(client: AnyClient, tasksPkg: string
 
   const p0 = collectStructRefsFromNormalizedType(parameters[0]);
   const p1 = collectStructRefsFromNormalizedType(parameters[1]);
+  const p2 = collectStructRefsFromNormalizedType(parameters[2]);
   const expected = systemPkg.toLowerCase();
 
   const p0Ok = p0.some((s) => s.address === expected && s.module === "systemState" && s.name === "State");
-  const p1Ok = p1.some((s) => s.address === expected && s.module === "systemState" && s.name === "OracleTreasury");
+  const p1IsSystemState = p1.some((s) => s.module === "iota_system" && s.name === "IotaSystemState");
+  const p1IsTreasury = p1.some((s) => s.address === expected && s.module === "systemState" && s.name === "OracleTreasury");
+  const p2IsTreasury = p2.some((s) => s.address === expected && s.module === "systemState" && s.name === "OracleTreasury");
 
-  if (p0Ok && p1Ok) return;
+  // Current signature:
+  //   create_task(&mut State, &mut IotaSystemState, &mut OracleTreasury, ...)
+  // Older supported signature:
+  //   create_task(&State, &mut OracleTreasury, ...)
+  if ((p0Ok && p1IsSystemState && p2IsTreasury) || (p0Ok && p1IsTreasury)) return;
 
   const got0 = p0[0] ? `${p0[0].address}::${p0[0].module}::${p0[0].name}` : "<unknown>";
   const got1 = p1[0] ? `${p1[0].address}::${p1[0].module}::${p1[0].name}` : "<unknown>";
+  const got2 = p2[0] ? `${p2[0].address}::${p2[0].module}::${p2[0].name}` : "<unknown>";
   throw new Error(
-    `Package mismatch: ORACLE_TASKS_PACKAGE_ID=${tasksPkg} expects create_task params [${got0}, ${got1}], ` +
+    `Package mismatch: ORACLE_TASKS_PACKAGE_ID=${tasksPkg} expects create_task params [${got0}, ${got1}, ${got2}], ` +
       `but ORACLE_SYSTEM_PACKAGE_ID=${systemPkg}. Republish oracle_tasks against the current oracle_system_state package and update env.`,
   );
 }
@@ -1038,7 +1047,7 @@ function makeLegacyCreateTaskTx(ctx: CreateTaskContext): Transaction {
 }
 
 function makeTemplateCreateTaskTx(ctx: CreateTaskContext, variant: string): Transaction {
-  const { tasksPkg, stateId, treasuryId, randomId, clockId, prepared, requiredPayment, gasBudget } = ctx;
+  const { tasksPkg, stateId, systemId, treasuryId, randomId, clockId, prepared, requiredPayment, gasBudget } = ctx;
   const tx = new Transaction();
   tx.setGasBudget(Number(gasBudget));
   const [paymentCoin] = tx.splitCoins(tx.gas, [tx.pure(bcsU64(requiredPayment))]);
@@ -1052,6 +1061,7 @@ function makeTemplateCreateTaskTx(ctx: CreateTaskContext, variant: string): Tran
       ...common,
       arguments: [
         tx.object(stateId),
+        tx.object(systemId),
         tx.object(treasuryId),
         paymentCoin,
         tx.object(randomId),
@@ -1270,6 +1280,7 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
   const tasksPkg = getTasksPackageId();
   const systemPkg = getSystemPackageId();
   const stateId = getStateId();
+  const systemId = (process.env.IOTA_SYSTEM_STATE_ID ?? "0x5").trim() || "0x5";
   const treasuryId = getTreasuryId();
   const randomId = (process.env.IOTA_RANDOM_OBJECT_ID ?? "0x8").trim() || "0x8";
   const clockId = (process.env.IOTA_CLOCK_OBJECT_ID ?? process.env.IOTA_CLOCK_ID ?? "0x6").trim() || "0x6";
@@ -1308,6 +1319,7 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
   const builders = buildCreateTaskVariants({
     tasksPkg,
     stateId,
+    systemId,
     treasuryId,
     randomId,
     clockId,

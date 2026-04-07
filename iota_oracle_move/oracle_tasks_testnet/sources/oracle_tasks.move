@@ -5,6 +5,7 @@ module iota_oracle_tasks::oracle_tasks {
     use iota::event;
     use iota::iota::IOTA;
     use iota::random::{Random, RandomGenerator};
+    use iota_system::iota_system::IotaSystemState;
     use std::hash;
 
     use iota_oracle_system_state::systemState;
@@ -125,7 +126,8 @@ module iota_oracle_tasks::oracle_tasks {
 
     #[allow(lint(public_random))]
     public entry fun create_task(
-        st: &systemState::State,
+        st: &mut systemState::State,
+        system: &mut IotaSystemState,
         _treasury: &mut systemState::OracleTreasury,
         mut payment: Coin<IOTA>,
         rnd: &Random,
@@ -141,6 +143,7 @@ module iota_oracle_tasks::oracle_tasks {
         create_result_controller_cap: u8,
         ctx: &mut TxContext
     ) {
+        systemState::prune_oracle_nodes_if_epoch_changed(st, system, ctx);
         assert!(vector::length(&payload) > 0, EInvalidPayload);
         assert!(
             mediation_mode == MEDIATION_NONE || mediation_mode == MEDIATION_MEAN_U64,
