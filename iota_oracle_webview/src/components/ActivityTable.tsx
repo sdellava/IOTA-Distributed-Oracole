@@ -20,6 +20,14 @@ function formatValidatorLabel(name?: string | null, id?: string | null): string 
   return `${id.slice(0, 10)}...${id.slice(-8)}`;
 }
 
+function getValidatorExplorerUrl(validatorId: string, activeNetwork: OracleNetwork): string {
+  const url = new URL(`https://explorer.iota.org/validator/${encodeURIComponent(validatorId)}`);
+  if (activeNetwork !== 'mainnet') {
+    url.searchParams.set('network', activeNetwork);
+  }
+  return url.toString();
+}
+
 function getTransactionExplorerUrl(digest: string, activeNetwork: OracleNetwork): string {
   const url = new URL(`https://explorer.iota.org/txblock/${encodeURIComponent(digest)}`);
   if (activeNetwork !== 'mainnet') {
@@ -37,7 +45,7 @@ export default function ActivityTable({ nodes, events, activeNetwork }: Props) {
           <table className="responsive-table">
             <thead>
               <tr>
-                <th>Sender</th>
+                <th>Node address</th>
                 <th>Accepted tasks</th>
                 <th>Last seen</th>
                 <th>Status</th>
@@ -51,9 +59,23 @@ export default function ActivityTable({ nodes, events, activeNetwork }: Props) {
               ) : (
                 nodes.map((node) => (
                   <tr key={node.sender}>
-                    <td data-label="Sender">
+                    <td data-label="Node address">
                       <div className="mono">{node.sender}</div>
-                      <div>Delegating IOTA Validator: {formatValidatorLabel(node.validatorName, node.validatorId)}</div>
+                      <div>
+                        Delegated by:{' '}
+                        {node.validatorId ? (
+                          <a
+                            className="digest-link"
+                            href={getValidatorExplorerUrl(node.validatorId, activeNetwork)}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {formatValidatorLabel(node.validatorName, node.validatorId)}
+                          </a>
+                        ) : (
+                          formatValidatorLabel(node.validatorName, node.validatorId)
+                        )}
+                      </div>
                     </td>
                     <td data-label="Accepted tasks">
                       {node.acceptedTasks.length > 0 ? node.acceptedTasks.join(", ") : "-"}
