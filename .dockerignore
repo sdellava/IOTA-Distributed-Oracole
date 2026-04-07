@@ -5,6 +5,7 @@
 **/build
 **/coverage
 **/.env
+!iota_oracle_webview/.env
 **/storage
 **/runs
 **/*.log

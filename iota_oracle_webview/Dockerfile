@@ -6,6 +6,7 @@ RUN apk add --no-cache libc6-compat python3 make g++
 WORKDIR /workspace
 
 COPY iota_oracle_webview/package*.json ./iota_oracle_webview/
+COPY iota_oracle_webview/.env ./iota_oracle_webview/.env
 COPY iota_oracle_client/package*.json ./iota_oracle_client/
 
 RUN npm config set registry https://registry.npmjs.org/

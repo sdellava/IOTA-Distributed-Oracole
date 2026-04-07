@@ -20,8 +20,22 @@ function formatValidatorLabel(name?: string | null, id?: string | null): string 
   return `${id.slice(0, 10)}...${id.slice(-8)}`;
 }
 
+function shortAddress(value: string): string {
+  if (!value) return '-';
+  if (value.length <= 18) return value;
+  return `${value.slice(0, 10)}...${value.slice(-8)}`;
+}
+
 function getValidatorExplorerUrl(validatorId: string, activeNetwork: OracleNetwork): string {
   const url = new URL(`https://explorer.iota.org/validator/${encodeURIComponent(validatorId)}`);
+  if (activeNetwork !== 'mainnet') {
+    url.searchParams.set('network', activeNetwork);
+  }
+  return url.toString();
+}
+
+function getAddressExplorerUrl(address: string, activeNetwork: OracleNetwork): string {
+  const url = new URL(`https://explorer.iota.org/address/${encodeURIComponent(address)}`);
   if (activeNetwork !== 'mainnet') {
     url.searchParams.set('network', activeNetwork);
   }
@@ -45,7 +59,7 @@ export default function ActivityTable({ nodes, events, activeNetwork }: Props) {
           <table className="responsive-table">
             <thead>
               <tr>
-                <th>Node address</th>
+                <th>Validator node</th>
                 <th>Accepted tasks</th>
                 <th>Last seen</th>
                 <th>Status</th>
@@ -59,10 +73,8 @@ export default function ActivityTable({ nodes, events, activeNetwork }: Props) {
               ) : (
                 nodes.map((node) => (
                   <tr key={node.sender}>
-                    <td data-label="Node address">
-                      <div className="mono">{node.sender}</div>
+                    <td data-label="Validator node">
                       <div>
-                        Delegated by:{' '}
                         {node.validatorId ? (
                           <a
                             className="digest-link"
@@ -75,6 +87,16 @@ export default function ActivityTable({ nodes, events, activeNetwork }: Props) {
                         ) : (
                           formatValidatorLabel(node.validatorName, node.validatorId)
                         )}
+                      </div>
+                      <div>
+                        <a
+                          className="digest-link mono"
+                          href={getAddressExplorerUrl(node.sender, activeNetwork)}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {shortAddress(node.sender)}
+                        </a>
                       </div>
                     </td>
                     <td data-label="Accepted tasks">
