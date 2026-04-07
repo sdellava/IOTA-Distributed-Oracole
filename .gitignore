@@ -11,3 +11,4 @@ iota_oracle_webview/.env
 **/keys/**
 iota_oracle_move/oracle_validator_cap_delegate/Move.lock
 iota_oracle_node/0xed4526b7124624d08ca484af220aecfc45e37158734650a1d13f4b93dd1b0728.key
+.codex
