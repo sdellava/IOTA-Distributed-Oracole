@@ -132,6 +132,39 @@ async function findOwnedDelegatedCapId(
   return found[0]!;
 }
 
+function unwrapNormalizedType(type: any): any {
+  let current = type;
+  while (current && typeof current === "object") {
+    if (current.Reference) {
+      current = current.Reference;
+      continue;
+    }
+    if (current.MutableReference) {
+      current = current.MutableReference;
+      continue;
+    }
+    break;
+  }
+  return current;
+}
+
+function normalizedStructTag(type: any): string | null {
+  const unwrapped = unwrapNormalizedType(type);
+  const s = unwrapped?.Struct;
+  const address = String(s?.address ?? "").trim().toLowerCase();
+  const module = String(s?.module ?? "").trim();
+  const name = String(s?.name ?? "").trim();
+  if (!address || !module || !name) return null;
+  return `${address}::${module}::${name}`;
+}
+
+function typeTagPackageId(typeTag: string | null | undefined): string | null {
+  const raw = String(typeTag ?? "").trim();
+  if (!raw) return null;
+  const match = /^(0x[a-fA-F0-9]+)::/.exec(raw);
+  return match ? match[1]!.toLowerCase() : null;
+}
+
 async function expectedDelegatedCapType(client: IotaClient, systemPkg: string): Promise<string | null> {
   const getNormalizedMoveFunction = (client as any)?.getNormalizedMoveFunction;
   if (typeof getNormalizedMoveFunction !== "function") return null;
@@ -141,13 +174,7 @@ async function expectedDelegatedCapType(client: IotaClient, systemPkg: string): 
       module: "systemState",
       function: "register_oracle_node",
     });
-    const p2 = normalized?.parameters?.[2];
-    const s = p2?.Struct;
-    const address = String(s?.address ?? "").trim().toLowerCase();
-    const module = String(s?.module ?? "").trim();
-    const name = String(s?.name ?? "").trim();
-    if (!address || !module || !name) return null;
-    return `${address}::${module}::${name}`;
+    return normalizedStructTag(normalized?.parameters?.[2]);
   } catch {
     return null;
   }
@@ -170,6 +197,17 @@ async function readObjectTypeAndOwner(
   return { type, ownerAddress };
 }
 
+async function resolveSystemPackageId(client: IotaClient, stateId: string, configuredPkg: string): Promise<string> {
+  try {
+    const stateInfo = await readObjectTypeAndOwner(client, stateId);
+    const fromStateType = typeTagPackageId(stateInfo.type);
+    if (fromStateType) return fromStateType;
+  } catch {
+    // Fall back to the configured package if the state object cannot be inspected.
+  }
+  return configuredPkg.toLowerCase();
+}
+
 export async function registerOracleNode(opts: {
   client: IotaClient;
   oracleKeypair: Ed25519Keypair;
@@ -179,8 +217,8 @@ export async function registerOracleNode(opts: {
 }): Promise<string> {
   const { client, oracleKeypair, oracleAddr, oraclePubkeyRaw32 } = opts;
 
-  const pkg = getSystemPackageId();
   const stateId = getStateId();
+  const pkg = await resolveSystemPackageId(client, stateId, getSystemPackageId());
   const acceptedTemplateIds = (opts.acceptedTemplateIds?.length ? [...opts.acceptedTemplateIds] : parseAcceptedTemplateIds())
     .map((n) => Math.floor(Number(n)))
     .filter((n) => Number.isFinite(n) && n > 0);
@@ -192,7 +230,8 @@ export async function registerOracleNode(opts: {
     const signer = oracleKeypair;
     const signerAddress = signer.getPublicKey().toIotaAddress().toLowerCase();
     const delegatedCapTypeMarker = "::DelegatedControllerCap";
-    const expectedCapType = await expectedDelegatedCapType(client, pkg);
+    const expectedCapType =
+      (await expectedDelegatedCapType(client, pkg)) ?? `${pkg}::systemState::DelegatedControllerCap`;
 
     let delegatedCapId = optEnvByNetwork("DELEGATED_CONTROLLER_CAP_ID");
 
