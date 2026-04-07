@@ -44,11 +44,13 @@ textarea {
 .hero {
   display: grid;
   gap: 20px;
+  overflow: hidden;
 }
 
 .hero-top {
   display: flex;
   gap: 24px;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: flex-start;
 }
@@ -59,9 +61,9 @@ textarea {
 }
 
 .hero-side {
-  flex: 0 0 auto;
-  min-width: 320px;
-  max-width: 360px;
+  flex: 1 1 360px;
+  min-width: min(360px, 100%);
+  max-width: 100%;
   display: grid;
   gap: 16px;
   justify-items: end;
@@ -103,30 +105,43 @@ textarea {
   border-radius: 14px;
   background: var(--theme-input-bg, #0f1730);
   border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .wallet-toolbar {
   display: grid;
   gap: 8px;
   justify-items: end;
+  width: 100%;
+  min-width: 0;
 }
 
 .wallet-top-row {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 10px;
   width: 100%;
+  min-width: 0;
 }
 
 .wallet-toolbar > * {
   max-width: 100%;
 }
 
+.wallet-top-row > * {
+  min-width: 0;
+}
+
 .wallet-status {
   color: var(--theme-muted-text, #aab6d3);
   font-size: 13px;
   text-align: right;
+  width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .wallet-status-label {
@@ -615,6 +630,10 @@ th {
     gap: 14px;
   }
 
+  .wallet-top-row {
+    justify-content: flex-start;
+  }
+
   .hero h1 {
     font-size: 24px;
     line-height: 1.15;
@@ -774,6 +793,18 @@ th {
 
   .wallet-toolbar {
     gap: 6px;
+  }
+
+  .wallet-connect {
+    width: 100%;
+  }
+
+  .wallet-connect button,
+  .wallet-connect [role="button"],
+  .wallet-connect a,
+  .wallet-connect [class*="button"],
+  .wallet-connect [class*="trigger"] {
+    width: 100% !important;
   }
 
   .wallet-status,
@@ -998,6 +1029,7 @@ th {
 .page-switcher {
   position: relative;
   width: auto;
+  flex: 0 0 auto;
 }
 
 .page-switcher,
@@ -1043,6 +1075,19 @@ th {
 .network-select-wrap {
   position: relative;
   display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.wallet-connect {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 auto;
+}
+
+.wallet-connect > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .network-select {
@@ -1298,28 +1343,42 @@ th {
 }
 
 /* Override dapp-kit wallet button to follow runtime theme vars. */
-.wallet-top-row > button:last-child,
-.wallet-top-row [class*="connect"] button,
-.wallet-top-row [class*="connect"] [role="button"],
-.wallet-top-row [class*="connect"] a,
-.wallet-top-row button[class*="iui"] {
+.wallet-connect button,
+.wallet-connect [role="button"],
+.wallet-connect a,
+.wallet-connect [class*="button"],
+.wallet-connect [class*="trigger"] {
   background: var(--theme-primary-bg, #121e3d) !important;
   color: var(--theme-primary-text, #d8e2f7) !important;
   border: 1px solid var(--theme-input-border, rgba(143, 162, 208, 0.18)) !important;
+  border-radius: 999px !important;
+  min-height: 48px !important;
+  width: auto !important;
+  max-width: 100% !important;
+  white-space: nowrap;
+  box-shadow: none !important;
 }
 
-.wallet-top-row [class*="connect"] button *,
-.wallet-top-row [class*="connect"] [role="button"] *,
-.wallet-top-row [class*="connect"] a * {
+.wallet-connect button *,
+.wallet-connect [role="button"] *,
+.wallet-connect a *,
+.wallet-connect [class*="button"] *,
+.wallet-connect [class*="trigger"] * {
   color: var(--theme-primary-text, #d8e2f7) !important;
 }
 
-.wallet-top-row > button:last-child:hover,
-.wallet-top-row [class*="connect"] button:hover,
-.wallet-top-row [class*="connect"] [role="button"]:hover,
-.wallet-top-row [class*="connect"] a:hover,
-.wallet-top-row button[class*="iui"]:hover {
+.wallet-connect button:hover,
+.wallet-connect [role="button"]:hover,
+.wallet-connect a:hover,
+.wallet-connect [class*="button"]:hover,
+.wallet-connect [class*="trigger"]:hover {
   background: var(--theme-input-bg, #0f1730) !important;
+}
+
+.wallet-connect svg,
+.wallet-connect [class*="icon"] {
+  color: var(--theme-primary-text, #d8e2f7) !important;
+  fill: currentColor !important;
 }
 
 .event-raw summary {

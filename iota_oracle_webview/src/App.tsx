@@ -274,7 +274,9 @@ export default function App() {
                     ))}
                   </select>
                 </label>
-                <ConnectButton connectText="Connect Wallet" />
+                <div className="wallet-connect">
+                  <ConnectButton connectText="Connect Wallet" />
+                </div>
               </div>
               <div className="wallet-status">
                 {currentAccount ? (
