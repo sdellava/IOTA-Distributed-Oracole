@@ -13,6 +13,8 @@ export type NodeActivity = {
   acceptedTasks: string[];
   lastSeenMs: string | null;
   active: boolean;
+  validatorId?: string | null;
+  validatorName?: string | null;
 };
 
 export type RegisteredOracleNode = {
@@ -20,6 +22,9 @@ export type RegisteredOracleNode = {
   pubkey: unknown;
   pubkeyBytes: number;
   acceptedTemplateIds: string[];
+  delegatedControllerCapId?: string | null;
+  validatorId?: string | null;
+  validatorName?: string | null;
 };
 
 export type OracleTemplateCost = {

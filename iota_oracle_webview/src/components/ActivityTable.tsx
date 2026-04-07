@@ -13,6 +13,13 @@ function formatTs(value: string | null): string {
   return new Date(n).toLocaleString();
 }
 
+function formatValidatorLabel(name?: string | null, id?: string | null): string {
+  if (name) return name;
+  if (!id) return '-';
+  if (id.length <= 18) return id;
+  return `${id.slice(0, 10)}...${id.slice(-8)}`;
+}
+
 function getTransactionExplorerUrl(digest: string, activeNetwork: OracleNetwork): string {
   const url = new URL(`https://explorer.iota.org/txblock/${encodeURIComponent(digest)}`);
   if (activeNetwork !== 'mainnet') {
@@ -44,7 +51,10 @@ export default function ActivityTable({ nodes, events, activeNetwork }: Props) {
               ) : (
                 nodes.map((node) => (
                   <tr key={node.sender}>
-                    <td className="mono" data-label="Sender">{node.sender}</td>
+                    <td data-label="Sender">
+                      <div className="mono">{node.sender}</div>
+                      <div>Delegating IOTA Validator: {formatValidatorLabel(node.validatorName, node.validatorId)}</div>
+                    </td>
                     <td data-label="Accepted tasks">
                       {node.acceptedTasks.length > 0 ? node.acceptedTasks.join(", ") : "-"}
                     </td>

@@ -23,6 +23,11 @@ type RpcObjectResponse = {
   };
 };
 
+type RpcSystemStateSummary = {
+  activeValidators?: unknown[];
+  active_validators?: unknown[];
+};
+
 type RpcDynamicFieldPage = {
   data?: Array<{
     objectId?: string;
@@ -121,6 +126,205 @@ function toStringArray(value: unknown): string[] {
   return [];
 }
 
+function toObjectId(value: unknown): string | null {
+  if (typeof value === "string") {
+    const normalized = normalizeAddress(value);
+    return normalized || null;
+  }
+  const record = asRecord(value);
+  if (!record) return null;
+  for (const key of ["objectId", "object_id", "id", "value"]) {
+    const nested = record[key];
+    if (typeof nested === "string") {
+      const normalized = normalizeAddress(nested);
+      if (normalized) return normalized;
+    }
+  }
+  for (const key of ["fields", "content"]) {
+    const nested = record[key];
+    const nestedId = toObjectId(nested);
+    if (nestedId) return nestedId;
+  }
+  return null;
+}
+
+function extractByCandidateKeys(value: unknown, keys: string[]): string | null {
+  const record = extractFields(value) ?? asRecord(value);
+  if (!record) return null;
+  for (const key of keys) {
+    if (!(key in record)) continue;
+    const match = toObjectId(record[key]);
+    if (match) return match;
+  }
+  return null;
+}
+
+function extractNestedObjectIdByCandidatePaths(value: unknown, paths: string[][]): string | null {
+  const root = extractFields(value) ?? asRecord(value);
+  if (!root) return null;
+  for (const path of paths) {
+    let current: unknown = root;
+    let missing = false;
+    for (const segment of path) {
+      const record = extractFields(current) ?? asRecord(current);
+      if (!record || !(segment in record)) {
+        missing = true;
+        break;
+      }
+      current = record[segment];
+    }
+    if (missing) continue;
+    const match = toObjectId(current);
+    if (match) return match;
+  }
+  return null;
+}
+
+function extractTextByCandidateKeys(value: unknown, keys: string[]): string | null {
+  const record = extractFields(value) ?? asRecord(value);
+  if (!record) return null;
+  for (const key of keys) {
+    if (!(key in record)) continue;
+    const nested = record[key];
+    const direct = toText(nested).trim();
+    if (direct) return direct;
+
+    const nestedFields = extractFields(nested) ?? asRecord(nested);
+    if (!nestedFields) continue;
+    for (const nestedKey of ["name", "value", "contents", "bytes"]) {
+      if (!(nestedKey in nestedFields)) continue;
+      const text = toText(nestedFields[nestedKey]).trim();
+      if (text) return text;
+    }
+  }
+  return null;
+}
+
+function extractNestedTextByCandidatePaths(value: unknown, paths: string[][]): string | null {
+  const root = extractFields(value) ?? asRecord(value);
+  if (!root) return null;
+  for (const path of paths) {
+    let current: unknown = root;
+    let missing = false;
+    for (const segment of path) {
+      const record = extractFields(current) ?? asRecord(current);
+      if (!record || !(segment in record)) {
+        missing = true;
+        break;
+      }
+      current = record[segment];
+    }
+    if (missing) continue;
+    const direct = toText(current).trim();
+    if (direct) return direct;
+    const nested = extractFields(current) ?? asRecord(current);
+    if (!nested) continue;
+    for (const nestedKey of ["name", "value", "contents", "bytes"]) {
+      if (!(nestedKey in nested)) continue;
+      const text = toText(nested[nestedKey]).trim();
+      if (text) return text;
+    }
+  }
+  return null;
+}
+
+function extractDelegatedControllerCapId(value: unknown): string | null {
+  return (
+    extractByCandidateKeys(value, [
+      "delegated_controller_cap",
+      "delegated_controller_cap_id",
+      "delegated_cap",
+      "delegated_cap_id",
+      "controller_cap",
+      "controller_cap_id",
+      "delegation",
+      "delegation_cap",
+      "delegation_cap_id",
+    ]) ??
+    extractNestedObjectIdByCandidatePaths(value, [
+      ["delegation", "delegated_controller_cap"],
+      ["delegation", "delegated_controller_cap_id"],
+      ["delegation", "controller_cap"],
+      ["delegation", "controller_cap_id"],
+    ])
+  );
+}
+
+function extractValidatorIdFromDelegatedCap(value: unknown): string | null {
+  return (
+    extractByCandidateKeys(value, [
+      "validator_id",
+      "validatorId",
+      "validator_node_id",
+      "validatorNodeId",
+      "validator",
+      "validator_node",
+      "validator_address",
+      "validatorAddress",
+      "iota_address",
+      "iotaAddress",
+      "node_id",
+      "nodeId",
+      "staking_pool_id",
+      "stakingPoolId",
+    ]) ??
+    extractNestedObjectIdByCandidatePaths(value, [
+      ["validator", "id"],
+      ["validator", "address"],
+      ["validator_metadata", "iota_address"],
+      ["validator_metadata", "iotaAddress"],
+      ["metadata", "iota_address"],
+      ["metadata", "iotaAddress"],
+    ])
+  );
+}
+
+function extractValidatorSummaryId(value: unknown): string | null {
+  return (
+    extractByCandidateKeys(value, [
+      "validator_id",
+      "validatorId",
+      "validator_node_id",
+      "validatorNodeId",
+      "validator_address",
+      "validatorAddress",
+      "iota_address",
+      "iotaAddress",
+      "id",
+      "node_id",
+      "nodeId",
+      "staking_pool_id",
+      "stakingPoolId",
+      "operationCapId",
+      "operation_cap_id",
+    ]) ??
+    extractNestedObjectIdByCandidatePaths(value, [
+      ["validator", "id"],
+      ["validator", "address"],
+      ["metadata", "iota_address"],
+      ["metadata", "iotaAddress"],
+    ])
+  );
+}
+
+function extractValidatorSummaryName(value: unknown): string | null {
+  return (
+    extractTextByCandidateKeys(value, [
+      "name",
+      "validatorName",
+      "validator_name",
+      "metadata_name",
+      "metadataName",
+      "description",
+    ]) ??
+    extractNestedTextByCandidatePaths(value, [
+      ["metadata", "name"],
+      ["validator_metadata", "name"],
+      ["details", "name"],
+    ])
+  );
+}
+
 function normalizeEvent(moduleName: string, event: RpcEvent): OracleEventItem {
   return {
     txDigest: event.id?.txDigest ?? "",
@@ -157,6 +361,16 @@ async function getStateObjectContent(client: IotaClient, stateId: string, warnin
   }
 }
 
+async function getObjectContent(client: IotaClient, objectId: string, warnings: string[], label: string): Promise<unknown | null> {
+  try {
+    const response = (await client.getObject({ id: objectId, options: { showContent: true } })) as RpcObjectResponse;
+    return response?.data?.content ?? null;
+  } catch (error) {
+    warnings.push(`Unable to read ${label} ${objectId}: ${String(error)}`);
+    return null;
+  }
+}
+
 function parseRegisteredNodes(content: unknown): RegisteredOracleNode[] {
   const stateFields = extractFields(content) ?? {};
   const oracleNodes = Array.isArray(stateFields.oracle_nodes) ? stateFields.oracle_nodes : [];
@@ -168,11 +382,13 @@ function parseRegisteredNodes(content: unknown): RegisteredOracleNode[] {
     if (!address) continue;
     const pubkey = fields.pubkey ?? null;
     const acceptedTemplateIds = toStringArray(fields.accepted_template_ids ?? fields.supported_template_ids);
+    const delegatedControllerCapId = extractDelegatedControllerCapId(fields);
     out.push({
       address,
       pubkey,
       pubkeyBytes: toByteArray(pubkey).length,
       acceptedTemplateIds,
+      delegatedControllerCapId,
     });
   }
 
@@ -308,6 +524,67 @@ async function getConfiguredCosts(client: IotaClient, stateId: string, warnings:
   };
 }
 
+async function getActiveValidatorSummaries(client: IotaClient, warnings: string[]): Promise<unknown[]> {
+  try {
+    const state = (await (client as any).getLatestIotaSystemState()) as RpcSystemStateSummary | null;
+    if (!state) return [];
+    if (Array.isArray(state.activeValidators)) return state.activeValidators;
+    if (Array.isArray(state.active_validators)) return state.active_validators;
+  } catch (error) {
+    warnings.push(`Unable to read validator summaries: ${String(error)}`);
+  }
+  return [];
+}
+
+async function enrichRegisteredNodesWithValidatorInfo(
+  client: IotaClient,
+  nodes: RegisteredOracleNode[],
+  warnings: string[],
+): Promise<RegisteredOracleNode[]> {
+  if (nodes.length === 0) return nodes;
+
+  const validatorSummaries = await getActiveValidatorSummaries(client, warnings);
+  const validatorNameById = new Map<string, string>();
+  for (const summary of validatorSummaries) {
+    const validatorId = extractValidatorSummaryId(summary);
+    const validatorName = extractValidatorSummaryName(summary);
+    if (!validatorId) {
+      warnings.push(`Unable to extract validator id from active validator summary: ${JSON.stringify(summary)}`);
+      continue;
+    }
+    if (!validatorName) {
+      warnings.push(`Unable to extract validator name from active validator summary ${validatorId}.`);
+      continue;
+    }
+    validatorNameById.set(validatorId, validatorName);
+  }
+
+  return Promise.all(
+    nodes.map(async (node) => {
+      if (!node.delegatedControllerCapId) return node;
+      const capContent = await getObjectContent(
+        client,
+        node.delegatedControllerCapId,
+        warnings,
+        "delegated controller cap",
+      );
+      const validatorId = capContent ? extractValidatorIdFromDelegatedCap(capContent) : null;
+      if (node.delegatedControllerCapId && capContent && !validatorId) {
+        warnings.push(`Unable to extract validator id from delegated controller cap ${node.delegatedControllerCapId} for oracle node ${node.address}.`);
+      }
+      const validatorName = validatorId ? validatorNameById.get(validatorId) ?? null : null;
+      if (validatorId && !validatorName) {
+        warnings.push(`Validator summary not found for validator id ${validatorId} linked to oracle node ${node.address}.`);
+      }
+      return {
+        ...node,
+        validatorId,
+        validatorName,
+      };
+    }),
+  );
+}
+
 export async function getOracleStatus(): Promise<OracleStatusResponse> {
   const runtime = getRuntimeConfig();
   const client = new IotaClient({ url: runtime.rpcUrl });
@@ -325,9 +602,19 @@ export async function getOracleStatus(): Promise<OracleStatusResponse> {
   }
 
   const content = runtime.oracleStateId ? await getStateObjectContent(client, runtime.oracleStateId, warnings) : null;
-  const registeredNodes = content ? parseRegisteredNodes(content) : [];
+  const registeredNodesRaw = content ? parseRegisteredNodes(content) : [];
+  const registeredNodes = await enrichRegisteredNodesWithValidatorInfo(client, registeredNodesRaw, warnings);
   const registeredNodeAddresses = registeredNodes.map((node) => node.address);
   const configuredCosts = await getConfiguredCosts(client, runtime.oracleStateId, warnings);
+  const validatorInfoByAddress = new Map(
+    registeredNodes.map((node) => [
+      normalizeAddress(node.address),
+      {
+        validatorId: node.validatorId ?? null,
+        validatorName: node.validatorName ?? null,
+      },
+    ]),
+  );
   const acceptedTasksByAddress = new Map(
     registeredNodes.map((node) => [
       normalizeAddress(node.address),
@@ -358,10 +645,14 @@ export async function getOracleStatus(): Promise<OracleStatusResponse> {
       pubkey: null,
       pubkeyBytes: 0,
       acceptedTemplateIds: acceptedTasksByAddress.get(normalizeAddress(address))?.map((item) => item.split(" - ")[0]) ?? [],
+      validatorId: validatorInfoByAddress.get(normalizeAddress(address))?.validatorId ?? null,
+      validatorName: validatorInfoByAddress.get(normalizeAddress(address))?.validatorName ?? null,
     })),
   ).map((node) => ({
     ...node,
     acceptedTasks: acceptedTasksByAddress.get(normalizeAddress(node.sender)) ?? [],
+    validatorId: validatorInfoByAddress.get(normalizeAddress(node.sender))?.validatorId ?? null,
+    validatorName: validatorInfoByAddress.get(normalizeAddress(node.sender))?.validatorName ?? null,
   }));
   const activeNodes = nodeActivity.filter((node) => node.active).length;
   const knownNodes = effectiveRegisteredNodes.length > 0 ? effectiveRegisteredNodes.length : null;

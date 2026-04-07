@@ -343,6 +343,7 @@ export default function App() {
           <TaskRunner
             examples={examples}
             activeNetwork={activeNetwork}
+            registeredNodes={status?.registeredNodes ?? []}
             onExecuted={() => void refreshStatus()}
             onTemplateIdChange={setSelectedTemplateId}
           />

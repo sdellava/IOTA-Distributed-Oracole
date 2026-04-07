@@ -3,11 +3,12 @@ import { useCurrentAccount, useSignAndExecuteTransaction } from '@iota/dapp-kit'
 import { IotaClient, type ChainType } from '@iota/iota-sdk/client';
 import { Transaction } from '@iota/iota-sdk/transactions';
 import { fetchExampleContent, prepareWalletTask } from '../lib/api';
-import type { ExampleTask, OracleNetwork, PreparedWalletTaskResponse } from '../types';
+import type { ExampleTask, OracleNetwork, PreparedWalletTaskResponse, RegisteredOracleNode } from '../types';
 
 type Props = {
   examples: ExampleTask[];
   activeNetwork: OracleNetwork;
+  registeredNodes: RegisteredOracleNode[];
   onExecuted: () => void;
   onTemplateIdChange?: (templateId: string) => void;
 };
@@ -166,6 +167,12 @@ function shortAddress(address: string, start = 10, end = 8): string {
   if (!address) return '-';
   if (address.length <= start + end + 3) return address;
   return `${address.slice(0, start)}...${address.slice(-end)}`;
+}
+
+function formatValidatorLabel(name?: string | null, id?: string | null): string | null {
+  if (name) return name;
+  if (!id) return null;
+  return shortAddress(id, 10, 8);
 }
 
 function extractArrayLike(value: any): any[] {
@@ -480,7 +487,7 @@ function statusBadgeClass(kind: TaskStatusKind): string {
   return 'badge-muted';
 }
 
-export default function TaskRunner({ examples, activeNetwork, onExecuted, onTemplateIdChange }: Props) {
+export default function TaskRunner({ examples, activeNetwork, registeredNodes, onExecuted, onTemplateIdChange }: Props) {
   const [taskText, setTaskText] = useState<string>('{}');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<WalletRunResult | null>(null);
@@ -494,6 +501,15 @@ export default function TaskRunner({ examples, activeNetwork, onExecuted, onTemp
       devnet: new IotaClient({ url: DEVNET_RPC_URL }),
     }),
     [],
+  );
+  const validatorNameByAddress = useMemo(
+    () =>
+      new Map(
+        registeredNodes
+          .map((node) => [normalizeAddress(node.address), formatValidatorLabel(node.validatorName, node.validatorId)] as const)
+          .filter(([address, validatorName]) => Boolean(address && validatorName)),
+      ),
+    [registeredNodes],
   );
   const executionClientRef = useRef(iotaClients.devnet);
   const pollTokenRef = useRef(0);
@@ -848,7 +864,12 @@ export default function TaskRunner({ examples, activeNetwork, onExecuted, onTemp
                   <tbody>
                     {result.live.noCommitMessages.map((item, index) => (
                       <tr key={`${item.txDigest || item.sender}-${index}`}>
-                        <td data-label="Node" className="mono">{shortAddress(item.sender, 10, 8)}</td>
+                        <td data-label="Node">
+                          <div className="mono">{shortAddress(item.sender, 10, 8)}</div>
+                          {validatorNameByAddress.get(normalizeAddress(item.sender)) ? (
+                            <div>{validatorNameByAddress.get(normalizeAddress(item.sender))}</div>
+                          ) : null}
+                        </td>
                         <td data-label="Round">{item.round}</td>
                         <td data-label="Reason">{item.reasonCode || '-'}</td>
                         <td data-label="Message">{item.message || '-'}</td>
