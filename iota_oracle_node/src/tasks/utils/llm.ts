@@ -59,6 +59,18 @@ function extractMessageContent(payload: any): string {
   throw new Error(`Unsupported LLM response payload: ${JSON.stringify(payload).slice(0, 400)}`);
 }
 
+function parseLlmPlugins(): any[] | undefined {
+  const raw = process.env.LLM_PLUGINS_JSON?.trim();
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) return undefined;
+    return parsed;
+  } catch (e: any) {
+    throw new Error(`Invalid LLM_PLUGINS_JSON: ${String(e?.message ?? e)}`);
+  }
+}
+
 function parseExtraHeaders(): Record<string, string> {
   const raw = process.env.LLM_API_HEADERS_JSON?.trim();
   if (!raw) return {};
@@ -163,7 +175,8 @@ export async function callLlmJson(opts: {
   };
   if (apiKey && !headers.Authorization) headers.Authorization = `Bearer ${apiKey}`;
 
-  const body = {
+  const plugins = parseLlmPlugins();
+  const body: Record<string, any> = {
     model,
     temperature,
     top_p: topP,
@@ -181,6 +194,7 @@ export async function callLlmJson(opts: {
       },
     ],
   };
+  if (plugins) body.plugins = plugins;
 
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), timeoutMs);
@@ -243,38 +257,43 @@ export async function callLlmJsonWithPdfUrl(opts: {
   };
   if (apiKey && !headers.Authorization) headers.Authorization = `Bearer ${apiKey}`;
 
-  const buildBody = (fileInput: { type: "input_file"; file_url?: string; file_data?: string; filename?: string }) => ({
-    model,
-    temperature,
-    top_p: topP,
-    max_output_tokens: maxTokens,
-    input: [
-      {
-        role: "system",
-        content: [
-          {
-            type: "input_text",
-            text: "You are a deterministic extraction engine. Return only valid JSON with no markdown or prose.",
-          },
-        ],
+  const plugins = parseLlmPlugins();
+  const buildBody = (fileInput: { type: "input_file"; file_url?: string; file_data?: string; filename?: string }) => {
+    const b: Record<string, any> = {
+      model,
+      temperature,
+      top_p: topP,
+      max_output_tokens: maxTokens,
+      input: [
+        {
+          role: "system",
+          content: [
+            {
+              type: "input_text",
+              text: "You are a deterministic extraction engine. Return only valid JSON with no markdown or prose.",
+            },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            fileInput,
+            { type: "input_text", text: opts.prompt },
+          ],
+        },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "oracle_output",
+          schema: opts.schema,
+          strict: true,
+        },
       },
-      {
-        role: "user",
-        content: [
-          fileInput,
-          { type: "input_text", text: opts.prompt },
-        ],
-      },
-    ],
-    text: {
-      format: {
-        type: "json_schema",
-        name: "oracle_output",
-        schema: opts.schema,
-        strict: true,
-      },
-    },
-  });
+    };
+    if (plugins) b.plugins = plugins;
+    return b;
+  };
 
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), timeoutMs);
