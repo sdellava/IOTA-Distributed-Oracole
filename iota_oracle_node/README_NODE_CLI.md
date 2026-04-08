@@ -29,6 +29,32 @@ Registration rule:
 - if `IOTA_NETWORK` is not `dev`/`devnet` (or `local`/`localnet`), node registration is forced to `systemState::register_oracle_node` and requires a `systemState::DelegatedControllerCap` + signer key.
 - in prod mode, if `DELEGATED_CONTROLLER_CAP_ID` is not set, node tries to auto-detect an owned `systemState::DelegatedControllerCap` from the signer address.
 
+## Test current node configuration
+
+Before starting the daemon, you can run a local execution test against the current `.env`:
+
+```bash
+npm run test -- examples/task_weather.json --node 1
+```
+
+For storage configuration checks:
+
+```bash
+npm run test -- examples/task_STORAGE.json --node 1
+```
+
+The test runner validates:
+
+- node key loading and derived address
+- accepted templates from `ORACLE_ACCEPTED_TEMPLATE_IDS`
+- task handler availability
+- template policy constraints
+- local execution of the task handler
+- `STORAGE`-specific IPFS env visibility
+
+It is a configuration and local execution check only.
+It does not submit transactions and does not verify registration, assignment, quorum, publish, or final on-chain state.
+
 ## CLI commands
 
 ### Accept template proposal

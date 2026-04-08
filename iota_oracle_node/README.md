@@ -32,6 +32,32 @@ or:
 npm run dev -- --node 1
 ```
 
+## Test node configuration
+
+Use the local test runner to validate the current node configuration against a sample task without starting the daemon:
+
+```bash
+npm run test -- examples/task_weather.json --node 1
+```
+
+You can also pass:
+
+```bash
+npm run test -- examples/task_STORAGE.json --node 1
+npm run test -- "{\"type\":\"WEATHER\",...}" --node 1
+```
+
+The test output shows:
+- resolved node id and node address
+- accepted template ids loaded from `ORACLE_ACCEPTED_TEMPLATE_IDS`
+- handler availability for the task type
+- template policy validation result
+- execution result preview and consensus numeric hints
+- task-specific env checks such as `IPFS_ENABLED` and `IPFS_API_URL` for `STORAGE`
+
+This is useful to verify node setup before running the daemon or troubleshooting a bad `.env`.
+It validates local execution only: it does not prove on-chain assignment, registration, quorum, publish, or finalization.
+
 The node now exposes a local monitoring endpoint by default:
 
 ```bash
