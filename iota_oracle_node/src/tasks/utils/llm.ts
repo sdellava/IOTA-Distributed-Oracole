@@ -59,6 +59,21 @@ function extractMessageContent(payload: any): string {
   throw new Error(`Unsupported LLM response payload: ${JSON.stringify(payload).slice(0, 400)}`);
 }
 
+function parseFallbackModels(): string[] {
+  const raw = process.env.LLM_MODEL_FALLBACK?.trim();
+  if (!raw) return [];
+  return raw.split(",").map((m) => m.trim()).filter(Boolean);
+}
+
+function isRetryableError(status: number, body?: string): boolean {
+  if (status === 429 || status === 500 || status === 502 || status === 503) return true;
+  if (status === 400 && body) {
+    const t = body.toLowerCase();
+    if (t.includes("provider returned error") || t.includes("not a valid model")) return true;
+  }
+  return false;
+}
+
 function parseLlmPlugins(): any[] | undefined {
   const raw = process.env.LLM_PLUGINS_JSON?.trim();
   if (!raw) return undefined;
@@ -159,10 +174,11 @@ export async function callLlmJson(opts: {
   normalization?: any;
 }): Promise<{ parsed: any; canonical: string; rawText: string }> {
   const apiUrl = process.env.LLM_API_URL?.trim();
-  const model = String(opts.llmConfig?.model ?? process.env.LLM_MODEL ?? "").trim();
+  const primaryModel = String(opts.llmConfig?.model ?? process.env.LLM_MODEL ?? "").trim();
   if (!apiUrl) throw new Error("Missing env LLM_API_URL");
-  if (!model) throw new Error("Missing env LLM_MODEL");
+  if (!primaryModel) throw new Error("Missing env LLM_MODEL");
 
+  const models = [primaryModel, ...parseFallbackModels()];
   const timeoutMs = Math.max(1_000, Number(opts.llmConfig?.timeoutMs ?? opts.llmConfig?.timeout_ms ?? envInt("LLM_TIMEOUT_MS", 60_000)));
   const temperature = Number(opts.llmConfig?.temperature ?? 0);
   const topP = Number(opts.llmConfig?.top_p ?? opts.llmConfig?.topP ?? 1);
@@ -176,55 +192,74 @@ export async function callLlmJson(opts: {
   if (apiKey && !headers.Authorization) headers.Authorization = `Bearer ${apiKey}`;
 
   const plugins = parseLlmPlugins();
-  const body: Record<string, any> = {
-    model,
-    temperature,
-    top_p: topP,
-    max_tokens: maxTokens,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content:
-          "You are a deterministic extraction engine. Return only valid JSON. Do not add markdown, commentary, or code fences.",
-      },
-      {
-        role: "user",
-        content: opts.prompt,
-      },
-    ],
-  };
-  if (plugins) body.plugins = plugins;
 
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), timeoutMs);
+  let lastError: Error | undefined;
+  for (let i = 0; i < models.length; i++) {
+    const model = models[i];
+    const isLastModel = i === models.length - 1;
+    const body: Record<string, any> = {
+      model,
+      temperature,
+      top_p: topP,
+      max_tokens: maxTokens,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a deterministic extraction engine. Return only valid JSON. Do not add markdown, commentary, or code fences.",
+        },
+        {
+          role: "user",
+          content: opts.prompt,
+        },
+      ],
+    };
+    if (plugins) body.plugins = plugins;
 
-  try {
-    const res = await fetch(apiUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal: ac.signal,
-    });
-    const raw = await res.text();
-    if (!res.ok) throw new Error(`LLM HTTP ${res.status} ${res.statusText}: ${raw.slice(0, 600)}`);
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), timeoutMs);
 
-    let parsedPayload: any;
     try {
-      parsedPayload = JSON.parse(raw);
-    } catch (e: any) {
-      throw new Error(`Invalid LLM JSON envelope: ${String(e?.message ?? e)} | ${raw.slice(0, 400)}`);
-    }
+      const res = await fetch(apiUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal: ac.signal,
+      });
+      const raw = await res.text();
+      if (!res.ok) {
+        if (isRetryableError(res.status, raw) && !isLastModel) {
+          lastError = new Error(`LLM HTTP ${res.status} ${res.statusText}: ${raw.slice(0, 600)}`);
+          continue;
+        }
+        throw new Error(`LLM HTTP ${res.status} ${res.statusText}: ${raw.slice(0, 600)}`);
+      }
 
-    const rawText = extractMessageContent(parsedPayload);
-    const parsed = parseJsonObject(rawText);
-    validateAgainstSchema(parsed, opts.schema);
-    const normalizedInput = JSON.parse(JSON.stringify(parsed));
-    const canonical = normalizeJsonCanonical(normalizedInput, opts.normalization ?? { canonical: true, dropNulls: false, sortArrays: true });
-    return { parsed, canonical, rawText };
-  } finally {
-    clearTimeout(t);
+      let parsedPayload: any;
+      try {
+        parsedPayload = JSON.parse(raw);
+      } catch (e: any) {
+        throw new Error(`Invalid LLM JSON envelope: ${String(e?.message ?? e)} | ${raw.slice(0, 400)}`);
+      }
+
+      const rawText = extractMessageContent(parsedPayload);
+      const parsed = parseJsonObject(rawText);
+      validateAgainstSchema(parsed, opts.schema);
+      const normalizedInput = JSON.parse(JSON.stringify(parsed));
+      const canonical = normalizeJsonCanonical(normalizedInput, opts.normalization ?? { canonical: true, dropNulls: false, sortArrays: true });
+      return { parsed, canonical, rawText };
+    } catch (e: any) {
+      lastError = e;
+      if (!isLastModel && (e?.name === "AbortError" || isRetryableError(Number(String(e?.message).match(/HTTP (\d+)/)?.[1]), String(e?.message)))) {
+        continue;
+      }
+      throw e;
+    } finally {
+      clearTimeout(t);
+    }
   }
+  throw lastError ?? new Error("LLM call failed: no models available");
 }
 
 export async function callLlmJsonWithPdfUrl(opts: {
@@ -236,10 +271,11 @@ export async function callLlmJsonWithPdfUrl(opts: {
   normalization?: any;
 }): Promise<{ parsed: any; canonical: string; rawText: string }> {
   const apiUrl = resolveResponsesApiUrl();
-  const model = String(opts.llmConfig?.model ?? process.env.LLM_MODEL ?? "").trim();
+  const primaryModel = String(opts.llmConfig?.model ?? process.env.LLM_MODEL ?? "").trim();
   if (!apiUrl) throw new Error("Missing env LLM_RESPONSES_API_URL/LLM_API_URL");
-  if (!model) throw new Error("Missing env LLM_MODEL");
+  if (!primaryModel) throw new Error("Missing env LLM_MODEL");
 
+  const models = [primaryModel, ...parseFallbackModels()];
   const timeoutMs = Math.max(
     1_000,
     Number(opts.llmConfig?.timeoutMs ?? opts.llmConfig?.timeout_ms ?? envInt("LLM_TIMEOUT_MS", 60_000)),
@@ -258,7 +294,7 @@ export async function callLlmJsonWithPdfUrl(opts: {
   if (apiKey && !headers.Authorization) headers.Authorization = `Bearer ${apiKey}`;
 
   const plugins = parseLlmPlugins();
-  const buildBody = (fileInput: { type: "input_file"; file_url?: string; file_data?: string; filename?: string }) => {
+  const buildBody = (model: string, fileInput: { type: "input_file"; file_url?: string; file_data?: string; filename?: string }) => {
     const b: Record<string, any> = {
       model,
       temperature,
@@ -295,58 +331,76 @@ export async function callLlmJsonWithPdfUrl(opts: {
     return b;
   };
 
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), timeoutMs);
+  let lastError: Error | undefined;
+  for (let i = 0; i < models.length; i++) {
+    const model = models[i];
+    const isLastModel = i === models.length - 1;
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), timeoutMs);
 
-  try {
-    let res = await fetch(apiUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(buildBody({ type: "input_file", file_url: opts.pdfUrl })),
-      signal: ac.signal,
-    });
-    let raw = await res.text();
-
-    // Fallback: if OpenAI can't download the URL, send the same PDF as base64 file_data.
-    if (!res.ok && shouldRetryWithFileData(res.status, raw)) {
-      const fetched = await httpFetchBytes({
-        url: opts.pdfUrl,
-        method: "GET",
-        timeoutMs: Math.max(timeoutMs, 30_000),
-        maxBytes: 25_000_000,
-      });
-
-      res = await fetch(apiUrl, {
+    try {
+      let res = await fetch(apiUrl, {
         method: "POST",
         headers,
-        body: JSON.stringify(
-          buildBody({
-            type: "input_file",
-            filename: filenameFromUrl(opts.pdfUrl),
-            file_data: `data:application/pdf;base64,${fetched.bytes.toString("base64")}`,
-          }),
-        ),
+        body: JSON.stringify(buildBody(model, { type: "input_file", file_url: opts.pdfUrl })),
         signal: ac.signal,
       });
-      raw = await res.text();
-    }
+      let raw = await res.text();
 
-    if (!res.ok) throw new Error(`LLM HTTP ${res.status} ${res.statusText}: ${raw.slice(0, 600)}`);
+      // Fallback: if the provider can't download the URL, send the PDF as base64 file_data.
+      if (!res.ok && shouldRetryWithFileData(res.status, raw)) {
+        const fetched = await httpFetchBytes({
+          url: opts.pdfUrl,
+          method: "GET",
+          timeoutMs: Math.max(timeoutMs, 30_000),
+          maxBytes: 25_000_000,
+        });
 
-    let parsedPayload: any;
-    try {
-      parsedPayload = JSON.parse(raw);
+        res = await fetch(apiUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(
+            buildBody(model, {
+              type: "input_file",
+              filename: filenameFromUrl(opts.pdfUrl),
+              file_data: `data:application/pdf;base64,${fetched.bytes.toString("base64")}`,
+            }),
+          ),
+          signal: ac.signal,
+        });
+        raw = await res.text();
+      }
+
+      if (!res.ok) {
+        if (isRetryableError(res.status, raw) && !isLastModel) {
+          lastError = new Error(`LLM HTTP ${res.status} ${res.statusText}: ${raw.slice(0, 600)}`);
+          continue;
+        }
+        throw new Error(`LLM HTTP ${res.status} ${res.statusText}: ${raw.slice(0, 600)}`);
+      }
+
+      let parsedPayload: any;
+      try {
+        parsedPayload = JSON.parse(raw);
+      } catch (e: any) {
+        throw new Error(`Invalid LLM JSON envelope: ${String(e?.message ?? e)} | ${raw.slice(0, 400)}`);
+      }
+
+      const rawText = extractResponseApiText(parsedPayload);
+      const parsed = parseJsonObject(rawText);
+      validateAgainstSchema(parsed, opts.schema);
+      const normalizedInput = JSON.parse(JSON.stringify(parsed));
+      const canonical = normalizeJsonCanonical(normalizedInput, opts.normalization ?? { canonical: true, dropNulls: false, sortArrays: true });
+      return { parsed, canonical, rawText };
     } catch (e: any) {
-      throw new Error(`Invalid LLM JSON envelope: ${String(e?.message ?? e)} | ${raw.slice(0, 400)}`);
+      lastError = e;
+      if (!isLastModel && (e?.name === "AbortError" || isRetryableError(Number(String(e?.message).match(/HTTP (\d+)/)?.[1]), String(e?.message)))) {
+        continue;
+      }
+      throw e;
+    } finally {
+      clearTimeout(t);
     }
-
-    const rawText = extractResponseApiText(parsedPayload);
-    const parsed = parseJsonObject(rawText);
-    validateAgainstSchema(parsed, opts.schema);
-    const normalizedInput = JSON.parse(JSON.stringify(parsed));
-    const canonical = normalizeJsonCanonical(normalizedInput, opts.normalization ?? { canonical: true, dropNulls: false, sortArrays: true });
-    return { parsed, canonical, rawText };
-  } finally {
-    clearTimeout(t);
   }
+  throw lastError ?? new Error("LLM call failed: no models available");
 }
