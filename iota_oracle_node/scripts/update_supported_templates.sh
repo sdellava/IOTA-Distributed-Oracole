@@ -196,11 +196,11 @@ else
     if [[ -n "$CURRENT_LIST" ]] && echo ",${CURRENT_LIST}," | grep -q ",${tid},"; then
       mark="x"
     fi
-    printf "  %2d) [%s] id=%s type=%s source=%s\n" "$((i+1))" "$mark" "$tid" "${typ:--}" "$src"
+    printf "  [%s] id=%s type=%s source=%s\n" "$mark" "$tid" "${typ:--}" "$src"
   done
   echo ""
   echo "Select templates that this node should support:"
-  echo "  - one/more indexes (example: 1 3 5 or 1,3,5)"
+  echo "  - one/more selections (example: 1 3 5 or 1,3,5)"
   echo "  - or 'all'"
   read -r -p "> " SEL
   SEL="$(echo "$SEL" | tr '[:upper:]' '[:lower:]' | xargs)"
@@ -251,4 +251,3 @@ if [[ -n "$ENV_FILE" ]]; then
 fi
 
 echo "[ok] node ${NODE_ID} accepted templates updated."
-
