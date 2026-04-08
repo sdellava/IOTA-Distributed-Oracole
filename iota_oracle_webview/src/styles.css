@@ -386,6 +386,26 @@ table {
   table-layout: fixed;
 }
 
+.responsive-table th:nth-child(1),
+.responsive-table td:nth-child(1) {
+  width: 36%;
+}
+
+.responsive-table th:nth-child(2),
+.responsive-table td:nth-child(2) {
+  width: 25%;
+}
+
+.responsive-table th:nth-child(3),
+.responsive-table td:nth-child(3) {
+  width: 23%;
+}
+
+.responsive-table th:nth-child(4),
+.responsive-table td:nth-child(4) {
+  width: 16%;
+}
+
 .table-wrap-wide table {
   min-width: 980px;
 }
