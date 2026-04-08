@@ -356,7 +356,8 @@ pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
-  background: var(--theme-primary-bg, #121e3d);
+  background: var(--theme-card-bg, #ffffff);
+  color: var(--theme-text, #171d26);
   border-radius: 12px;
   border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
 }
@@ -424,7 +425,7 @@ th {
   margin-top: 10px;
   border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
   border-radius: 14px;
-  background: var(--theme-primary-bg, #121e3d);
+  background: var(--theme-card-bg, #ffffff);
   padding: 16px;
 }
 
@@ -440,6 +441,7 @@ th {
 .template-details-title {
   font-weight: 700;
   font-size: 16px;
+  color: var(--theme-text, #171d26);
 }
 
 .template-status-badge {
@@ -453,15 +455,15 @@ th {
 }
 
 .template-status-badge.is-on {
-  background: rgba(16, 185, 129, 0.16);
-  color: #86efac;
-  border: 1px solid rgba(16, 185, 129, 0.28);
+  background: #e7f8ee;
+  color: #0f8a50;
+  border: 1px solid #8bd3af;
 }
 
 .template-status-badge.is-off {
-  background: rgba(148, 163, 184, 0.12);
-  color: #cbd5e1;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: #eef3fb;
+  color: #5f6f86;
+  border: 1px solid #c7d3e5;
 }
 
 .template-details-grid {
@@ -476,7 +478,7 @@ th {
   border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
   border-radius: 10px;
   padding: 10px 12px;
-  background: var(--theme-input-bg, #0f1730);
+  background: #ffffff;
 }
 
 .template-kv-label {
@@ -487,6 +489,7 @@ th {
 }
 
 .template-kv-value {
+  color: var(--theme-text, #171d26);
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -514,15 +517,15 @@ th {
 }
 
 .badge-ok {
-  background: rgba(16, 185, 129, 0.16);
-  color: #86efac;
-  border: 1px solid rgba(16, 185, 129, 0.28);
+  background: #e7f8ee;
+  color: #0f8a50;
+  border: 1px solid #8bd3af;
 }
 
 .badge-muted {
-  background: rgba(148, 163, 184, 0.12);
-  color: #cbd5e1;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: #eef3fb;
+  color: #5f6f86;
+  border: 1px solid #c7d3e5;
 }
 
 .mono {
@@ -532,7 +535,7 @@ th {
 }
 
 .digest-link {
-  color: var(--theme-primary-text, #d8e2f7);
+  color: var(--theme-text, #171d26);
   text-decoration: underline;
   text-underline-offset: 0.15em;
 }

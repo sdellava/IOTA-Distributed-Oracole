@@ -878,7 +878,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
                                 <div className="mono" title={item.sender || undefined}>
                                   {shortAddress(item.sender, 10, 8)}
                                 </div>
-                                <div className="summary-hint mono" title={item.sender || undefined}>
+                                <div className="mono full-value" title={item.sender || undefined}>
                                   oracle: {item.sender || '-'}
                                 </div>
                                 {nodeMeta?.validatorLabel ? (
