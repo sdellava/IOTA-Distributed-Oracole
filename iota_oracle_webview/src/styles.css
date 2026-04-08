@@ -1229,6 +1229,10 @@ th {
   height: 52px;
   padding: 0 16px;
   font-size: 16px;
+  background: var(--theme-card-bg, #ffffff);
+  color: var(--theme-text, #171d26);
+  border: 1px solid var(--theme-input-border, rgba(192, 203, 217, 0.95));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .validate-task-button {
@@ -1236,6 +1240,16 @@ th {
   min-width: 140px;
   height: 52px;
   padding: 0 20px;
+  border-radius: 12px;
+  background: var(--theme-primary-bg, #2563f5);
+  color: var(--theme-primary-text, #ffffff);
+  border: 1px solid var(--theme-primary-bg, #2563f5);
+  white-space: nowrap;
+}
+
+.validate-task-button:hover {
+  background: #1f4fd6;
+  border-color: #1f4fd6;
 }
 
 .task-validator-card {
@@ -1270,6 +1284,7 @@ th {
 .validator-summary-value {
   font-size: 14px;
   font-weight: 700;
+  color: var(--theme-text, #171d26);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -1314,8 +1329,9 @@ th {
 .event-card {
   padding: 14px;
   border-radius: 14px;
-  background: var(--theme-primary-bg, #121e3d);
+  background: var(--theme-card-bg, #ffffff);
   border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
+  box-shadow: 0 10px 26px rgba(23, 29, 38, 0.06);
 }
 
 .event-card-head {
@@ -1342,6 +1358,7 @@ th {
 
 .event-card-title {
   font-size: 16px;
+  color: var(--theme-text, #171d26);
 }
 
 .event-card-description {
@@ -1367,8 +1384,9 @@ th {
   margin-top: 12px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: var(--theme-input-bg, #0f1730);
+  background: #f8fbff;
   border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
+  color: var(--theme-text, #171d26);
   line-height: 1.5;
 }
 

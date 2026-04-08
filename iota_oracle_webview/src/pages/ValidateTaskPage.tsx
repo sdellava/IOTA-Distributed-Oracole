@@ -95,37 +95,19 @@ export default function ValidateTaskPage() {
       <div className="section-title">Validate task</div>
 
       <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) auto",
-          gap: 12,
-          alignItems: "center",
-          marginBottom: 18,
-        }}
+        className="validate-input-row"
       >
         <input
           type="text"
+          className="validate-task-input"
           value={taskId}
           onChange={(e) => setTaskId(e.target.value)}
           placeholder="Enter task id"
-          style={{
-            width: "100%",
-            height: 52,
-            fontSize: 16,
-            padding: "0 16px",
-            borderRadius: 10,
-          }}
         />
         <button
+          className="validate-task-button"
           onClick={handleValidate}
           disabled={loading}
-          style={{
-            height: 52,
-            minWidth: 156,
-            padding: "0 20px",
-            borderRadius: 10,
-            whiteSpace: "nowrap",
-          }}
         >
           {loading ? "Loading..." : "Validate"}
         </button>
