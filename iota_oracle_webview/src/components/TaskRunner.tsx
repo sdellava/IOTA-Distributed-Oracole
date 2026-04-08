@@ -502,12 +502,18 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
     }),
     [],
   );
-  const validatorNameByAddress = useMemo(
+  const nodeMetaByAddress = useMemo(
     () =>
       new Map(
         registeredNodes
-          .map((node) => [normalizeAddress(node.address), formatValidatorLabel(node.validatorName, node.validatorId)] as const)
-          .filter(([address, validatorName]) => Boolean(address && validatorName)),
+          .map((node) => [
+            normalizeAddress(node.address),
+            {
+              validatorLabel: formatValidatorLabel(node.validatorName, node.validatorId),
+              validatorId: node.validatorId ?? null,
+            },
+          ] as const)
+          .filter(([address]) => Boolean(address)),
       ),
     [registeredNodes],
   );
@@ -865,10 +871,22 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
                     {result.live.noCommitMessages.map((item, index) => (
                       <tr key={`${item.txDigest || item.sender}-${index}`}>
                         <td data-label="Node">
-                          <div className="mono">{shortAddress(item.sender, 10, 8)}</div>
-                          {validatorNameByAddress.get(normalizeAddress(item.sender)) ? (
-                            <div>{validatorNameByAddress.get(normalizeAddress(item.sender))}</div>
-                          ) : null}
+                          {(() => {
+                            const nodeMeta = nodeMetaByAddress.get(normalizeAddress(item.sender));
+                            return (
+                              <>
+                                <div className="mono" title={item.sender || undefined}>
+                                  {shortAddress(item.sender, 10, 8)}
+                                </div>
+                                <div className="summary-hint mono" title={item.sender || undefined}>
+                                  oracle: {item.sender || '-'}
+                                </div>
+                                {nodeMeta?.validatorLabel ? (
+                                  <div title={nodeMeta.validatorId || undefined}>validator: {nodeMeta.validatorLabel}</div>
+                                ) : null}
+                              </>
+                            );
+                          })()}
                         </td>
                         <td data-label="Round">{item.round}</td>
                         <td data-label="Reason">{item.reasonCode || '-'}</td>
