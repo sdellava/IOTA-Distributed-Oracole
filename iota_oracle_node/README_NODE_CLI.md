@@ -34,13 +34,13 @@ Registration rule:
 Before starting the daemon, you can run a local execution test against the current `.env`:
 
 ```bash
-npm run test -- examples/task_weather.json --node 1
+npm run test -- src/tasks/examples/task_weather.json --node 1
 ```
 
 For storage configuration checks:
 
 ```bash
-npm run test -- examples/task_STORAGE.json --node 1
+npm run test -- src/tasks/examples/task_IPFS_STORE1.json --node 1
 ```
 
 The test runner validates:

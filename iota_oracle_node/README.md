@@ -37,13 +37,13 @@ npm run dev -- --node 1
 Use the local test runner to validate the current node configuration against a sample task without starting the daemon:
 
 ```bash
-npm run test -- examples/task_weather.json --node 1
+npm run test -- src/tasks/examples/task_weather.json --node 1
 ```
 
 You can also pass:
 
 ```bash
-npm run test -- examples/task_STORAGE.json --node 1
+npm run test -- src/tasks/examples/task_IPFS_STORE1.json --node 1
 npm run test -- "{\"type\":\"WEATHER\",...}" --node 1
 ```
 
