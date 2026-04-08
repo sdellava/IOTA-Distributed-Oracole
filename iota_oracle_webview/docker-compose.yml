@@ -35,7 +35,8 @@ services:
 
       - "traefik.http.routers.oracle.middlewares=oracle-sec-v1@docker"
       - "traefik.http.middlewares.oracle-sec-v1.headers.permissionsPolicy=geolocation=*, camera=*, microphone=*, payment=(), usb=()"
-      - "traefik.http.middlewares.oracle-sec-v1.headers.customResponseHeaders.Content-Security-Policy=default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob: filesystem:; script-src * 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src * 'self' 'unsafe-inline' 'unsafe-eval' blob: data:; img-src * 'self' data: blob:; connect-src * 'self' blob: data:;"
+      - "traefik.http.middlewares.oracle-sec-v1.headers.customResponseHeaders.Content-Security-Policy=default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: blob: filesystem:; script-src * 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src * 'self' 'unsafe-inline' 'unsafe-eval' blob: data:; img-src * 'self' data: blob:; connect-src * 'self' blob: data:; frame-ancestors 'self';"
+      - "traefik.http.middlewares.oracle-sec-v1.headers.customResponseHeaders.X-Frame-Options=SAMEORIGIN"
       - "traefik.http.middlewares.oracle-sec-v1.headers.stsSeconds=63072000"
       - "traefik.http.middlewares.oracle-sec-v1.headers.stsIncludeSubdomains=true"
       - "traefik.http.middlewares.oracle-sec-v1.headers.stsPreload=true"
