@@ -42,7 +42,9 @@ function extractMessageContent(payload: any): string {
 
   const output = payload?.output;
   if (Array.isArray(output)) {
-    for (const block of output) {
+    // Prefer "message" items over "reasoning" items to avoid extracting thinking text.
+    const sorted = [...output].sort((a: any, b: any) => (a?.type === "message" ? -1 : b?.type === "message" ? 1 : 0));
+    for (const block of sorted) {
       const parts = Array.isArray(block?.content) ? block.content : [];
       const joined = parts
         .map((part: any) => {
@@ -123,7 +125,9 @@ function extractResponseApiText(payload: any): string {
   if (typeof payload?.output_text === "string" && payload.output_text.trim()) return payload.output_text;
 
   const output = Array.isArray(payload?.output) ? payload.output : [];
-  for (const item of output) {
+  // Prefer "message" items over "reasoning" items to avoid extracting thinking text.
+  const sorted = [...output].sort((a, b) => (a?.type === "message" ? -1 : b?.type === "message" ? 1 : 0));
+  for (const item of sorted) {
     const parts = Array.isArray(item?.content) ? item.content : [];
     const joined = parts
       .map((part: any) => {
