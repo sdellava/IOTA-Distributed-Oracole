@@ -433,7 +433,8 @@ export async function publishNoCommit(opts: {
 }): Promise<string> {
   const { client, keypair, taskId, round, reasonCode, message } = opts;
   const pkg = getTasksPackageId();
-  const detailsBytes = new TextEncoder().encode((message || 'no_commit').slice(0, 256));
+  const maxChars = optInt("NO_COMMIT_DETAILS_MAX_CHARS", 1024);
+  const detailsBytes = new TextEncoder().encode((message || "no_commit").slice(0, Math.max(64, maxChars)));
 
   const res = await signAndExecuteWithLockRetry({
     client,
