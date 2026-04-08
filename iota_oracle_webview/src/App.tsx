@@ -43,6 +43,13 @@ function formatUsd(value: number): string {
   });
 }
 
+function formatIotaAtomic(value: bigint): string {
+  return (Number(value) / 1_000_000_000).toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 6,
+  });
+}
+
 function parseBps(value: string | null | undefined): number {
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) return 0;
@@ -72,9 +79,56 @@ function formatPriceProfile(template: OracleTemplateCost, iotaUsdPrice: number |
     profileLine("base", template.basePriceIota, iotaUsdPrice, treasuryBps),
     profileLine("download/byte", template.pricePerDownloadByteIota, iotaUsdPrice, treasuryBps),
     profileLine("retention/day", template.pricePerRetentionDayIota, iotaUsdPrice, treasuryBps),
+    profileLine(
+      "retention/month (30d)",
+      (() => {
+        const retention = parseIotaAtomic(template.pricePerRetentionDayIota);
+        return retention == null ? null : (retention * 30n).toString();
+      })(),
+      iotaUsdPrice,
+      treasuryBps,
+    ),
   ].filter(Boolean) as string[];
 
   return parts.length ? parts.join(" | ") : "-";
+}
+
+function buildMonthlyStorageEstimate(
+  template: OracleTemplateCost,
+  treasuryBps: number,
+  iotaUsdPrice: number | null,
+): {
+  storageMonthlyAtomic: bigint;
+  rawAtomic: bigint;
+  feeAtomic: bigint;
+  totalAtomic: bigint;
+  summary: string;
+} | null {
+  if (!template.allowStorage) return null;
+
+  const baseAtomic = parseIotaAtomic(template.basePriceIota);
+  const perDayAtomic = parseIotaAtomic(template.pricePerRetentionDayIota);
+  if (baseAtomic == null || perDayAtomic == null) return null;
+
+  const storageMonthlyAtomic = perDayAtomic * 30n;
+  const rawAtomic = baseAtomic + storageMonthlyAtomic;
+  const feeAtomic = (rawAtomic * BigInt(Math.max(0, treasuryBps)) + 9_999n) / 10_000n;
+  const totalAtomic = rawAtomic + feeAtomic;
+
+  const usdPart =
+    iotaUsdPrice && iotaUsdPrice > 0
+      ? ` | total ~= $${formatUsd((Number(totalAtomic) / 1_000_000_000) * iotaUsdPrice)}`
+      : "";
+
+  return {
+    storageMonthlyAtomic,
+    rawAtomic,
+    feeAtomic,
+    totalAtomic,
+    summary:
+      `base ${formatIotaAtomic(baseAtomic)} IOTA + storage 30d ${formatIotaAtomic(storageMonthlyAtomic)} IOTA + fee ${formatIotaAtomic(feeAtomic)} IOTA = total ${formatIotaAtomic(totalAtomic)} IOTA` +
+      usdPart,
+  };
 }
 
 function templateLabel(template: OracleTemplateCost): string {
@@ -200,6 +254,18 @@ export default function App() {
     if (!iotaMarketPrice?.fetchedAtIso) return "-";
     return new Date(iotaMarketPrice.fetchedAtIso).toLocaleString();
   }, [iotaMarketPrice?.fetchedAtIso]);
+
+  const selectedTemplateMonthlyEstimate = useMemo(
+    () =>
+      selectedTemplate
+        ? buildMonthlyStorageEstimate(
+            selectedTemplate,
+            parseBps(status?.costs.systemFeeBps ?? null),
+            iotaMarketPrice?.usdPrice ?? null,
+          )
+        : null,
+    [selectedTemplate, status?.costs.systemFeeBps, iotaMarketPrice?.usdPrice],
+  );
 
   async function onNetworkChange(nextValue: string) {
     const next = normalizeNetwork(nextValue);
@@ -429,6 +495,20 @@ export default function App() {
                   <div className="template-kv-item">
                     <span className="template-kv-label">Price / retention day</span>
                     <span className="template-kv-value mono">{selectedTemplate.pricePerRetentionDayIota ?? "-"}</span>
+                  </div>
+                  <div className="template-kv-item">
+                    <span className="template-kv-label">Storage / month (30d)</span>
+                    <span className="template-kv-value mono">
+                      {selectedTemplateMonthlyEstimate
+                        ? `${selectedTemplateMonthlyEstimate.storageMonthlyAtomic.toString()} (${formatIotaAtomic(selectedTemplateMonthlyEstimate.storageMonthlyAtomic)} IOTA)`
+                        : "-"}
+                    </span>
+                  </div>
+                  <div className="template-kv-item">
+                    <span className="template-kv-label">IPFS task total / month (30d, no extra download)</span>
+                    <span className="template-kv-value">
+                      {selectedTemplateMonthlyEstimate ? selectedTemplateMonthlyEstimate.summary : "-"}
+                    </span>
                   </div>
                   <div className="template-kv-item">
                     <span className="template-kv-label">Price profile (USD)</span>

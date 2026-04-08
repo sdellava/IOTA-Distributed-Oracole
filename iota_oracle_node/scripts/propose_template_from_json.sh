@@ -277,7 +277,7 @@ const vals = [
   templateId,
   taskType,
   toInt(pick("is_enabled"), 1),
-  toInt(pick("base_price_iota"), isStorage ? 500000000 : 1000000000),
+  toInt(pick("base_price_iota"), isStorage ? 0 : 1000000000),
   toInt(pick("max_input_bytes"), 8192),
   toInt(pick("max_output_bytes"), isStorage ? 10485760 : 8192),
   toInt(pick("included_download_bytes"), isStorage ? 10485760 : 8192),
@@ -285,7 +285,7 @@ const vals = [
   allowStorage,
   minRetention,
   maxRetention,
-  toInt(pick("price_per_retention_day_iota"), allowStorage ? 10000 : 0),
+  toInt(pick("price_per_retention_day_iota"), allowStorage ? 871490 : 0),
 ];
 process.stdout.write(vals.join(" "));
   ' "$FULL_JSON_PATH" "$TEMPLATE_ID_OVERRIDE"

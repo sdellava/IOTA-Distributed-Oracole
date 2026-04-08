@@ -1,0 +1,70 @@
+PROPRIETARY SOFTWARE LICENSE
+
+Copyright (c) 2026
+All rights reserved.
+
+This software and all associated files, documentation, and materials
+(collectively, the "Software") are proprietary and confidential.
+
+1. Limited Free Professional Use
+
+Permission is granted, free of charge, solely to entities or individuals
+operating as validator nodes on the IOTA network, to use the Software for
+their own professional internal purposes in connection with validator-node
+operations on the IOTA network.
+
+This limited permission is personal, non-exclusive, non-transferable,
+non-sublicensable, and revocable.
+
+2. No Commercial License for Other Parties
+
+No commercial license, right, or authorization is granted to any other
+person or entity. Any commercial use, business use, production use,
+service offering, resale, sublicensing, distribution, or exploitation of
+the Software by subjects other than IOTA network validator nodes is
+strictly prohibited unless expressly authorized in advance in writing by
+the copyright holder.
+
+3. No Copying
+
+You may not copy, reproduce, publish, distribute, transmit, disclose, or
+otherwise make the Software available, in whole or in part, except to the
+minimum extent strictly necessary to exercise the limited use right
+expressly granted in Section 1.
+
+4. No Modification
+
+You may not modify, adapt, translate, reverse engineer, decompile,
+disassemble, create derivative works from, or otherwise alter the
+Software, except where such restriction is prohibited by applicable law
+and cannot be contractually excluded.
+
+5. No Implied Rights
+
+All rights not expressly granted by this license are reserved. No implied
+license, waiver, or other right is granted by disclosure or delivery of
+the Software.
+
+6. Termination
+
+Any use of the Software outside the scope of this license automatically
+terminates any permission granted under this license.
+
+7. Acceptance
+
+By using, accessing, possessing, or retaining the Software, you agree to
+be bound by the terms of this license.
+
+8. Contact for Commercial Licensing
+
+For any commercial license request or any use not expressly permitted by
+this license, prior written permission from the copyright holder is
+required.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. IN NO EVENT
+SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING
+FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
