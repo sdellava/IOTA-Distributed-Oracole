@@ -56,7 +56,7 @@ export default function ActivityTable({ nodes, events, activeNetwork }: Props) {
       <section className="card">
         <div className="section-title">Node activity</div>
         <div className="table-wrap">
-          <table className="responsive-table">
+          <table className="responsive-table node-activity-table">
             <thead>
               <tr>
                 <th>Validator node</th>
@@ -119,7 +119,7 @@ export default function ActivityTable({ nodes, events, activeNetwork }: Props) {
       <section className="card">
         <div className="section-title">Recent oracle events</div>
         <div className="table-wrap">
-          <table className="responsive-table">
+          <table className="responsive-table recent-events-table">
             <thead>
               <tr>
                 <th>Time</th>

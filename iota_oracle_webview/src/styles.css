@@ -386,23 +386,23 @@ table {
   table-layout: fixed;
 }
 
-.responsive-table th:nth-child(1),
-.responsive-table td:nth-child(1) {
+.node-activity-table th:nth-child(1),
+.node-activity-table td:nth-child(1) {
   width: 36%;
 }
 
-.responsive-table th:nth-child(2),
-.responsive-table td:nth-child(2) {
+.node-activity-table th:nth-child(2),
+.node-activity-table td:nth-child(2) {
   width: 25%;
 }
 
-.responsive-table th:nth-child(3),
-.responsive-table td:nth-child(3) {
+.node-activity-table th:nth-child(3),
+.node-activity-table td:nth-child(3) {
   width: 23%;
 }
 
-.responsive-table th:nth-child(4),
-.responsive-table td:nth-child(4) {
+.node-activity-table th:nth-child(4),
+.node-activity-table td:nth-child(4) {
   width: 16%;
 }
 
@@ -530,10 +530,12 @@ th {
 .badge {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   padding: 4px 10px;
   border-radius: 999px;
   font-size: 12px;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .badge-ok {
