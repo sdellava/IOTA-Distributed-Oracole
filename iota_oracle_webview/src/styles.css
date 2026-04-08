@@ -391,6 +391,10 @@ table {
   width: 36%;
 }
 
+.node-name-link {
+  font-weight: 700;
+}
+
 .node-activity-table th:nth-child(2),
 .node-activity-table td:nth-child(2) {
   width: 25%;

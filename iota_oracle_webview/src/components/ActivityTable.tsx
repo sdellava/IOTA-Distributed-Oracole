@@ -77,7 +77,7 @@ export default function ActivityTable({ nodes, events, activeNetwork }: Props) {
                       <div>
                         {node.validatorId ? (
                           <a
-                            className="digest-link"
+                            className="digest-link node-name-link"
                             href={getValidatorExplorerUrl(node.validatorId, activeNetwork)}
                             target="_blank"
                             rel="noreferrer"
