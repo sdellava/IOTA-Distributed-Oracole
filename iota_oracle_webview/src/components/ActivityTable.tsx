@@ -51,6 +51,8 @@ function getTransactionExplorerUrl(digest: string, activeNetwork: OracleNetwork)
 }
 
 export default function ActivityTable({ nodes, events, activeNetwork }: Props) {
+  const recentEvents = events.slice(0, 30);
+
   return (
     <div className="grid two-col">
       <section className="card">
@@ -130,12 +132,12 @@ export default function ActivityTable({ nodes, events, activeNetwork }: Props) {
               </tr>
             </thead>
             <tbody>
-              {events.length === 0 ? (
+              {recentEvents.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="empty">No recent events found.</td>
                 </tr>
               ) : (
-                events.map((event) => (
+                recentEvents.map((event) => (
                   <tr key={`${event.txDigest}-${event.eventSeq}`}>
                     <td data-label="Time">{formatTs(event.timestampMs)}</td>
                     <td data-label="Module">{event.module}</td>

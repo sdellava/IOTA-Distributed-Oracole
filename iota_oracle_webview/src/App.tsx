@@ -165,7 +165,9 @@ export default function App() {
 
   useEffect(() => {
     const root = document.documentElement;
-    const entries = Object.entries(themeStyle).filter((entry): entry is [string, string] => typeof entry[1] === "string");
+    const entries = Object.entries(themeStyle).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    );
     for (const [key, value] of entries) {
       root.style.setProperty(key, value);
     }
@@ -400,7 +402,7 @@ export default function App() {
             />
             <MetricCard label="Known nodes" value={status?.metrics.knownNodes ?? "-"} hint="From env or inferred" />
             <MetricCard label="Inactive known nodes" value={status?.metrics.inactiveKnownNodes ?? "-"} />
-            <MetricCard label="Message events" value={status?.metrics.messageEvents ?? "-"} />
+            <MetricCard label="On-chain task objects" value={status?.metrics.onChainTaskObjects ?? "-"} hint="" />
             <MetricCard
               label="Latest checkpoint"
               value={status?.latestCheckpoint ?? "-"}
@@ -526,7 +528,11 @@ export default function App() {
                   <div className="template-kv-value">{iotaPriceText}</div>
                   <div className="summary-hint" style={{ marginTop: 8 }}>
                     Source:{" "}
-                    <a href={iotaMarketPrice?.sourceUrl ?? "https://coinmarketcap.com/currencies/iota/"} target="_blank" rel="noreferrer">
+                    <a
+                      href={iotaMarketPrice?.sourceUrl ?? "https://coinmarketcap.com/currencies/iota/"}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
                       CoinMarketCap
                     </a>
                     {" • "}

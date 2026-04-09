@@ -41,6 +41,27 @@ type RpcDynamicFieldPage = {
   nextCursor?: string | null;
 };
 
+type GraphqlTaskObjectsResponse = {
+  data?: {
+    objects?: {
+      nodes?: Array<{ address?: string }>;
+      pageInfo?: {
+        hasNextPage?: boolean;
+        endCursor?: string | null;
+      };
+    };
+  };
+  errors?: Array<{ message?: string }>;
+};
+
+type TaskObjectCountCacheEntry = {
+  value: number | null;
+  fetchedAtMs: number;
+};
+
+const TASK_OBJECT_COUNT_CACHE_TTL_MS = 30_000;
+const taskObjectCountCache = new Map<string, TaskObjectCountCacheEntry>();
+
 function normalizeAddress(value: string): string {
   const t = String(value ?? "").trim().toLowerCase();
   if (!t) return "";
@@ -349,6 +370,95 @@ async function queryModuleEvents(
     limit: eventFetchLimit,
   });
   return (page.data ?? []).map((event) => normalizeEvent(moduleName, event as RpcEvent));
+}
+
+function getGraphqlEndpoint(network: string | undefined): string | null {
+  const normalized = String(network ?? "").trim().toLowerCase();
+  if (normalized === "mainnet") return "https://graphql.mainnet.iota.cafe";
+  if (normalized === "testnet") return "https://graphql.testnet.iota.cafe";
+  if (normalized === "devnet") return "https://graphql.devnet.iota.cafe";
+  if (normalized === "localnet") return "http://127.0.0.1:8000";
+  return null;
+}
+
+async function countOnChainTaskObjects(
+  network: string | undefined,
+  packageId: string,
+  warnings: string[],
+): Promise<number | null> {
+  if (!packageId) return null;
+
+  const graphqlUrl = getGraphqlEndpoint(network);
+  if (!graphqlUrl) return null;
+
+  const structType = `${packageId}::oracle_tasks::Task`;
+  const cacheKey = `${graphqlUrl}|${structType}`;
+  const cached = taskObjectCountCache.get(cacheKey);
+  const now = Date.now();
+  if (cached && now - cached.fetchedAtMs < TASK_OBJECT_COUNT_CACHE_TTL_MS) {
+    return cached.value;
+  }
+
+  const query = `
+    query CountTaskObjects($type: String!, $after: String) {
+      objects(first: 50, after: $after, filter: { type: $type }) {
+        nodes {
+          address
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+  `;
+
+  let total = 0;
+  let cursor: string | null = null;
+
+  try {
+    for (;;) {
+      const response = await fetch(graphqlUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          query,
+          variables: {
+            type: structType,
+            after: cursor,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`GraphQL request failed: HTTP ${response.status}`);
+      }
+
+      const payload = (await response.json()) as GraphqlTaskObjectsResponse;
+      if (payload.errors?.length) {
+        const message = payload.errors.map((item) => item.message || "Unknown GraphQL error").join("; ");
+        throw new Error(message);
+      }
+
+      const nodes = payload.data?.objects?.nodes ?? [];
+      const pageInfo = payload.data?.objects?.pageInfo;
+      total += nodes.length;
+
+      if (!pageInfo?.hasNextPage) break;
+      cursor = pageInfo.endCursor ?? null;
+      if (!cursor) break;
+    }
+  } catch (error) {
+    warnings.push(`Unable to count on-chain task objects: ${String(error)}`);
+    taskObjectCountCache.set(cacheKey, { value: null, fetchedAtMs: now });
+    return null;
+  }
+
+  taskObjectCountCache.set(cacheKey, { value: total, fetchedAtMs: now });
+  return total;
 }
 
 async function getStateObjectContent(client: IotaClient, stateId: string, warnings: string[]): Promise<unknown | null> {
@@ -670,6 +780,7 @@ export async function getOracleStatus(): Promise<OracleStatusResponse> {
   const activeNodes = nodeActivity.filter((node) => node.active).length;
   const knownNodes = effectiveRegisteredNodes.length > 0 ? effectiveRegisteredNodes.length : null;
   const inactiveKnownNodes = knownNodes == null ? null : knownNodes - activeNodes;
+  const onChainTaskObjects = await countOnChainTaskObjects(runtime.network, runtime.oracleTasksPackageId, warnings);
 
   return {
     ok: true,
@@ -688,6 +799,7 @@ export async function getOracleStatus(): Promise<OracleStatusResponse> {
       activeNodes,
       knownNodes,
       inactiveKnownNodes,
+      onChainTaskObjects,
       taskEvents: taskEvents.length,
       messageEvents: messageEvents.length,
       totalEvents: combined.length,
