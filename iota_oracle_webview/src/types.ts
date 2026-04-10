@@ -62,6 +62,7 @@ export type OracleStatus = {
     knownNodes: number | null;
     inactiveKnownNodes: number | null;
     onChainTaskObjects: number | null;
+    totalOracleEvents: number | null;
     taskEvents: number;
     messageEvents: number;
     totalEvents: number;

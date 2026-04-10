@@ -403,11 +403,7 @@ export default function App() {
             <MetricCard label="Known nodes" value={status?.metrics.knownNodes ?? "-"} hint="From env or inferred" />
             <MetricCard label="Inactive known nodes" value={status?.metrics.inactiveKnownNodes ?? "-"} />
             <MetricCard label="On-chain task objects" value={status?.metrics.onChainTaskObjects ?? "-"} hint="" />
-            <MetricCard
-              label="Latest checkpoint"
-              value={status?.latestCheckpoint ?? "-"}
-              hint={loading ? "Refreshing..." : "On-chain"}
-            />
+            <MetricCard label="Total oracle events" value={status?.metrics.totalOracleEvents ?? "-"} hint="" />
           </section>
 
           <TaskRunner

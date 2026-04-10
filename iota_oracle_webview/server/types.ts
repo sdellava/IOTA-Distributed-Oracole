@@ -60,6 +60,7 @@ export type OracleStatusResponse = {
     knownNodes: number | null;
     inactiveKnownNodes: number | null;
     onChainTaskObjects: number | null;
+    totalOracleEvents: number | null;
     taskEvents: number;
     messageEvents: number;
     totalEvents: number;

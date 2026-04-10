@@ -54,6 +54,19 @@ type GraphqlTaskObjectsResponse = {
   errors?: Array<{ message?: string }>;
 };
 
+type GraphqlEventsResponse = {
+  data?: {
+    events?: {
+      nodes?: Array<{ timestamp?: string | null }>;
+      pageInfo?: {
+        hasNextPage?: boolean;
+        endCursor?: string | null;
+      };
+    };
+  };
+  errors?: Array<{ message?: string }>;
+};
+
 type TaskObjectCountCacheEntry = {
   value: number | null;
   fetchedAtMs: number;
@@ -61,6 +74,7 @@ type TaskObjectCountCacheEntry = {
 
 const TASK_OBJECT_COUNT_CACHE_TTL_MS = 30_000;
 const taskObjectCountCache = new Map<string, TaskObjectCountCacheEntry>();
+const totalOracleEventsCache = new Map<string, TaskObjectCountCacheEntry>();
 
 function normalizeAddress(value: string): string {
   const t = String(value ?? "").trim().toLowerCase();
@@ -381,6 +395,27 @@ function getGraphqlEndpoint(network: string | undefined): string | null {
   return null;
 }
 
+async function fetchGraphqlPayload<T>(
+  graphqlUrl: string,
+  query: string,
+  variables: Record<string, unknown>,
+): Promise<T> {
+  const response = await fetch(graphqlUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`GraphQL request failed: HTTP ${response.status}`);
+  }
+
+  return (await response.json()) as T;
+}
+
 async function countOnChainTaskObjects(
   network: string | undefined,
   packageId: string,
@@ -418,26 +453,10 @@ async function countOnChainTaskObjects(
 
   try {
     for (;;) {
-      const response = await fetch(graphqlUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({
-          query,
-          variables: {
-            type: structType,
-            after: cursor,
-          },
-        }),
+      const payload = await fetchGraphqlPayload<GraphqlTaskObjectsResponse>(graphqlUrl, query, {
+        type: structType,
+        after: cursor,
       });
-
-      if (!response.ok) {
-        throw new Error(`GraphQL request failed: HTTP ${response.status}`);
-      }
-
-      const payload = (await response.json()) as GraphqlTaskObjectsResponse;
       if (payload.errors?.length) {
         const message = payload.errors.map((item) => item.message || "Unknown GraphQL error").join("; ");
         throw new Error(message);
@@ -459,6 +478,81 @@ async function countOnChainTaskObjects(
 
   taskObjectCountCache.set(cacheKey, { value: total, fetchedAtMs: now });
   return total;
+}
+
+async function countModuleEventsViaGraphql(
+  graphqlUrl: string,
+  emittingModule: string,
+): Promise<number> {
+  const query = `
+    query CountModuleEvents($module: String!, $after: String) {
+      events(first: 50, after: $after, filter: { emittingModule: $module }) {
+        nodes {
+          timestamp
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+  `;
+
+  let total = 0;
+  let cursor: string | null = null;
+
+  for (;;) {
+    const payload = await fetchGraphqlPayload<GraphqlEventsResponse>(graphqlUrl, query, {
+      module: emittingModule,
+      after: cursor,
+    });
+    if (payload.errors?.length) {
+      const message = payload.errors.map((item) => item.message || "Unknown GraphQL error").join("; ");
+      throw new Error(message);
+    }
+
+    const nodes = payload.data?.events?.nodes ?? [];
+    const pageInfo = payload.data?.events?.pageInfo;
+    total += nodes.length;
+
+    if (!pageInfo?.hasNextPage) break;
+    cursor = pageInfo.endCursor ?? null;
+    if (!cursor) break;
+  }
+
+  return total;
+}
+
+async function countTotalOracleEvents(
+  network: string | undefined,
+  packageId: string,
+  warnings: string[],
+): Promise<number | null> {
+  if (!packageId) return null;
+
+  const graphqlUrl = getGraphqlEndpoint(network);
+  if (!graphqlUrl) return null;
+
+  const cacheKey = `${graphqlUrl}|${packageId}|oracle-events`;
+  const cached = totalOracleEventsCache.get(cacheKey);
+  const now = Date.now();
+  if (cached && now - cached.fetchedAtMs < TASK_OBJECT_COUNT_CACHE_TTL_MS) {
+    return cached.value;
+  }
+
+  try {
+    const [taskModuleEvents, messageModuleEvents] = await Promise.all([
+      countModuleEventsViaGraphql(graphqlUrl, `${packageId}::oracle_tasks`),
+      countModuleEventsViaGraphql(graphqlUrl, `${packageId}::oracle_messages`),
+    ]);
+    const total = taskModuleEvents + messageModuleEvents;
+    totalOracleEventsCache.set(cacheKey, { value: total, fetchedAtMs: now });
+    return total;
+  } catch (error) {
+    warnings.push(`Unable to count total oracle events: ${String(error)}`);
+    totalOracleEventsCache.set(cacheKey, { value: null, fetchedAtMs: now });
+    return null;
+  }
 }
 
 async function getStateObjectContent(client: IotaClient, stateId: string, warnings: string[]): Promise<unknown | null> {
@@ -781,6 +875,7 @@ export async function getOracleStatus(): Promise<OracleStatusResponse> {
   const knownNodes = effectiveRegisteredNodes.length > 0 ? effectiveRegisteredNodes.length : null;
   const inactiveKnownNodes = knownNodes == null ? null : knownNodes - activeNodes;
   const onChainTaskObjects = await countOnChainTaskObjects(runtime.network, runtime.oracleTasksPackageId, warnings);
+  const totalOracleEvents = await countTotalOracleEvents(runtime.network, runtime.oracleTasksPackageId, warnings);
 
   return {
     ok: true,
@@ -800,6 +895,7 @@ export async function getOracleStatus(): Promise<OracleStatusResponse> {
       knownNodes,
       inactiveKnownNodes,
       onChainTaskObjects,
+      totalOracleEvents,
       taskEvents: taskEvents.length,
       messageEvents: messageEvents.length,
       totalEvents: combined.length,
