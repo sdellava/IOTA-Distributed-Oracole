@@ -942,6 +942,7 @@ th {
 .task-status-table-cell {
   vertical-align: bottom;
   padding: 0;
+  border-bottom: 0;
 }
 
 .task-status-table-metrics {
