@@ -1256,6 +1256,27 @@ th {
   border-color: #1f4fd6;
 }
 
+.wallet-submit-button {
+  width: 100%;
+  min-height: 52px;
+  border-radius: 18px;
+  background: var(--theme-primary-bg, #2563f5);
+  color: var(--theme-primary-text, #ffffff);
+  border: 1px solid var(--theme-primary-bg, #2563f5);
+  box-shadow: none;
+}
+
+.wallet-submit-button:hover:not(:disabled) {
+  background: #1f4fd6;
+  border-color: #1f4fd6;
+}
+
+.wallet-submit-button:disabled {
+  background: rgba(37, 99, 245, 0.45);
+  border-color: rgba(37, 99, 245, 0.45);
+  color: rgba(255, 255, 255, 0.9);
+}
+
 .task-validator-card {
   padding: 0;
   background: transparent;

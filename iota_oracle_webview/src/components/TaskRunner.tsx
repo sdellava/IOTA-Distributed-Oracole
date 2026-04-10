@@ -775,7 +775,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
       />
 
       <div className="task-actions task-actions-mobile">
-        <button onClick={() => void onSubmit()} disabled={busy || !parsedTask || !currentAccount}>
+        <button className="wallet-submit-button" onClick={() => void onSubmit()} disabled={busy || !parsedTask || !currentAccount}>
           {busy ? 'Opening wallet...' : 'Sign and execute with wallet'}
         </button>
         {!parsedTask ? <span className="error-inline">Invalid JSON</span> : null}
