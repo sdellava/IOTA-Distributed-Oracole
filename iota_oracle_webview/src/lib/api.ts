@@ -56,14 +56,18 @@ export async function executeTask(task: unknown): Promise<ExecuteTaskResponse> {
   );
 }
 
-export async function prepareWalletTask(task: unknown, sender: string): Promise<PreparedWalletTaskResponse> {
+export async function prepareWalletTask(
+  task: unknown,
+  sender: string,
+  network: OracleNetwork,
+): Promise<PreparedWalletTaskResponse> {
   return ensureOk<PreparedWalletTaskResponse>(
     await fetch('/api/tasks/prepare-wallet', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ task, sender }),
+      body: JSON.stringify({ task, sender, network }),
     }),
   );
 }

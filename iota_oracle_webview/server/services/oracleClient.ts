@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import dotenv from "dotenv";
-import { config, getRuntimeConfig } from "../config.js";
+import { config, getRuntimeConfig, type OracleNetwork } from "../config.js";
 
 const activeChildren = new Set<ChildProcess>();
 let cleanupHooksInstalled = false;
@@ -12,8 +12,8 @@ function npmCommand(): string {
   return "npm";
 }
 
-async function buildClientEnv(): Promise<NodeJS.ProcessEnv> {
-  const runtime = getRuntimeConfig();
+async function buildClientEnv(network?: OracleNetwork): Promise<NodeJS.ProcessEnv> {
+  const runtime = getRuntimeConfig(network);
   const envPath = path.join(config.oracleClientDir, ".env");
   let parsed: Record<string, string> = {};
 
@@ -24,31 +24,49 @@ async function buildClientEnv(): Promise<NodeJS.ProcessEnv> {
     parsed = {};
   }
 
-  return {
-    ...process.env,
-
-    ORACLE_PACKAGE_ID: "",
-    ORACLE_SYSTEM_STATE_ID: "",
-    ORACLE_STATUS_ID: "",
-
-    ...parsed,
-
-    // Runtime-selected network values must override client .env values.
+  const runtimeOverrides: Record<string, string> = {
     IOTA_NETWORK: runtime.network,
     IOTA_RPC_URL: runtime.rpcUrl,
-    ORACLE_TASKS_PACKAGE_ID: runtime.oracleTasksPackageId,
-    ORACLE_SYSTEM_PACKAGE_ID: runtime.oracleSystemPackageId,
-    ORACLE_STATE_ID: runtime.oracleStateId,
-    ORACLE_TREASURY_ID: runtime.oracleTreasuryId,
-    ORACLE_TREASURY_OBJECT_ID: runtime.oracleTreasuryId,
-    IOTA_RANDOM_OBJECT_ID: runtime.iotaRandomObjectId,
-    IOTA_CLOCK_OBJECT_ID: runtime.iotaClockObjectId,
-    IOTA_CLOCK_ID: runtime.iotaClockObjectId,
+  };
+
+  if (runtime.oracleTasksPackageId) {
+    runtimeOverrides.ORACLE_TASKS_PACKAGE_ID = runtime.oracleTasksPackageId;
+    runtimeOverrides.ORACLE_PACKAGE_ID = runtime.oracleTasksPackageId;
+  }
+
+  if (runtime.oracleSystemPackageId) {
+    runtimeOverrides.ORACLE_SYSTEM_PACKAGE_ID = runtime.oracleSystemPackageId;
+  }
+
+  if (runtime.oracleStateId) {
+    runtimeOverrides.ORACLE_STATE_ID = runtime.oracleStateId;
+    runtimeOverrides.ORACLE_STATUS_ID = runtime.oracleStateId;
+    runtimeOverrides.ORACLE_SYSTEM_STATE_ID = runtime.oracleStateId;
+  }
+
+  if (runtime.oracleTreasuryId) {
+    runtimeOverrides.ORACLE_TREASURY_ID = runtime.oracleTreasuryId;
+    runtimeOverrides.ORACLE_TREASURY_OBJECT_ID = runtime.oracleTreasuryId;
+  }
+
+  if (runtime.iotaRandomObjectId) {
+    runtimeOverrides.IOTA_RANDOM_OBJECT_ID = runtime.iotaRandomObjectId;
+  }
+
+  if (runtime.iotaClockObjectId) {
+    runtimeOverrides.IOTA_CLOCK_OBJECT_ID = runtime.iotaClockObjectId;
+    runtimeOverrides.IOTA_CLOCK_ID = runtime.iotaClockObjectId;
+  }
+
+  return {
+    ...process.env,
+    ...parsed,
+    ...runtimeOverrides,
   };
 }
 
-async function spawnClientCommand(args: string[]) {
-  const env = await buildClientEnv();
+async function spawnClientCommand(args: string[], network?: OracleNetwork) {
+  const env = await buildClientEnv(network);
   const effectiveArgs = ["--silent", ...args];
 
   if (process.platform === "win32") {
@@ -222,12 +240,12 @@ function normalizeTaskPayloadInput(input: unknown): Record<string, unknown> {
   return normalized;
 }
 
-async function spawnCreateTask(taskFilePath: string) {
-  return spawnClientCommand(["run", "create", "--", taskFilePath]);
+async function spawnCreateTask(taskFilePath: string, network?: OracleNetwork) {
+  return spawnClientCommand(["run", "create", "--", taskFilePath], network);
 }
 
-async function spawnPrepareWalletTask(taskFilePath: string, sender: string) {
-  return spawnClientCommand(["run", "create", "--", "prepare-webview", taskFilePath, sender]);
+async function spawnPrepareWalletTask(taskFilePath: string, sender: string, network?: OracleNetwork) {
+  return spawnClientCommand(["run", "create", "--", "prepare-webview", taskFilePath, sender], network);
 }
 
 export async function listExampleTasks() {
@@ -259,7 +277,7 @@ export async function readExampleTask(exampleName: string) {
   return JSON.parse(content);
 }
 
-export async function prepareOracleTaskForWallet(task: unknown, sender: string) {
+export async function prepareOracleTaskForWallet(task: unknown, sender: string, network?: OracleNetwork) {
   await fs.access(config.oracleClientDir).catch(() => {
     throw new Error(`Oracle client directory not found: ${config.oracleClientDir}`);
   });
@@ -278,7 +296,7 @@ export async function prepareOracleTaskForWallet(task: unknown, sender: string) 
 
   const startedAt = new Date().toISOString();
   try {
-    const result = await runChildCommand(spawnPrepareWalletTask(taskFilePath, normalizedSender));
+    const result = await runChildCommand(spawnPrepareWalletTask(taskFilePath, normalizedSender, network));
 
     if (result.exitCode !== 0) {
       throw new Error(
@@ -309,7 +327,7 @@ export async function prepareOracleTaskForWallet(task: unknown, sender: string) 
   }
 }
 
-export async function executeOracleTask(task: unknown) {
+export async function executeOracleTask(task: unknown, network?: OracleNetwork) {
   await fs.access(config.oracleClientDir).catch(() => {
     throw new Error(`Oracle client directory not found: ${config.oracleClientDir}`);
   });
@@ -323,7 +341,7 @@ export async function executeOracleTask(task: unknown) {
 
   const startedAt = new Date().toISOString();
   try {
-    const result = await runChildCommand(spawnCreateTask(taskFilePath));
+    const result = await runChildCommand(spawnCreateTask(taskFilePath, network));
 
     return {
       ok: result.exitCode === 0,

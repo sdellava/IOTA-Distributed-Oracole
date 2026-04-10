@@ -45,6 +45,11 @@ type WalletRunResult = {
   live: TaskLiveState;
 };
 
+type TaskDetail = {
+  assigned_nodes?: Array<string | number>;
+  certificate_signers?: Array<string | number>;
+};
+
 type StageTone = 'neutral' | 'success' | 'danger';
 
 type ProtocolStage = {
@@ -69,6 +74,7 @@ const MEDIATION_MEAN_U64 = 1;
 
 const MSG_NO_COMMIT = 7;
 const NO_COMMIT_FETCH_LIMIT = 200;
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 const MAINNET_RPC_URL = import.meta.env.VITE_IOTA_MAINNET_RPC_URL?.trim() || 'https://api.mainnet.iota.cafe';
 const TESTNET_RPC_URL = import.meta.env.VITE_IOTA_TESTNET_RPC_URL?.trim() || 'https://api.testnet.iota.cafe';
 const DEVNET_RPC_URL =
@@ -491,6 +497,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
   const [taskText, setTaskText] = useState<string>('{}');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<WalletRunResult | null>(null);
+  const [taskDetail, setTaskDetail] = useState<TaskDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedExample, setSelectedExample] = useState<string>('');
   const currentAccount = useCurrentAccount();
@@ -538,6 +545,58 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
       pollTokenRef.current += 1;
     };
   }, []);
+
+  useEffect(() => {
+    const taskId = result?.taskId?.trim();
+    if (!taskId) {
+      setTaskDetail(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadTaskDetail = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/task/${encodeURIComponent(taskId)}`);
+        if (!response.ok) {
+          throw new Error(`Unable to load task detail: HTTP ${response.status}`);
+        }
+        const payload = (await response.json()) as TaskDetail;
+        if (!cancelled) {
+          setTaskDetail(payload);
+        }
+      } catch {
+        if (!cancelled) {
+          setTaskDetail(null);
+        }
+      }
+    };
+
+    void loadTaskDetail();
+    return () => {
+      cancelled = true;
+    };
+  }, [result?.taskId, result?.live.updatedAt]);
+
+  const assignedNodeRows = useMemo(() => {
+    const assignedNodes = Array.isArray(taskDetail?.assigned_nodes)
+      ? taskDetail.assigned_nodes.map((item) => normalizeAddress(String(item))).filter(Boolean)
+      : [];
+    const certificateSigners = new Set(
+      Array.isArray(taskDetail?.certificate_signers)
+        ? taskDetail.certificate_signers.map((item) => normalizeAddress(String(item))).filter(Boolean)
+        : [],
+    );
+
+    return assignedNodes.map((address) => {
+      const nodeMeta = nodeMetaByAddress.get(address);
+      return {
+        address,
+        signed: certificateSigners.has(address),
+        validatorLabel: nodeMeta?.validatorLabel ?? null,
+        validatorId: nodeMeta?.validatorId ?? null,
+      };
+    });
+  }, [nodeMetaByAddress, taskDetail]);
 
   const parsedTask = useMemo(() => {
     try {
@@ -664,6 +723,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
   async function onSubmit() {
     setError(null);
     setResult(null);
+    setTaskDetail(null);
 
     if (!parsedTask) {
       setError('Task JSON is not valid.');
@@ -686,7 +746,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
       const chain = CHAIN_BY_NETWORK[activeNetwork];
       executionClientRef.current = networkClient;
 
-      const prepared = await prepareWalletTask(task, currentAccount.address);
+      const prepared = await prepareWalletTask(task, currentAccount.address, activeNetwork);
       const transaction = Transaction.from(prepared.serializedTransaction);
       const execution = await signAndExecuteTransaction({ transaction, chain });
       const digest = String(execution?.digest ?? '').trim();
@@ -892,6 +952,47 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
                         <td data-label="Reason">{item.reasonCode || '-'}</td>
                         <td data-label="Message">{item.message || '-'}</td>
                         <td data-label="Updated">{item.timestampMs ? new Date(Number(item.timestampMs)).toLocaleString() : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+
+          {assignedNodeRows.length ? (
+            <div className="task-status-panel">
+              <div className="subsection-title">Assigned nodes</div>
+              <div className="table-wrap">
+                <table className="responsive-table">
+                  <thead>
+                    <tr>
+                      <th>Node</th>
+                      <th>Validator</th>
+                      <th>Signed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {assignedNodeRows.map((item) => (
+                      <tr key={item.address}>
+                        <td data-label="Node">
+                          <div className="mono" title={item.address}>
+                            {shortAddress(item.address, 10, 8)}
+                          </div>
+                          <div className="summary-hint mono full-value">{item.address}</div>
+                        </td>
+                        <td data-label="Validator">
+                          {item.validatorLabel ? (
+                            <div title={item.validatorId || undefined}>{item.validatorLabel}</div>
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                        <td data-label="Signed">
+                          <span className={`badge ${item.signed ? 'badge-ok' : 'badge-muted'}`}>
+                            {item.signed ? 'signed' : 'assigned only'}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

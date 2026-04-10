@@ -250,6 +250,9 @@ app.get("/api/task/:taskId", async (req, res) => {
       owner: data.owner ?? null,
       task_id: data.objectId,
       template_id: pick(fields.template_id, fields.config?.fields?.template_id),
+      assigned_nodes: asArray(
+        pick(fields.assigned_nodes, fields.runtime?.fields?.assigned_nodes, fields.consensus?.fields?.assigned_nodes),
+      ),
       state: pick(fields.state, fields.runtime?.fields?.state),
       quorum_k: Number(
         pick(fields.quorum_k, fields.config?.fields?.quorum_k, fields.consensus?.fields?.quorum_k, 0),
@@ -323,7 +326,12 @@ app.post("/api/tasks/prepare-wallet", async (req, res) => {
       return;
     }
 
-    const result = await prepareOracleTaskForWallet((req.body as any).task, sender);
+    const network = typeof (req.body as any).network === "string" ? (req.body as any).network.trim() : "";
+    const result = await prepareOracleTaskForWallet(
+      (req.body as any).task,
+      sender,
+      network ? setActiveNetwork(network) : undefined,
+    );
     res.json(result);
   } catch (error) {
     sendApiError(res, 500, error);
@@ -337,7 +345,8 @@ app.post("/api/tasks/execute", async (req, res) => {
       return;
     }
 
-    const result = await executeOracleTask((req.body as any).task);
+    const network = typeof (req.body as any).network === "string" ? (req.body as any).network.trim() : "";
+    const result = await executeOracleTask((req.body as any).task, network ? setActiveNetwork(network) : undefined);
     res.status(result.ok ? 200 : 500).json(result);
   } catch (error) {
     sendApiError(res, 500, error);
