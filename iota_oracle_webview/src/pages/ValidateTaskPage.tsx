@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import TaskValidator from "../components/TaskValidator";
+import { resolveApiBaseUrl } from "../lib/apiBase";
 
 type RegisteredNode = {
   nodeId?: string | number;
@@ -16,7 +17,7 @@ type TaskEvent = {
   parsedJson?: Record<string, unknown> | null;
 };
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
+const API_BASE = resolveApiBaseUrl();
 
 export default function ValidateTaskPage() {
   const [taskId, setTaskId] = useState("");

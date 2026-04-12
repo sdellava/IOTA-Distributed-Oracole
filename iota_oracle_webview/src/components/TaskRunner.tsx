@@ -3,6 +3,7 @@ import { useCurrentAccount, useSignAndExecuteTransaction } from '@iota/dapp-kit'
 import { IotaClient, type ChainType } from '@iota/iota-sdk/client';
 import { Transaction } from '@iota/iota-sdk/transactions';
 import { fetchExampleContent, prepareWalletTask } from '../lib/api';
+import { resolveApiBaseUrl } from '../lib/apiBase';
 import type { ExampleTask, OracleNetwork, PreparedWalletTaskResponse, RegisteredOracleNode } from '../types';
 
 type Props = {
@@ -74,7 +75,7 @@ const MEDIATION_MEAN_U64 = 1;
 
 const MSG_NO_COMMIT = 7;
 const NO_COMMIT_FETCH_LIMIT = 200;
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+const API_BASE = resolveApiBaseUrl();
 const MAINNET_RPC_URL = import.meta.env.VITE_IOTA_MAINNET_RPC_URL?.trim() || 'https://api.mainnet.iota.cafe';
 const TESTNET_RPC_URL = import.meta.env.VITE_IOTA_TESTNET_RPC_URL?.trim() || 'https://api.testnet.iota.cafe';
 const DEVNET_RPC_URL =
