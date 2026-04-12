@@ -135,6 +135,64 @@ function templateLabel(template: OracleTemplateCost): string {
   return template.taskType ? `${template.templateId} - ${template.taskType}` : template.templateId;
 }
 
+function clampByte(value: number): number {
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+function parseCssColor(input: string | null | undefined): [number, number, number] | null {
+  const value = String(input ?? "").trim();
+  if (!value) return null;
+
+  const hex = value.replace(/^#/, "");
+  if (/^[0-9a-f]{3}$/i.test(hex)) {
+    return [
+      Number.parseInt(`${hex[0]}${hex[0]}`, 16),
+      Number.parseInt(`${hex[1]}${hex[1]}`, 16),
+      Number.parseInt(`${hex[2]}${hex[2]}`, 16),
+    ];
+  }
+
+  if (/^[0-9a-f]{6}$/i.test(hex)) {
+    return [
+      Number.parseInt(hex.slice(0, 2), 16),
+      Number.parseInt(hex.slice(2, 4), 16),
+      Number.parseInt(hex.slice(4, 6), 16),
+    ];
+  }
+
+  const rgbMatch = value.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+  if (rgbMatch) {
+    return [clampByte(Number(rgbMatch[1])), clampByte(Number(rgbMatch[2])), clampByte(Number(rgbMatch[3]))];
+  }
+
+  return null;
+}
+
+function toRgbString(rgb: [number, number, number]): string {
+  return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+}
+
+function withRgbOffset(input: string | null | undefined, offset: number): string | null {
+  const rgb = parseCssColor(input);
+  if (!rgb) return null;
+  return toRgbString([
+    clampByte(rgb[0] + offset),
+    clampByte(rgb[1] + offset),
+    clampByte(rgb[2] + offset),
+  ]);
+}
+
+function readableTextForBackground(background: string | null | undefined, dark = "#171d26", light = "#ffffff"): string {
+  const rgb = parseCssColor(background);
+  if (!rgb) return dark;
+  const [r, g, b] = rgb.map((channel) => {
+    const normalized = channel / 255;
+    return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return luminance > 0.45 ? dark : light;
+}
+
 export default function App() {
   const [status, setStatus] = useState<OracleStatus | null>(null);
   const [examples, setExamples] = useState<ExampleTask[]>([]);
@@ -150,17 +208,24 @@ export default function App() {
   const [iotaMarketPrice, setIotaMarketPrice] = useState<IotaMarketPriceResponse | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const hostingText = import.meta.env.VITE_HOSTING_TEXT?.trim() || "";
+  const inputBackground = import.meta.env.VITE_THEME_INPUT_BG?.trim() || "#0f1730";
+  const cardBackground = import.meta.env.VITE_THEME_CARD_BG?.trim() || "rgba(12, 18, 36, 0.88)";
+  const primaryBackground = import.meta.env.VITE_THEME_PRIMARY_BG?.trim() || "#121e3d";
   const themeStyle = {
     "--theme-page-bg": import.meta.env.VITE_THEME_PAGE_BG?.trim() || "#0b1020",
     "--theme-text": import.meta.env.VITE_THEME_TEXT?.trim() || "#ebeff8",
     "--theme-muted-text": import.meta.env.VITE_THEME_MUTED_TEXT?.trim() || "#aab6d3",
     "--theme-accent-text": import.meta.env.VITE_THEME_ACCENT_TEXT?.trim() || "#8fa2d0",
-    "--theme-card-bg": import.meta.env.VITE_THEME_CARD_BG?.trim() || "rgba(12, 18, 36, 0.88)",
+    "--theme-card-bg": cardBackground,
     "--theme-card-border": import.meta.env.VITE_THEME_CARD_BORDER?.trim() || "rgba(143, 162, 208, 0.14)",
-    "--theme-input-bg": import.meta.env.VITE_THEME_INPUT_BG?.trim() || "#0f1730",
+    "--theme-input-bg": inputBackground,
     "--theme-input-border": import.meta.env.VITE_THEME_INPUT_BORDER?.trim() || "rgba(143, 162, 208, 0.18)",
-    "--theme-primary-bg": import.meta.env.VITE_THEME_PRIMARY_BG?.trim() || "#121e3d",
+    "--theme-primary-bg": primaryBackground,
     "--theme-primary-text": import.meta.env.VITE_THEME_PRIMARY_TEXT?.trim() || "#d8e2f7",
+    "--theme-surface-text": readableTextForBackground(inputBackground),
+    "--theme-card-surface-text": readableTextForBackground(cardBackground),
+    "--theme-primary-contrast-text": readableTextForBackground(primaryBackground),
+    "--theme-primary-hover-bg": withRgbOffset(primaryBackground, -18) || primaryBackground,
   } as CSSProperties;
 
   useEffect(() => {

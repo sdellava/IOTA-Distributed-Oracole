@@ -218,7 +218,7 @@ textarea {
   padding: 0 12px;
   background: var(--theme-input-bg, #0f1730);
   border: 1px solid var(--theme-input-border, rgba(143, 162, 208, 0.18));
-  color: var(--theme-primary-text, #d8e2f7);
+  color: var(--theme-surface-text, #171d26);
 }
 
 .market-price-source-link {
@@ -229,13 +229,13 @@ textarea {
   padding: 0 14px;
   border-radius: 10px;
   border: 1px solid var(--theme-input-border, rgba(143, 162, 208, 0.18));
-  color: var(--theme-primary-text, #d8e2f7);
+  color: var(--theme-primary-contrast-text, #d8e2f7);
   text-decoration: none;
   background: var(--theme-primary-bg, #121e3d);
 }
 
 .market-price-source-link:hover {
-  background: var(--theme-input-bg, #0f1730);
+  background: var(--theme-primary-hover-bg, var(--theme-primary-bg, #121e3d));
 }
 
 .section-title,
@@ -269,7 +269,7 @@ button {
   border-radius: 12px;
   border: 1px solid var(--theme-input-border, rgba(143, 162, 208, 0.18));
   background: var(--theme-input-bg, #0f1730);
-  color: var(--theme-text, #171d26);
+  color: var(--theme-surface-text, #171d26);
 }
 
 select,
@@ -293,7 +293,7 @@ button:disabled {
 
 option {
   background: var(--theme-card-bg, #ffffff);
-  color: var(--theme-text, #171d26);
+  color: var(--theme-card-surface-text, #171d26);
 }
 
 .task-editor {
@@ -357,7 +357,7 @@ pre {
   overflow-wrap: anywhere;
   word-break: break-word;
   background: var(--theme-card-bg, #ffffff);
-  color: var(--theme-text, #171d26);
+  color: var(--theme-card-surface-text, #171d26);
   border-radius: 12px;
   border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
 }
@@ -451,6 +451,7 @@ th {
   border-radius: 14px;
   background: var(--theme-card-bg, #ffffff);
   padding: 16px;
+  color: var(--theme-card-surface-text, #171d26);
 }
 
 .template-details-head {
@@ -465,7 +466,7 @@ th {
 .template-details-title {
   font-weight: 700;
   font-size: 16px;
-  color: var(--theme-text, #171d26);
+  color: var(--theme-card-surface-text, #171d26);
 }
 
 .template-status-badge {
@@ -502,7 +503,7 @@ th {
   border: 1px solid var(--theme-card-border, rgba(143, 162, 208, 0.14));
   border-radius: 10px;
   padding: 10px 12px;
-  background: #ffffff;
+  background: var(--theme-input-bg, #ffffff);
 }
 
 .template-kv-label {
@@ -513,7 +514,7 @@ th {
 }
 
 .template-kv-value {
-  color: var(--theme-text, #171d26);
+  color: var(--theme-surface-text, #171d26);
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -561,7 +562,7 @@ th {
 }
 
 .digest-link {
-  color: var(--theme-text, #171d26);
+  color: var(--theme-card-surface-text, #171d26);
   text-decoration: underline;
   text-underline-offset: 0.15em;
 }
@@ -1247,14 +1248,14 @@ th {
   padding: 0 20px;
   border-radius: 12px;
   background: var(--theme-primary-bg, #2563f5);
-  color: var(--theme-primary-text, #ffffff);
+  color: var(--theme-primary-contrast-text, #ffffff);
   border: 1px solid var(--theme-primary-bg, #2563f5);
   white-space: nowrap;
 }
 
 .validate-task-button:hover {
-  background: #1f4fd6;
-  border-color: #1f4fd6;
+  background: var(--theme-primary-hover-bg, var(--theme-primary-bg, #2563f5));
+  border-color: var(--theme-primary-hover-bg, var(--theme-primary-bg, #2563f5));
 }
 
 .wallet-submit-button {
@@ -1262,20 +1263,21 @@ th {
   min-height: 52px;
   border-radius: 18px;
   background: var(--theme-primary-bg, #2563f5);
-  color: var(--theme-primary-text, #ffffff);
+  color: var(--theme-primary-contrast-text, #ffffff);
   border: 1px solid var(--theme-primary-bg, #2563f5);
   box-shadow: none;
 }
 
 .wallet-submit-button:hover:not(:disabled) {
-  background: #1f4fd6;
-  border-color: #1f4fd6;
+  background: var(--theme-primary-hover-bg, var(--theme-primary-bg, #2563f5));
+  border-color: var(--theme-primary-hover-bg, var(--theme-primary-bg, #2563f5));
 }
 
 .wallet-submit-button:disabled {
-  background: rgba(37, 99, 245, 0.45);
-  border-color: rgba(37, 99, 245, 0.45);
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--theme-primary-bg, #2563f5);
+  border-color: var(--theme-primary-bg, #2563f5);
+  color: var(--theme-primary-contrast-text, #ffffff);
+  opacity: 0.55;
 }
 
 .task-validator-card {
@@ -1436,7 +1438,7 @@ th {
 .wallet-connect [class*="button"],
 .wallet-connect [class*="trigger"] {
   background: var(--theme-primary-bg, #121e3d) !important;
-  color: var(--theme-primary-text, #d8e2f7) !important;
+  color: var(--theme-primary-contrast-text, #d8e2f7) !important;
   border: 1px solid var(--theme-input-border, rgba(143, 162, 208, 0.18)) !important;
   border-radius: 999px !important;
   min-height: 48px !important;
@@ -1451,7 +1453,7 @@ th {
 .wallet-connect a *,
 .wallet-connect [class*="button"] *,
 .wallet-connect [class*="trigger"] * {
-  color: var(--theme-primary-text, #d8e2f7) !important;
+  color: var(--theme-primary-contrast-text, #d8e2f7) !important;
 }
 
 .wallet-connect button:hover,
@@ -1459,14 +1461,14 @@ th {
 .wallet-connect a:hover,
 .wallet-connect [class*="button"]:hover,
 .wallet-connect [class*="trigger"]:hover {
-  background: var(--theme-primary-bg, #121e3d) !important;
-  color: var(--theme-primary-text, #d8e2f7) !important;
-  border-color: var(--theme-primary-bg, #121e3d) !important;
+  background: var(--theme-primary-hover-bg, var(--theme-primary-bg, #121e3d)) !important;
+  color: var(--theme-primary-contrast-text, #d8e2f7) !important;
+  border-color: var(--theme-primary-hover-bg, var(--theme-primary-bg, #121e3d)) !important;
 }
 
 .wallet-connect svg,
 .wallet-connect [class*="icon"] {
-  color: var(--theme-primary-text, #d8e2f7) !important;
+  color: var(--theme-primary-contrast-text, #d8e2f7) !important;
   fill: currentColor !important;
 }
 
