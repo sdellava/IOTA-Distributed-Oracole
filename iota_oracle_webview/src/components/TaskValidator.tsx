@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { deriveAddressFromSignerSet, normalizePubkeyToBase64, computeResultHash } from "../lib/multisigValidation";
+import { validateTaskMultisig } from "../lib/multisigValidation";
 
 type RegisteredNode = {
   nodeId?: string | number;
@@ -57,10 +57,6 @@ type ExplainedEvent = {
   raw: Record<string, unknown>;
 };
 
-function normalizeId(value: unknown): string {
-  return String(value ?? "").trim();
-}
-
 function normalizeAddress(value: unknown): string {
   const t = String(value ?? "").trim().toLowerCase();
   if (!t) return "";
@@ -72,6 +68,12 @@ function shortAddress(value: unknown): string {
   if (!addr) return "-";
   if (addr.length <= 14) return addr;
   return `${addr.slice(0, 8)}...${addr.slice(-6)}`;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function bytesToHex(bytes: Uint8Array | null | undefined): string {
@@ -106,12 +108,6 @@ function base64ToBytes(base64: string): Uint8Array | null {
   } catch {
     return null;
   }
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
 }
 
 function toUint8Array(value: unknown): Uint8Array | null {
@@ -737,127 +733,7 @@ function explainEvent(
 }
 
 export default function TaskValidator({ task, registeredNodes, events = [] }: Props) {
-  const validation = useMemo(() => {
-    if (!task) {
-      return {
-        storedAddress: "",
-        derivedAddress: null as string | null,
-        addressMatch: false,
-        addressStatus: "mismatch" as "match" | "stored_is_signer" | "mismatch",
-        derivedError: "No task loaded.",
-        signerRows: [] as Array<{
-          signerId: string;
-          found: boolean;
-          address?: string;
-          pubkeyBase64?: string;
-          error?: string;
-        }>,
-        resultHashHex: null as string | null,
-        multisigDebug: null as any,
-      };
-    }
-
-    const signerIds = Array.isArray(task.certificate_signers)
-      ? task.certificate_signers.map((x) => normalizeId(x)).filter(Boolean)
-      : [];
-
-    const thresholdRaw = task.quorum_k;
-    const threshold = Number(thresholdRaw);
-    const storedAddress = String(task.multisig_addr ?? "").trim();
-    const multisigDebug = decodeAsciiJson(task.multisig_bytes);
-
-    const orderedSignerIds =
-      multisigDebug && Array.isArray(multisigDebug.signers)
-        ? multisigDebug.signers.map((x: unknown) => normalizeId(x)).filter(Boolean)
-        : signerIds;
-
-    const signerRows = orderedSignerIds.map((signerId: string) => {
-      const signerIdLc = signerId.toLowerCase();
-
-      const node =
-        registeredNodes.find((n) => normalizeId(n.address).toLowerCase() === signerIdLc) ??
-        registeredNodes.find((n) => normalizeId(n.nodeId).toLowerCase() === signerIdLc) ??
-        registeredNodes.find((n) => normalizeId(n.id).toLowerCase() === signerIdLc);
-
-      if (!node) {
-        return {
-          signerId,
-          found: false,
-          error: "Registered node not found",
-        };
-      }
-
-      try {
-        const pubkeyBase64 = normalizePubkeyToBase64(node.pubkey);
-        return {
-          signerId,
-          found: true,
-          address: node.address,
-          pubkeyBase64,
-        };
-      } catch (error) {
-        return {
-          signerId,
-          found: true,
-          address: node.address,
-          error: error instanceof Error ? error.message : String(error),
-        };
-      }
-    });
-
-    const validSignerPubkeys = signerRows
-      .filter((row: { pubkeyBase64: any }) => !!row.pubkeyBase64)
-      .map((row: { pubkeyBase64: string }) => ({
-        pubKeyBase64: row.pubkeyBase64 as string,
-        weight: 1,
-      }));
-
-    let derivedAddress: string | null = null;
-    let derivedError: string | null = null;
-
-    try {
-      if (!Number.isFinite(threshold) || threshold <= 0) {
-        derivedError = `Invalid quorum_k on task: ${String(thresholdRaw)}`;
-      } else if (validSignerPubkeys.length < threshold) {
-        derivedError = `Not enough signer pubkeys to derive multisig. threshold=${threshold}, found=${validSignerPubkeys.length}`;
-      } else {
-        derivedAddress = deriveAddressFromSignerSet(threshold, validSignerPubkeys);
-      }
-    } catch (error) {
-      derivedError = error instanceof Error ? error.message : String(error);
-    }
-
-    const signerAddresses = signerRows.map((row: { address: unknown }) => normalizeId(row.address)).filter(Boolean);
-
-    const storedMatchesSigner =
-      !!storedAddress && signerAddresses.some((addr: string) => addr.toLowerCase() === storedAddress.toLowerCase());
-
-    let addressStatus: "match" | "stored_is_signer" | "mismatch" = "mismatch";
-
-    if (storedAddress && derivedAddress && storedAddress.toLowerCase() === derivedAddress.toLowerCase()) {
-      addressStatus = "match";
-    } else if (storedMatchesSigner) {
-      addressStatus = "stored_is_signer";
-    }
-
-    const resultHashBytes =
-      toUint8Array(task.result_hash) ??
-      (() => {
-        const resultBytes = toUint8Array(task.result_bytes ?? task.result);
-        return resultBytes ? computeResultHash(resultBytes) : null;
-      })();
-
-    return {
-      storedAddress,
-      derivedAddress,
-      addressMatch: !!storedAddress && !!derivedAddress && storedAddress.toLowerCase() === derivedAddress.toLowerCase(),
-      addressStatus,
-      derivedError,
-      signerRows,
-      resultHashHex: resultHashBytes ? bytesToHex(resultHashBytes) : null,
-      multisigDebug,
-    };
-  }, [task, registeredNodes]);
+  const validation = useMemo(() => validateTaskMultisig(task, registeredNodes), [task, registeredNodes]);
 
   const explainedEvents = useMemo(
     () => (events ?? []).map((evt) => explainEvent(evt, task, registeredNodes)),

@@ -4,6 +4,7 @@ import { IotaClient, type ChainType } from '@iota/iota-sdk/client';
 import { Transaction } from '@iota/iota-sdk/transactions';
 import { fetchExampleContent, prepareWalletTask } from '../lib/api';
 import { resolveApiBaseUrl } from '../lib/apiBase';
+import { validateTaskMultisig } from '../lib/multisigValidation';
 import type { ExampleTask, OracleNetwork, PreparedWalletTaskResponse, RegisteredOracleNode } from '../types';
 
 type Props = {
@@ -51,6 +52,10 @@ type TaskDetail = {
   certificate_signers?: Array<string | number>;
   multisig_bytes?: unknown;
   multisig_addr?: string | null;
+  quorum_k?: number | string;
+  result?: unknown;
+  result_bytes?: number[] | Uint8Array | string | null;
+  result_hash?: number[] | Uint8Array | string | null;
 };
 
 type TaskEvent = {
@@ -506,7 +511,11 @@ function phaseLabelForState(state: number): string {
   }
 }
 
-function describeSnapshot(snapshot: TaskCompositeState): TaskLiveState {
+function describeSnapshot(
+  snapshot: TaskCompositeState,
+  taskDetail: TaskDetail | null,
+  registeredNodes: RegisteredOracleNode[],
+): TaskLiveState {
   const task = snapshot.taskFields;
   const config = snapshot.configFields;
   const runtime = snapshot.runtimeFields;
@@ -519,13 +528,46 @@ function describeSnapshot(snapshot: TaskCompositeState): TaskLiveState {
   const mediationVariance = Number(task.mediation_variance ?? runtime.mediation_variance ?? 0);
   const resultText = bytesToPrettyText(decodeVecU8(task.result));
   const mediationEnabled = mediationMode === MEDIATION_MEAN_U64;
+  const multisigValidation = validateTaskMultisig(
+    taskDetail ?? {
+      multisig_addr: task.multisig_addr,
+      multisig_bytes: task.multisig_bytes,
+      certificate_signers: task.certificate_signers,
+      quorum_k: task.quorum_k ?? config.quorum_k,
+      result: task.result,
+      result_bytes: task.result_bytes,
+      result_hash: task.result_hash,
+    },
+    registeredNodes,
+  );
+  const finalizedOnChain = state === 9;
+  const finalizedWithValidMultisig = finalizedOnChain && multisigValidation.addressStatus === 'match';
 
-  if (resultText || state === 9) {
+  if (resultText || finalizedWithValidMultisig) {
     return {
       kind: 'finalized',
       state,
       phaseLabel: 'Completed',
       detail: resultText ? 'Result received from oracle network.' : 'Task finalized on-chain.',
+      round,
+      mediationAttempts,
+      mediationStatus,
+      mediationVariance,
+      resultText,
+      noCommitMessages: [],
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  if (finalizedOnChain) {
+    return {
+      kind: 'error',
+      state,
+      phaseLabel: 'Invalid finalization',
+      detail:
+        multisigValidation.addressStatus === 'stored_is_signer'
+          ? 'Task reached completed state on-chain, but multisig_addr matches a signer address instead of the derived multisig.'
+          : multisigValidation.derivedError || 'Task reached completed state on-chain, but the certificate multisig address is invalid.',
       round,
       mediationAttempts,
       mediationStatus,
@@ -884,7 +926,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
     while (pollTokenRef.current === token && Date.now() - startedAt < MAX_POLL_MS) {
       try {
         const snapshot = await readTaskCompositeState(networkClient, taskId);
-        const baseLive = describeSnapshot(snapshot);
+        const baseLive = describeSnapshot(snapshot, taskDetail, registeredNodes);
         const noCommitMessages = await readNoCommitMessages(networkClient, taskId, snapshot.taskType).catch(
           () => [] as NoCommitMessage[],
         );

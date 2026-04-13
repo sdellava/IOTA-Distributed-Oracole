@@ -1,10 +1,12 @@
-[package]
+﻿[package]
 name = "iota_oracle_tasks"
 version = "0.0.1"
 edition = "2024.beta"
-published-at = "0x0"
+published-at = "0xa8431312912d3c169cc3d1e7f94dba9a55f529243272cc4e9ef488dce895a8a2"
 
 [dependencies]
+Iota = { git = "https://github.com/iotaledger/iota.git", subdir = "crates/iota-framework/packages/iota-framework", rev = "7e49c58b826b34c8e2b61842ef13c8de35a0aee8" }
+IotaSystem = { git = "https://github.com/iotaledger/iota.git", subdir = "crates/iota-framework/packages/iota-system", rev = "7e49c58b826b34c8e2b61842ef13c8de35a0aee8" }
 iota_oracle_system_state = { local = "../oracle_system_state_testnet" }
 
 [addresses]
