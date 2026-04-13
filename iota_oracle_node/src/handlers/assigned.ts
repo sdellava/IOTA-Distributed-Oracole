@@ -3,7 +3,7 @@ import { bytesToUtf8, decodeVecU8 } from "../events";
 import { executeTask } from "../taskExec";
 import { publishNoCommit } from "../taskSignFlow";
 import type { NodeContext } from "../nodeContext";
-import { buildMultiSigPublicKey } from "../multisig.js";
+import { assertCommitteeMultisigAddress, buildMultiSigPublicKey } from "../multisig.js";
 import { loadPubkeysByAddrB64 } from "../services/pubkeys";
 import { loadTaskBundle, isTaskFreshForNode, taskCreatedAtMs } from "../services/taskObjects";
 import {
@@ -315,14 +315,14 @@ export async function runConsensusRound(
   const chosenSigners = [...partials.partials.keys()].sort().slice(0, quorumK);
   if (myAddr !== leaderAddr) return true;
 
-  // usa le pubkey registrate on-chain e costruisci il multisig
-  // L'indirizzo multisig deve essere derivato dagli effettivi signer del certificato,
-  // non dall'intero assignment set quando quorum_k < assigned_nodes.length.
+  // La committee multisig del task e' definita dall'intero assigned set + quorum_k.
+  // I chosen signers servono per aggregare abbastanza firme da soddisfare la soglia.
   const pubkeysByAddrB64 = await loadPubkeysByAddrB64(client);
+  const assignedSorted = assignedNodes.map((a) => a.toLowerCase()).sort();
   const chosenSorted = chosenSigners.map((a) => a.toLowerCase()).sort();
 
   const pubsSorted: Array<{ nodeId: string; pubKeyBase64: string }> = [];
-  for (const addr of chosenSorted) {
+  for (const addr of assignedSorted) {
     const pk = pubkeysByAddrB64.get(addr);
     if (!pk) throw new Error(`Missing pubkey for ${addr}`);
     pubsSorted.push({ nodeId: addr, pubKeyBase64: pk });
@@ -330,6 +330,24 @@ export async function runConsensusRound(
 
   const multiPk = buildMultiSigPublicKey(quorumK, pubsSorted);
   const multisigAddr = multiPk.toIotaAddress();
+  assertCommitteeMultisigAddress({
+    threshold: quorumK,
+    pubs: pubsSorted,
+    multisigAddr,
+    context: `assigned.finalize task=${taskId} round=${round}`,
+  });
+  const chosenPartialSigsB64 = chosenSorted.map((addr) => {
+    const partial = partials.partials.get(addr);
+    if (!partial) throw new Error(`Missing partial signature for ${addr}`);
+    return Buffer.from(partial.payload).toString("base64");
+  });
+  const combinedSigB64 = multiPk.combinePartialSignatures(chosenPartialSigsB64);
+  const combinedSigBytes = Uint8Array.from(Buffer.from(combinedSigB64, "base64"));
+  const verified = await multiPk.verifyPersonalMessage(
+    consensusMessage(taskId, round, resultHashHex),
+    combinedSigB64,
+  );
+  if (!verified) throw new Error("Combined multisig signature verification failed");
 
   const cert = buildCertificateBlob({
     kind: "finalize",
@@ -363,7 +381,7 @@ export async function runConsensusRound(
     taskId,
     runtimeId,
     resultBytes,
-    multisigBytes: cert,
+    multisigBytes: combinedSigBytes,
     multisigAddr,
     signerAddrs: chosenSigners,
     certificateBlob: cert,

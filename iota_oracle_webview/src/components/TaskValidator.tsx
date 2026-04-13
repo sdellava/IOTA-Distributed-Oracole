@@ -15,9 +15,9 @@ type TaskLike = {
   creator?: string;
   multisig_addr?: string;
   multisig_bytes?: unknown;
+  assigned_nodes?: Array<string | number>;
   certificate_signers?: Array<string | number>;
   quorum_k?: number | string;
-  assigned_nodes?: Array<string | number>;
   result?: unknown;
   result_bytes?: number[] | Uint8Array | string | null;
   result_hash?: number[] | Uint8Array | string | null;
@@ -752,7 +752,7 @@ export default function TaskValidator({ task, registeredNodes, events = [] }: Pr
               <td>{validation.storedAddress || "-"}</td>
             </tr>
             <tr>
-              <td>Derived from certificate signers</td>
+              <td>Derived from assigned nodes + quorum</td>
               <td>{validation.derivedAddress || "-"}</td>
             </tr>
             <tr>
@@ -768,6 +768,20 @@ export default function TaskValidator({ task, registeredNodes, events = [] }: Pr
             <tr>
               <td>Result hash</td>
               <td>{validation.resultHashHex || "-"}</td>
+            </tr>
+            <tr>
+              <td>Certificate validation</td>
+              <td>
+                {validation.certificateStatus === "valid"
+                  ? "VALID"
+                  : validation.certificateStatus === "below_quorum"
+                    ? "INVALID - signers below quorum_k"
+                    : validation.certificateStatus === "unknown_signer"
+                      ? "INVALID - signer outside assigned node set"
+                      : validation.certificateStatus === "duplicate_signer"
+                        ? "INVALID - duplicate signer"
+                        : "INVALID - empty signer set"}
+              </td>
             </tr>
             <tr>
               <td>multisig_bytes</td>

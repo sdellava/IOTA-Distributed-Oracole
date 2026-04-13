@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 
 import { decodeVecU8 } from "./events";
 import { bcsAddress, bcsU8, bcsU64, bcsVecU8 } from "./bcs";
-import { buildMultiSigPublicKey } from "./multisig";
+import { assertCommitteeMultisigAddress, buildMultiSigPublicKey } from "./multisig";
 import { optInt } from "./nodeConfig";
 import { loadTaskBundle } from "./services/taskObjects";
 import { signAndExecuteWithLockRetry } from "./txRetry.js";
@@ -766,7 +766,7 @@ export async function combineCommitAndFinalizeV2(opts: {
   }
 
   const pubsSorted: Array<{ nodeId: string; pubKeyBase64: string }> = [];
-  for (const addr of chosenAddrs) {
+  for (const addr of assignedSorted) {
     const pk = pubkeysByAddrB64.get(addr);
     if (!pk) throw new Error(`Missing pubkey for ${addr}`);
     pubsSorted.push({ nodeId: addr, pubKeyBase64: pk });
@@ -774,6 +774,12 @@ export async function combineCommitAndFinalizeV2(opts: {
 
   const multiPk = buildMultiSigPublicKey(quorumK, pubsSorted);
   const multisigAddr = multiPk.toIotaAddress();
+  assertCommitteeMultisigAddress({
+    threshold: quorumK,
+    pubs: pubsSorted,
+    multisigAddr,
+    context: `taskSignFlow.finalize task=${taskId} round=${round}`,
+  });
   const chosenSigs = chosenAddrs.map((addr) => partials.get(addr)!.sigB64);
   const combinedSigB64 = multiPk.combinePartialSignatures(chosenSigs);
 

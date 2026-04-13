@@ -30,3 +30,25 @@ export function buildMultiSigPublicKey(threshold: number, pubs: Array<{ nodeId: 
     publicKeys: pubs.map((p) => ({ publicKey: new Ed25519PublicKey(p.pubKeyBase64), weight: 1 })),
   });
 }
+
+export function deriveCommitteeMultisigAddress(
+  threshold: number,
+  pubs: Array<{ nodeId: string; pubKeyBase64: string }>,
+): string {
+  return buildMultiSigPublicKey(threshold, pubs).toIotaAddress();
+}
+
+export function assertCommitteeMultisigAddress(args: {
+  threshold: number;
+  pubs: Array<{ nodeId: string; pubKeyBase64: string }>;
+  multisigAddr: string;
+  context: string;
+}): string {
+  const derived = deriveCommitteeMultisigAddress(args.threshold, args.pubs);
+  if (derived.toLowerCase() !== args.multisigAddr.toLowerCase()) {
+    throw new Error(
+      `[${args.context}] reject finalize: derived committee multisig address ${derived} != provided ${args.multisigAddr}`,
+    );
+  }
+  return derived;
+}

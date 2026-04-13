@@ -17,6 +17,7 @@ export type RegisteredNodeLike = {
 export type TaskMultisigLike = {
   multisig_addr?: string | null;
   multisig_bytes?: unknown;
+  assigned_nodes?: Array<string | number>;
   certificate_signers?: Array<string | number>;
   quorum_k?: number | string;
   result?: unknown;
@@ -30,6 +31,7 @@ export type TaskMultisigValidation = {
   addressMatch: boolean;
   addressStatus: "match" | "stored_is_signer" | "mismatch";
   derivedError: string | null;
+  certificateStatus: "valid" | "below_quorum" | "unknown_signer" | "duplicate_signer" | "empty";
   signerRows: Array<{
     signerId: string;
     found: boolean;
@@ -66,6 +68,13 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 function normalizeId(value: unknown): string {
   return String(value ?? "").trim();
+}
+
+function canonicalIds(values: Array<string | number>): string[] {
+  return values
+    .map((value) => normalizeId(value).toLowerCase())
+    .filter(Boolean)
+    .sort();
 }
 
 function normalizeAddress(value: unknown): string {
@@ -185,14 +194,18 @@ export function validateTaskMultisig(
       addressMatch: false,
       addressStatus: "mismatch",
       derivedError: "No task loaded.",
+      certificateStatus: "empty",
       signerRows: [],
       resultHashHex: null,
       multisigDebug: null,
     };
   }
 
+  const committeeIds = Array.isArray(task.assigned_nodes)
+    ? canonicalIds(task.assigned_nodes)
+    : [];
   const signerIds = Array.isArray(task.certificate_signers)
-    ? task.certificate_signers.map((x) => normalizeId(x)).filter(Boolean)
+    ? canonicalIds(task.certificate_signers)
     : [];
 
   const thresholdRaw = task.quorum_k;
@@ -202,26 +215,28 @@ export function validateTaskMultisig(
 
   const orderedSignerIds =
     multisigDebug && Array.isArray(multisigDebug.signers)
-      ? multisigDebug.signers.map((x: unknown) => normalizeId(x)).filter(Boolean)
+      ? canonicalIds(multisigDebug.signers as Array<string | number>)
       : signerIds;
 
-  const signerRows: TaskMultisigValidation["signerRows"] = orderedSignerIds.map((signerId: string) => {
-    const signerIdLc = signerId.toLowerCase();
+  const committeeSourceIds = committeeIds.length > 0 ? committeeIds : orderedSignerIds;
+
+  const committeeRows = committeeSourceIds.map((memberId: string) => {
+    const memberIdLc = memberId.toLowerCase();
     const node =
-      registeredNodes.find((n) => normalizeId(n.address).toLowerCase() === signerIdLc) ??
-      registeredNodes.find((n) => normalizeId(n.nodeId).toLowerCase() === signerIdLc) ??
-      registeredNodes.find((n) => normalizeId(n.id).toLowerCase() === signerIdLc);
+      registeredNodes.find((n) => normalizeId(n.address).toLowerCase() === memberIdLc) ??
+      registeredNodes.find((n) => normalizeId(n.nodeId).toLowerCase() === memberIdLc) ??
+      registeredNodes.find((n) => normalizeId(n.id).toLowerCase() === memberIdLc);
 
     if (!node) {
-      return { signerId, found: false, error: "Registered node not found" };
+      return { signerId: memberId, found: false, error: "Registered node not found" };
     }
 
     try {
       const pubkeyBase64 = normalizePubkeyToBase64(node.pubkey);
-      return { signerId, found: true, address: node.address, pubkeyBase64 };
+      return { signerId: memberId, found: true, address: node.address, pubkeyBase64 };
     } catch (error) {
       return {
-        signerId,
+        signerId: memberId,
         found: true,
         address: node.address,
         error: error instanceof Error ? error.message : String(error),
@@ -229,7 +244,14 @@ export function validateTaskMultisig(
     }
   });
 
-  const validSignerPubkeys = signerRows
+  const signerRows: TaskMultisigValidation["signerRows"] = orderedSignerIds.map((signerId: string) => {
+    const signerIdLc = signerId.toLowerCase();
+    const match = committeeRows.find((row) => normalizeId(row.address).toLowerCase() === signerIdLc || row.signerId.toLowerCase() === signerIdLc);
+    if (match) return { ...match, signerId };
+    return { signerId, found: false, error: "Signer not present in assigned node set" };
+  });
+
+  const validCommitteePubkeys = committeeRows
     .filter((row: TaskMultisigValidation["signerRows"][number]) => !!row.pubkeyBase64)
     .map((row: TaskMultisigValidation["signerRows"][number]) => ({ pubKeyBase64: row.pubkeyBase64 as string, weight: 1 }));
 
@@ -239,10 +261,10 @@ export function validateTaskMultisig(
   try {
     if (!Number.isFinite(threshold) || threshold <= 0) {
       derivedError = `Invalid quorum_k on task: ${String(thresholdRaw)}`;
-    } else if (validSignerPubkeys.length < threshold) {
-      derivedError = `Not enough signer pubkeys to derive multisig. threshold=${threshold}, found=${validSignerPubkeys.length}`;
+    } else if (validCommitteePubkeys.length < threshold) {
+      derivedError = `Not enough assigned node pubkeys to derive multisig. threshold=${threshold}, found=${validCommitteePubkeys.length}`;
     } else {
-      derivedAddress = deriveAddressFromSignerSet(threshold, validSignerPubkeys);
+      derivedAddress = deriveAddressFromSignerSet(threshold, validCommitteePubkeys);
     }
   } catch (error) {
     derivedError = error instanceof Error ? error.message : String(error);
@@ -270,6 +292,19 @@ export function validateTaskMultisig(
       return resultBytes ? computeResultHash(resultBytes) : null;
     })();
 
+  const uniqueSignerIds = new Set(orderedSignerIds.map((id) => id.toLowerCase()));
+  const unknownSignerPresent = signerRows.some((row) => !row.found);
+  let certificateStatus: TaskMultisigValidation["certificateStatus"] = "valid";
+  if (orderedSignerIds.length === 0) {
+    certificateStatus = "empty";
+  } else if (uniqueSignerIds.size !== orderedSignerIds.length) {
+    certificateStatus = "duplicate_signer";
+  } else if (unknownSignerPresent) {
+    certificateStatus = "unknown_signer";
+  } else if (Number.isFinite(threshold) && orderedSignerIds.length < threshold) {
+    certificateStatus = "below_quorum";
+  }
+
   return {
     storedAddress,
     derivedAddress,
@@ -277,6 +312,7 @@ export function validateTaskMultisig(
       !!normalizedStoredAddress && !!normalizedDerivedAddress && normalizedStoredAddress === normalizedDerivedAddress,
     addressStatus,
     derivedError,
+    certificateStatus,
     signerRows,
     resultHashHex: resultHashBytes ? bytesToHex(resultHashBytes) : null,
     multisigDebug,
