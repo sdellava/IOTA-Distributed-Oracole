@@ -316,12 +316,13 @@ export async function runConsensusRound(
   if (myAddr !== leaderAddr) return true;
 
   // usa le pubkey registrate on-chain e costruisci il multisig
-  // con TUTTI gli assigned nodes ordinati, coerentemente con taskSignFlow.ts
+  // L'indirizzo multisig deve essere derivato dagli effettivi signer del certificato,
+  // non dall'intero assignment set quando quorum_k < assigned_nodes.length.
   const pubkeysByAddrB64 = await loadPubkeysByAddrB64(client);
-  const assignedSorted = assignedNodes.map((a) => a.toLowerCase()).sort();
+  const chosenSorted = chosenSigners.map((a) => a.toLowerCase()).sort();
 
   const pubsSorted: Array<{ nodeId: string; pubKeyBase64: string }> = [];
-  for (const addr of assignedSorted) {
+  for (const addr of chosenSorted) {
     const pk = pubkeysByAddrB64.get(addr);
     if (!pk) throw new Error(`Missing pubkey for ${addr}`);
     pubsSorted.push({ nodeId: addr, pubKeyBase64: pk });

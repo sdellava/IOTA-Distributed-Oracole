@@ -766,7 +766,7 @@ export async function combineCommitAndFinalizeV2(opts: {
   }
 
   const pubsSorted: Array<{ nodeId: string; pubKeyBase64: string }> = [];
-  for (const addr of assignedSorted) {
+  for (const addr of chosenAddrs) {
     const pk = pubkeysByAddrB64.get(addr);
     if (!pk) throw new Error(`Missing pubkey for ${addr}`);
     pubsSorted.push({ nodeId: addr, pubKeyBase64: pk });
