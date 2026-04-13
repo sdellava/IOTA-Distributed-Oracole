@@ -49,6 +49,27 @@ type WalletRunResult = {
 type TaskDetail = {
   assigned_nodes?: Array<string | number>;
   certificate_signers?: Array<string | number>;
+  multisig_bytes?: unknown;
+  multisig_addr?: string | null;
+};
+
+type TaskEvent = {
+  type?: string | null;
+  sender?: string | null;
+  timestampMs?: string | number | null;
+  parsedJson?: Record<string, unknown> | null;
+};
+
+type FailureReason = {
+  code: number;
+  label: string;
+  description: string;
+};
+
+type NodeProtocolProgress = {
+  commitPublished: boolean;
+  revealPublished: boolean;
+  partialSignaturePublished: boolean;
 };
 
 type StageTone = 'neutral' | 'success' | 'danger';
@@ -251,6 +272,138 @@ function normalizeAddress(address: string): string {
   const value = String(address ?? '').trim().toLowerCase();
   if (!value) return '';
   return value.startsWith('0x') ? value : `0x${value}`;
+}
+
+function fieldNumber(record: Record<string, unknown> | null, ...keys: string[]): number | null {
+  if (!record) return null;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim() !== '') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return null;
+}
+
+function eventTypeName(type: string | null | undefined): string {
+  const value = String(type ?? '').trim();
+  if (!value) return '';
+  const match = value.match(/::([^:<]+)(?:<.*>)?$/);
+  return match ? match[1] : value;
+}
+
+function describeReasonCode(reasonCode: number): FailureReason {
+  switch (reasonCode) {
+    case 1:
+      return {
+        code: reasonCode,
+        label: 'EXECUTION_FAILED',
+        description: 'The node could not complete task execution locally, so it explicitly opted out of the commit phase.',
+      };
+    case 1002:
+      return {
+        code: reasonCode,
+        label: 'COMMIT_TIMEOUT',
+        description: 'The commit window ended before enough commit messages were received.',
+      };
+    case 1003:
+      return {
+        code: reasonCode,
+        label: 'REVEAL_NO_QUORUM',
+        description: 'Nodes revealed different outputs and no winning result reached quorum.',
+      };
+    case 1004:
+      return {
+        code: reasonCode,
+        label: 'COMMIT_NO_QUORUM',
+        description: 'Enough nodes declared no_commit, making commit quorum mathematically impossible.',
+      };
+    case 1005:
+      return {
+        code: reasonCode,
+        label: 'PARTIAL_SIG_TIMEOUT',
+        description: 'A winning result existed, but the leader did not collect enough partial signatures to finalize.',
+      };
+    default:
+      return {
+        code: reasonCode,
+        label: reasonCode > 0 ? `REASON_${reasonCode}` : 'UNKNOWN_REASON',
+        description: 'The protocol recorded a failure reason code that is not explicitly mapped in the webview.',
+      };
+  }
+}
+
+function decodeAsciiJson(value: unknown): Record<string, unknown> | null {
+  const bytes = decodeVecU8(value as any);
+  if (!bytes.length) return null;
+  try {
+    const text = new TextDecoder().decode(bytes).trim();
+    if (!text) return null;
+    const parsed = JSON.parse(text);
+    return asRecord(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function extractLatestFailureReason(events: TaskEvent[]): FailureReason | null {
+  const failedEvents = events
+    .map((event) => {
+      if (eventTypeName(event.type) !== 'TaskFailed') return null;
+      const reasonCode = fieldNumber(asRecord(event.parsedJson), 'reason_code', 'reasonCode') ?? 0;
+      return {
+        timestamp: Number(event.timestampMs ?? 0),
+        reason: describeReasonCode(reasonCode),
+      };
+    })
+    .filter(Boolean) as Array<{ timestamp: number; reason: FailureReason }>;
+
+  failedEvents.sort((a, b) => b.timestamp - a.timestamp);
+  return failedEvents[0]?.reason ?? null;
+}
+
+function extractFailureReasonFromTaskDetail(taskDetail: TaskDetail | null): FailureReason | null {
+  const debug = decodeAsciiJson(taskDetail?.multisig_bytes);
+  if (!debug) return null;
+
+  const kind = String(debug.kind ?? '').trim().toLowerCase();
+  if (kind !== 'abort') return null;
+
+  const reasonCode = fieldNumber(debug, 'reasonCode', 'reason_code', 'value0') ?? 0;
+  return describeReasonCode(reasonCode);
+}
+
+function getEventSenderAddress(event: TaskEvent): string {
+  const parsedSender = asRecord(event.parsedJson)?.sender;
+  return normalizeAddress(String(parsedSender ?? event.sender ?? ''));
+}
+
+function extractNodeProtocolProgress(events: TaskEvent[]): Map<string, NodeProtocolProgress> {
+  const progressByNode = new Map<string, NodeProtocolProgress>();
+
+  for (const event of events) {
+    if (eventTypeName(event.type) !== 'OracleMessage') continue;
+
+    const sender = getEventSenderAddress(event);
+    if (!sender) continue;
+
+    const kind = fieldNumber(asRecord(event.parsedJson), 'kind', 'message_kind') ?? -1;
+    const current = progressByNode.get(sender) ?? {
+      commitPublished: false,
+      revealPublished: false,
+      partialSignaturePublished: false,
+    };
+
+    if (kind === 2) current.commitPublished = true;
+    if (kind === 3) current.revealPublished = true;
+    if (kind === 4) current.partialSignaturePublished = true;
+
+    progressByNode.set(sender, current);
+  }
+
+  return progressByNode;
 }
 
 function extractNoCommitMessage(parsedJson: any, event: any): NoCommitMessage | null {
@@ -499,6 +652,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<WalletRunResult | null>(null);
   const [taskDetail, setTaskDetail] = useState<TaskDetail | null>(null);
+  const [taskEvents, setTaskEvents] = useState<TaskEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selectedExample, setSelectedExample] = useState<string>('');
   const currentAccount = useCurrentAccount();
@@ -551,23 +705,30 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
     const taskId = result?.taskId?.trim();
     if (!taskId) {
       setTaskDetail(null);
+      setTaskEvents([]);
       return;
     }
 
     let cancelled = false;
     const loadTaskDetail = async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/task/${encodeURIComponent(taskId)}`);
-        if (!response.ok) {
-          throw new Error(`Unable to load task detail: HTTP ${response.status}`);
+        const [detailResponse, eventsResponse] = await Promise.all([
+          fetch(`${API_BASE}/api/task/${encodeURIComponent(taskId)}`),
+          fetch(`${API_BASE}/api/task/${encodeURIComponent(taskId)}/events`),
+        ]);
+        if (!detailResponse.ok) {
+          throw new Error(`Unable to load task detail: HTTP ${detailResponse.status}`);
         }
-        const payload = (await response.json()) as TaskDetail;
+        const payload = (await detailResponse.json()) as TaskDetail;
+        const eventsPayload = eventsResponse.ok ? (await eventsResponse.json()) as { events?: TaskEvent[] } : null;
         if (!cancelled) {
           setTaskDetail(payload);
+          setTaskEvents(Array.isArray(eventsPayload?.events) ? eventsPayload.events : []);
         }
       } catch {
         if (!cancelled) {
           setTaskDetail(null);
+          setTaskEvents([]);
         }
       }
     };
@@ -578,6 +739,11 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
     };
   }, [result?.taskId, result?.live.updatedAt]);
 
+  const failureReason = useMemo(
+    () => extractLatestFailureReason(taskEvents) ?? extractFailureReasonFromTaskDetail(taskDetail),
+    [taskDetail, taskEvents],
+  );
+
   const assignedNodeRows = useMemo(() => {
     const assignedNodes = Array.isArray(taskDetail?.assigned_nodes)
       ? taskDetail.assigned_nodes.map((item) => normalizeAddress(String(item))).filter(Boolean)
@@ -587,17 +753,84 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
         ? taskDetail.certificate_signers.map((item) => normalizeAddress(String(item))).filter(Boolean)
         : [],
     );
+    const nodeProgress = extractNodeProtocolProgress(taskEvents);
 
     return assignedNodes.map((address) => {
       const nodeMeta = nodeMetaByAddress.get(address);
+      const progress = nodeProgress.get(address) ?? {
+        commitPublished: false,
+        revealPublished: false,
+        partialSignaturePublished: false,
+      };
+
+      let protocolLabel = certificateSigners.has(address) ? 'certificate signer' : 'assigned';
+      let protocolBadge = certificateSigners.has(address) ? 'badge-ok' : 'badge-muted';
+      let protocolHint = '';
+
+      if (failureReason?.code === 1002) {
+        if (!progress.commitPublished) {
+          protocolLabel = 'missing commit';
+          protocolBadge = 'badge-err';
+          protocolHint = 'No commit message was observed on-chain before the deadline.';
+        } else {
+          protocolLabel = 'commit received';
+          protocolBadge = 'badge-ok';
+          protocolHint = 'This node published a commit on-chain within the observed round.';
+        }
+      } else if (failureReason?.code === 1003) {
+        if (!progress.revealPublished) {
+          protocolLabel = 'missing reveal';
+          protocolBadge = 'badge-err';
+          protocolHint = 'No reveal message was observed on-chain for this node.';
+        } else {
+          protocolLabel = 'reveal received';
+          protocolBadge = 'badge-ok';
+          protocolHint = 'This node published a reveal on-chain.';
+        }
+      } else if (failureReason?.code === 1005) {
+        if (!progress.partialSignaturePublished) {
+          protocolLabel = 'missing partial sig';
+          protocolBadge = 'badge-err';
+          protocolHint = 'No partial signature was observed on-chain for this node.';
+        } else {
+          protocolLabel = 'partial sig received';
+          protocolBadge = 'badge-ok';
+          protocolHint = 'This node published a partial signature on-chain.';
+        }
+      } else if (progress.partialSignaturePublished) {
+        protocolLabel = 'partial sig received';
+        protocolBadge = 'badge-ok';
+        protocolHint = 'This node published a partial signature on-chain.';
+      } else if (progress.revealPublished) {
+        protocolLabel = 'reveal received';
+        protocolBadge = 'badge-ok';
+        protocolHint = 'This node published a reveal on-chain.';
+      } else if (progress.commitPublished) {
+        protocolLabel = 'commit received';
+        protocolBadge = 'badge-ok';
+        protocolHint = 'This node published a commit on-chain.';
+      }
+
       return {
         address,
         signed: certificateSigners.has(address),
         validatorLabel: nodeMeta?.validatorLabel ?? null,
         validatorId: nodeMeta?.validatorId ?? null,
+        progress,
+        protocolLabel,
+        protocolBadge,
+        protocolHint,
       };
     });
-  }, [nodeMetaByAddress, taskDetail]);
+  }, [failureReason?.code, nodeMetaByAddress, taskDetail, taskEvents]);
+
+  const missingCommitNodes = useMemo(
+    () =>
+      failureReason?.code === 1002
+        ? assignedNodeRows.filter((item) => !item.progress.commitPublished)
+        : [],
+    [assignedNodeRows, failureReason?.code],
+  );
 
   const parsedTask = useMemo(() => {
     try {
@@ -891,6 +1124,12 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
                           attempts={result.live.mediationAttempts}, status={result.live.mediationStatus}, variance={result.live.mediationVariance}
                         </dd>
                       </div>
+                      {result.live.kind === 'failed' && failureReason ? (
+                        <div>
+                          <dt>Failure reason</dt>
+                          <dd>{failureReason.label} ({failureReason.code})</dd>
+                        </div>
+                      ) : null}
                       <div>
                         <dt>Updated</dt>
                         <dd>{new Date(result.live.updatedAt).toLocaleString()}</dd>
@@ -912,6 +1151,17 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
                 </tr>
               </tbody>
             </table>
+            {result.live.kind === 'failed' && failureReason ? (
+              <div className="summary-hint">{failureReason.description}</div>
+            ) : null}
+            {missingCommitNodes.length ? (
+              <div className="summary-hint">
+                Missing commit before deadline:{' '}
+                {missingCommitNodes
+                  .map((item) => item.validatorLabel || shortAddress(item.address, 10, 8))
+                  .join(', ')}
+              </div>
+            ) : null}
           </div>
 
           {result.live.noCommitMessages.length ? (
@@ -970,7 +1220,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
                     <tr>
                       <th>Node</th>
                       <th>Validator</th>
-                      <th>Signed</th>
+                      <th>Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -989,10 +1239,13 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
                             '-'
                           )}
                         </td>
-                        <td data-label="Signed">
-                          <span className={`badge ${item.signed ? 'badge-ok' : 'badge-muted'}`}>
-                            {item.signed ? 'signed' : 'assigned only'}
+                        <td data-label="Status">
+                          <span className={`badge ${item.protocolBadge}`}>
+                            {item.protocolLabel}
                           </span>
+                          {item.protocolHint ? (
+                            <div className="summary-hint">{item.protocolHint}</div>
+                          ) : null}
                         </td>
                       </tr>
                     ))}
