@@ -32,6 +32,8 @@ export type TaskMultisigValidation = {
   addressStatus: "match" | "stored_is_signer" | "mismatch";
   derivedError: string | null;
   certificateStatus: "valid" | "below_quorum" | "unknown_signer" | "duplicate_signer" | "empty";
+  multisigBytesBase64: string | null;
+  multisigBytesLength: number;
   signerRows: Array<{
     signerId: string;
     found: boolean;
@@ -195,6 +197,8 @@ export function validateTaskMultisig(
       addressStatus: "mismatch",
       derivedError: "No task loaded.",
       certificateStatus: "empty",
+      multisigBytesBase64: null,
+      multisigBytesLength: 0,
       signerRows: [],
       resultHashHex: null,
       multisigDebug: null,
@@ -291,6 +295,7 @@ export function validateTaskMultisig(
       const resultBytes = toUint8Array(task.result_bytes ?? task.result);
       return resultBytes ? computeResultHash(resultBytes) : null;
     })();
+  const multisigRawBytes = toUint8Array(task.multisig_bytes);
 
   const uniqueSignerIds = new Set(orderedSignerIds.map((id) => id.toLowerCase()));
   const unknownSignerPresent = signerRows.some((row) => !row.found);
@@ -313,6 +318,8 @@ export function validateTaskMultisig(
     addressStatus,
     derivedError,
     certificateStatus,
+    multisigBytesBase64: multisigRawBytes ? bytesToBase64(multisigRawBytes) : null,
+    multisigBytesLength: multisigRawBytes?.length ?? 0,
     signerRows,
     resultHashHex: resultHashBytes ? bytesToHex(resultHashBytes) : null,
     multisigDebug,

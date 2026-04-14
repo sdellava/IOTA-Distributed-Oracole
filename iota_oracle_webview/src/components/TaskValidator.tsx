@@ -790,8 +790,15 @@ export default function TaskValidator({ task, registeredNodes, events = [] }: Pr
                   <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
                     {JSON.stringify(validation.multisigDebug, null, 2)}
                   </pre>
+                ) : validation.multisigBytesBase64 ? (
+                  <div>
+                    <div style={{ marginBottom: 8 }}>{validation.multisigBytesLength} bytes</div>
+                    <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                      {validation.multisigBytesBase64}
+                    </pre>
+                  </div>
                 ) : (
-                  "[debug only]"
+                  "-"
                 )}
               </td>
             </tr>
