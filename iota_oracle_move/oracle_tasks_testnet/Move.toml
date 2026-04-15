@@ -10,4 +10,4 @@ IotaSystem = { git = "https://github.com/iotaledger/iota.git", subdir = "crates/
 iota_oracle_system_state = { local = "../oracle_system_state_testnet" }
 
 [addresses]
-iota_oracle_tasks = "0x0"
+iota_oracle_tasks = "0xa8431312912d3c169cc3d1e7f94dba9a55f529243272cc4e9ef488dce895a8a2"

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import { bcs } from '@iota/iota-sdk/bcs';
 
 export function bcsVecU8(bytes: Uint8Array): Uint8Array {

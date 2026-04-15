@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 // src/taskSignFlow.ts
 // On-chain commit/reveal/sign flow aligned with the current oracle_tasks module split
 // across oracle_tasks, oracle_task_config, oracle_task_runtime, oracle_task_store.

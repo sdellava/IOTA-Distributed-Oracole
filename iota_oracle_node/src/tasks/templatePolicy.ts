@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 const EXPECTED_TEMPLATE_BY_TASK_TYPE: Record<string, number> = {
   RANDOM_NUMBER_MEDIATION: 1,
   COMMODITY_PRICE: 2,

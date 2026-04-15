@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createNetworkConfig, IotaClientProvider, WalletProvider } from "@iota/dapp-kit";

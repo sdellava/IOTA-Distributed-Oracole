@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import { IotaClient } from "@iota/iota-sdk/client";
 import { config, getRuntimeConfig } from "../config.js";
 import type {

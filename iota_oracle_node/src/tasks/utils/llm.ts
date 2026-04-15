@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import { normalizeJsonCanonical } from "./json";
 import { validateAgainstSchema } from "./schema";
 import { httpFetchBytes } from "../../http";

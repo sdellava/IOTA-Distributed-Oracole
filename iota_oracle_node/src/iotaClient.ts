@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import { getFullnodeUrl, IotaClient } from "@iota/iota-sdk/client";
 import type { Network } from "./env.js";
 

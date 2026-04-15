@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import fs from 'node:fs';
 import path from 'node:path';
 import { decodeIotaPrivateKey } from '@iota/iota-sdk/cryptography';

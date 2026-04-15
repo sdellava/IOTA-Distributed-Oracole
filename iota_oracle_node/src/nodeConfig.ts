@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 export function optBool(name: string, def = false): boolean {
   const v = process.env[name]?.trim();
   if (!v) return def;

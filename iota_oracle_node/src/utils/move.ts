@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 export function getMoveFields(obj: any): Record<string, any> {
   const c: any = obj?.data?.content;
   if (!c || c.dataType !== "moveObject") return {};

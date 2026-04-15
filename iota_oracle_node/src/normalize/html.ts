@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 function stripComments(html: string): string { return html.replace(/<!--[\s\S]*?-->/g, ""); }
 function stripTagBlocks(html: string, tag: "script" | "style"): string {
   const re = new RegExp(`<${tag}\\b[\\s\\S]*?<\\/${tag}>`, "gi");

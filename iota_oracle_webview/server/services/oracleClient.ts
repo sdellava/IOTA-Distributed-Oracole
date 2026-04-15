@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";

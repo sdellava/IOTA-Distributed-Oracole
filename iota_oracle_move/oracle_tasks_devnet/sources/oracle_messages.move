@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 module iota_oracle_tasks::oracle_messages {
     use iota::event;
     use iota_oracle_tasks::oracle_tasks;

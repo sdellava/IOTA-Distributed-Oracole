@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 const CMC_IOTA_SOURCE_URL = "https://coinmarketcap.com/currencies/iota/";
 const CMC_PUBLIC_QUOTE_URL = "https://api.coinmarketcap.com/data-api/v3/cryptocurrency/quote/latest?id=1720";
 const DEFAULT_CACHE_TTL_MS = 60_000;

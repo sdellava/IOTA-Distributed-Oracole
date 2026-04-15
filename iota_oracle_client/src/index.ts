@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);

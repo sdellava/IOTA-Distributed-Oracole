@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 export function mustEnv(key: string): string {
   const v = process.env[key]?.trim();
   if (!v) throw new Error(`Missing env ${key}`);

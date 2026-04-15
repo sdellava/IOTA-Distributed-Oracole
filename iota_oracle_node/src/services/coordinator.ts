@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 export function normalizeAddress(addr: string): string {
   return String(addr ?? "").trim().toLowerCase();
 }

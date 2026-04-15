@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import { useMemo } from "react";
 import { validateTaskMultisig } from "../lib/multisigValidation";
 

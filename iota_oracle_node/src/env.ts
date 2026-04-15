@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import * as path from "node:path";
 
 export type Network = "devnet" | "testnet" | "mainnet" | "localnet";

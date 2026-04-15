@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import { Transaction } from "@iota/iota-sdk/transactions";
 import type { IotaClient } from "@iota/iota-sdk/client";
 import type { Ed25519Keypair } from "@iota/iota-sdk/keypairs/ed25519";

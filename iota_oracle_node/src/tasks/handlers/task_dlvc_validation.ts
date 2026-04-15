@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import type { TaskHandler } from "../types";
 import { extractDidFromPayload, resolveDidDocument, resolveDidInput, validateDlvcAndExtractDomain } from "./dlvc_helpers";
 

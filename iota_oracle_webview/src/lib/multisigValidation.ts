@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import { MultiSigPublicKey } from "@iota/iota-sdk/multisig";
 import { Ed25519PublicKey } from "@iota/iota-sdk/keypairs/ed25519";
 import { sha256 } from "@noble/hashes/sha256";

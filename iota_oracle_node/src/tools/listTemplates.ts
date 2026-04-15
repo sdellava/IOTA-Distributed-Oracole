@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import "dotenv/config";
 import { iotaClient } from "../iota.js";
 import { getStateId } from "../config/env.js";

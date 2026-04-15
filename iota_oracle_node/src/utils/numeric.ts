@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 function parseNumberLike(x: unknown): number | null {
   if (typeof x === "number" && Number.isFinite(x)) return x;
   if (typeof x === "string") {

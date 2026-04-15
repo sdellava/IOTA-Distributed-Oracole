@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 // src/gas.ts
 import type { IotaClient, IotaObjectResponse } from "@iota/iota-sdk/client";
 import type { Transaction } from "@iota/iota-sdk/transactions";

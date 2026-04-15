@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 export function normalizeText(input: string, opts: { trim?: boolean; collapseWhitespace?: boolean; lineEnding?: "lf" | "crlf" }): string {
   let s = input.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   if (opts.collapseWhitespace) {

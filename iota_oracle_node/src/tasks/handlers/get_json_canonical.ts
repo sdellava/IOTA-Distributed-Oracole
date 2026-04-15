@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import type { TaskHandler } from "../types";
 import { httpFetchText } from "../../http";
 import { normalizeJsonCanonical } from "../utils/json";

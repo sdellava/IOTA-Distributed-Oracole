@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import { optInt, acceptsTemplate } from "../nodeConfig";
 import { bytesToUtf8, decodeVecU8 } from "../events";
 import { executeTask } from "../taskExec";

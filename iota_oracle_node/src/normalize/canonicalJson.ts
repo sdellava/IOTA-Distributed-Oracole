@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 export function canonicalizeJson(value: unknown): string {
   const v = value as Json;

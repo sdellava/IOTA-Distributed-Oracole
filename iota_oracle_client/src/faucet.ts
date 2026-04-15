@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 export async function requestFaucetIfEnabled(address: string) {
   const auto = (process.env.AUTO_FAUCET ?? '').toLowerCase();
   if (!(auto === 'true' || auto === '1' || auto === 'yes')) return;

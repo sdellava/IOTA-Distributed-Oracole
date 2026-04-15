@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import type { JobOnchain } from "../types.js";
 import { normalizeText } from "./text.js";
 import { normalizeHtml } from "./html.js";

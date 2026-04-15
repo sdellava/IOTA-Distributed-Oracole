@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import { bytesToUtf8, decodeVecU8 } from '../events';
 import type { NodeContext } from '../nodeContext';
 import { loadTaskBundle, isTaskFreshForNode } from '../services/taskObjects';

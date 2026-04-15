@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import { Agent } from "undici";
 
 const ipv4Agent = new Agent({ connect: { family: 4, rejectUnauthorized: false } as any });

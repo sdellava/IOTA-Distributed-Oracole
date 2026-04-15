@@ -11,4 +11,4 @@ Iota = { git = "https://github.com/iotaledger/iota.git", subdir = "crates/iota-f
 IotaSystem = { git = "https://github.com/iotaledger/iota.git", subdir = "crates/iota-framework/packages/iota-system", rev = "7e49c58b826b34c8e2b61842ef13c8de35a0aee8" }
 
 [addresses]
-iota_oracle_system_state = "0x0"
+iota_oracle_system_state = "0xb275ae736fb18b04a2885f35fb7afbd9857e71ca299e271c3c6304b9ac28448a"

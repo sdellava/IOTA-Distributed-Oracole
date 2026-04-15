@@ -1,0 +1,25 @@
+Copyright (c) 2026 Stefano Della Valle
+
+Repository licensing summary
+
+- Unless a file or directory states otherwise, first-party source code and
+  documentation authored for this project are licensed under the proprietary
+  terms in the root LICENSE file.
+- Third-party dependencies, SDKs, libraries, and generated vendor material
+  are excluded from that proprietary license and remain governed by their
+  own license terms.
+- Directories such as node_modules, dist, build, and similar generated or
+  vendored outputs may contain third-party code and must not be relicensed
+  or relabeled as proprietary project source.
+
+Source-file notices
+
+- First-party source files may include:
+  Copyright (c) 2026 Stefano Della Valle
+  SPDX-License-Identifier: LicenseRef-Proprietary
+
+Package metadata
+
+- JavaScript package manifests in this repository use:
+  "license": "SEE LICENSE IN LICENSE"
+  to point package consumers to the root proprietary license text.

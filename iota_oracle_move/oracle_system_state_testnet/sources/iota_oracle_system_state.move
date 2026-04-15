@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 module iota_oracle_system_state::systemState {
     use iota_system::iota_system::IotaSystemState;
     use iota_system::validator_cap::UnverifiedValidatorOperationCap;

@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import type { TaskHandlerContext } from "./types";
 import { getTaskHandler } from "./registry";
 import { validateTemplatePolicy } from "./templatePolicy";

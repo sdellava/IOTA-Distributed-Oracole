@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 type HtmlNorm = {
   kind?: "html_text";
   stripScripts?: boolean;

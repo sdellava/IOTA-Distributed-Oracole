@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import 'dotenv/config';
 import { IotaClient } from '@iota/iota-sdk/client';
 import { envByNetwork } from './config/env';

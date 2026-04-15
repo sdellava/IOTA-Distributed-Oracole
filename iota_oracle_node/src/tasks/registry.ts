@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import type { TaskHandler } from "./types";
 import { handleGetTextStrip } from "./handlers/get_text_strip";
 import { handleGetJsonCanonical } from "./handlers/get_json_canonical";

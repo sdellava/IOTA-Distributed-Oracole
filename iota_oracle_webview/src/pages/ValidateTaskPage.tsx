@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import { useEffect, useState } from "react";
 import TaskValidator from "../components/TaskValidator";
 import { resolveApiBaseUrl } from "../lib/apiBase";

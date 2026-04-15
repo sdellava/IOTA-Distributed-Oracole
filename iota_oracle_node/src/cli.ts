@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
 import { iotaClient } from "./iota.js";
 import { loadOrCreateNodeIdentity } from "./keys.js";
 import { approveTaskTemplateProposal, registerOracleNode } from "./oracleTx.js";
