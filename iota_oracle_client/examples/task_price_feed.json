@@ -13,18 +13,14 @@
     "kind": "json",
     "canonical": true,
     "dropNulls": true,
-    "dropKeys": [
-      "last_updated_at",
-      "time",
-      "timestamp"
-    ],
+    "dropKeys": ["last_updated_at", "time", "timestamp"],
     "sortArrays": false
   },
   "consensus": {
     "mode": "exact_hash",
     "quorum": {
       "type": "pct",
-      "value": 0.67
+      "value": 0.6
     }
   },
   "timeouts": {

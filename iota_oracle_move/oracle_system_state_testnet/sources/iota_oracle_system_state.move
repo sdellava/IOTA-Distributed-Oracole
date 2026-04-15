@@ -58,7 +58,8 @@ module iota_oracle_system_state::systemState {
     }
 
     // Price governed by oracle nodes:
-    // required_payment = max(min_payment, base_price_iota + retention_days * price_per_retention_day_iota)
+    // raw_payment = base_price_iota + download_price + retention_days * price_per_retention_day_iota
+    // required_payment = max(min_payment, raw_payment + system_fee(raw_payment))
     // for non-storage templates, allow_storage=0 and retention_days must be 0
     public struct TaskTemplate has copy, drop, store {
         template_id: u64,
@@ -483,13 +484,13 @@ module iota_oracle_system_state::systemState {
         tpl.price_per_retention_day_iota
     }
 
-    public fun validate_task_request_and_get_payment(
+    public fun validate_task_request_and_get_payment_split(
         st: &State,
         template_id: u64,
         payload_bytes_len: u64,
         retention_days: u64,
         declared_download_bytes: u64
-    ): u64 {
+    ): (u64, u64, u64) {
         assert!(has_task_template(st, template_id), ETemplateNotFound);
         assert!(task_template_is_enabled(st, template_id) == 1, ETemplateDisabled);
         assert!(payload_bytes_len <= task_template_max_input_bytes(st, template_id), EInputTooLarge);
@@ -514,8 +515,27 @@ module iota_oracle_system_state::systemState {
             task_template_base_price_iota(st, template_id) +
             download_price +
             retention_days * task_template_price_per_retention_day_iota(st, template_id);
+        let system_fee = fee_amount_from_bps(raw, st.system_fee_bps);
+        let total = raw + system_fee;
+        let required = max_u64(total, st.min_payment);
+        (raw, system_fee, required)
+    }
 
-        max_u64(raw, st.min_payment)
+    public fun validate_task_request_and_get_payment(
+        st: &State,
+        template_id: u64,
+        payload_bytes_len: u64,
+        retention_days: u64,
+        declared_download_bytes: u64
+    ): u64 {
+        let (_, _, required) = validate_task_request_and_get_payment_split(
+            st,
+            template_id,
+            payload_bytes_len,
+            retention_days,
+            declared_download_bytes
+        );
+        required
     }
 
     // =========================================================
@@ -654,6 +674,14 @@ module iota_oracle_system_state::systemState {
             coin::value(bal)
         } else {
             0
+        }
+    }
+
+    fun fee_amount_from_bps(amount: u64, bps: u64): u64 {
+        if (amount == 0 || bps == 0) {
+            0
+        } else {
+            (amount * bps + 9_999) / 10_000
         }
     }
 

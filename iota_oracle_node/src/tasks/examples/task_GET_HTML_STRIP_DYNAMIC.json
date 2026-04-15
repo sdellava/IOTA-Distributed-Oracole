@@ -14,14 +14,7 @@
     "stripScripts": true,
     "stripStyles": true,
     "stripComments": true,
-    "removeSelectors": [
-      "script",
-      "style",
-      "noscript",
-      "header",
-      "footer",
-      "nav"
-    ],
+    "removeSelectors": ["script", "style", "noscript", "header", "footer", "nav"],
     "dropTextPatterns": [
       "\\b\\d{1,2}:\\d{2}(:\\d{2})?\\b",
       "\\b\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z)?\\b",
@@ -36,7 +29,7 @@
     "mode": "exact_hash",
     "quorum": {
       "type": "pct",
-      "value": 0.67
+      "value": 0.6
     }
   },
   "timeouts": {

@@ -692,6 +692,14 @@ function statusBadgeClass(kind: TaskStatusKind): string {
   return 'badge-muted';
 }
 
+function formatUserFacingError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/Insufficient IOTA for address/i.test(message)) {
+    return 'Error: Insufficient IOTA';
+  }
+  return message;
+}
+
 export default function TaskRunner({ examples, activeNetwork, registeredNodes, onExecuted, onTemplateIdChange }: Props) {
   const [taskText, setTaskText] = useState<string>('{}');
   const [busy, setBusy] = useState(false);
@@ -906,7 +914,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
       const content = await fetchExampleContent(name);
       setTaskText(JSON.stringify(content, null, 2));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(formatUserFacingError(err));
     }
   }
 
@@ -1063,7 +1071,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
       void monitorTask(networkClient, taskId, prepared, digest, token);
       onExecuted();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(formatUserFacingError(err));
     } finally {
       setBusy(false);
     }

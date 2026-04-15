@@ -15,7 +15,7 @@
     "mode": "exact_hash",
     "quorum": {
       "type": "pct",
-      "value": 0.67
+      "value": 0.6
     }
   },
   "timeouts": {

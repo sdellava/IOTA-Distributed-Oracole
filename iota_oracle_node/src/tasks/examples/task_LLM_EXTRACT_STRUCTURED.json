@@ -7,10 +7,7 @@
     "mimeType": "application/pdf",
     "url": "https://tsapps.nist.gov/srmext/certificates/1830.pdf",
     "pdf": {
-      "pageRange": [
-        1,
-        2
-      ],
+      "pageRange": [1, 2],
       "extractText": true,
       "ocrFallback": false
     }
@@ -42,9 +39,7 @@
         },
         "document_type": {
           "type": "string",
-          "enum": [
-            "certificate_of_analysis"
-          ]
+          "enum": ["certificate_of_analysis"]
         },
         "reference_material_id": {
           "type": "string"
@@ -71,7 +66,7 @@
     "mode": "exact_hash",
     "quorum": {
       "type": "pct",
-      "value": 0.67
+      "value": 0.6
     }
   },
   "timeouts": {

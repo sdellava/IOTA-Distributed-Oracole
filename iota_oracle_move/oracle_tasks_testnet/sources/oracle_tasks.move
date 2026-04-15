@@ -131,7 +131,7 @@ module iota_oracle_tasks::oracle_tasks {
     public entry fun create_task(
         st: &mut systemState::State,
         system: &mut IotaSystemState,
-        _treasury: &mut systemState::OracleTreasury,
+        treasury: &mut systemState::OracleTreasury,
         mut payment: Coin<IOTA>,
         rnd: &Random,
         clock: &Clock,
@@ -157,7 +157,7 @@ module iota_oracle_tasks::oracle_tasks {
             EInvalidControllerCapFlag
         );
 
-        let required_payment = systemState::validate_task_request_and_get_payment(
+        let (raw_payment, system_fee, required_payment) = systemState::validate_task_request_and_get_payment_split(
             st,
             template_id,
             vector::length(&payload),
@@ -202,6 +202,10 @@ module iota_oracle_tasks::oracle_tasks {
             let refund = coin::split(&mut payment, refund_amount, ctx);
             transfer::public_transfer(refund, sender);
         };
+        if (system_fee > 0) {
+            let treasury_fee = coin::split(&mut payment, system_fee, ctx);
+            systemState::deposit_treasury_iota(treasury, treasury_fee, sender);
+        };
 
         let task_uid = object::new(ctx);
         let task_id = object::uid_to_inner(&task_uid);
@@ -229,7 +233,7 @@ module iota_oracle_tasks::oracle_tasks {
             template_id,
             task_type,
             payload,
-            payment_iota: required_payment,
+            payment_iota: raw_payment,
             escrow_iota: coin::into_balance(payment),
 
             requested_nodes,
@@ -573,7 +577,7 @@ module iota_oracle_tasks::oracle_tasks {
     fun settle_task_funds(task: &mut Task, ctx: &mut TxContext) {
         if (task.settled == 1) return;
         let before = balance::value(&task.escrow_iota);
-        pay_all_assigned_nodes(task, ctx);
+        pay_all_certificate_signers(task, ctx);
         let after = balance::value(&task.escrow_iota);
         task.settled = 1;
         event::emit(TaskLifecycleEvent {
@@ -582,7 +586,7 @@ module iota_oracle_tasks::oracle_tasks {
             actor: tx_context::sender(ctx),
             round: task.active_round,
             value0: task.state as u64,
-            value1: vector::length(&task.assigned_nodes),
+            value1: vector::length(&task.certificate_signers),
             value2: before - after,
             value3: after,
             addr0: @0x0,
@@ -602,9 +606,9 @@ module iota_oracle_tasks::oracle_tasks {
     false
 }
 
-    fun pay_all_assigned_nodes(task: &mut Task, ctx: &mut TxContext) {
+    fun pay_all_certificate_signers(task: &mut Task, ctx: &mut TxContext) {
         let total = balance::value(&task.escrow_iota);
-        let n = vector::length(&task.assigned_nodes);
+        let n = vector::length(&task.certificate_signers);
         if (n == 0 || total == 0) return;
 
         let base_share = total / n;
@@ -612,7 +616,7 @@ module iota_oracle_tasks::oracle_tasks {
 
         let mut i = 0;
         while (i < n) {
-            let addr = *vector::borrow(&task.assigned_nodes, i);
+            let addr = *vector::borrow(&task.certificate_signers, i);
             let mut amount = base_share;
             if (i < remainder) {
                 amount = amount + 1;

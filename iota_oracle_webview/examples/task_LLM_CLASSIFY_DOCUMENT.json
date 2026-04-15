@@ -7,10 +7,7 @@
     "mimeType": "application/pdf",
     "url": "https://raw.githubusercontent.com/invoice-x/invoice2data/master/tests/compare/AmazonWebServices.pdf",
     "pdf": {
-      "pageRange": [
-        1,
-        1
-      ],
+      "pageRange": [1, 1],
       "extractText": true,
       "ocrFallback": false
     }
@@ -35,11 +32,7 @@
     "output_schema": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "document_class",
-        "is_blank_template",
-        "language"
-      ],
+      "required": ["document_class", "is_blank_template", "language"],
       "properties": {
         "document_class": {
           "type": "string",
@@ -58,14 +51,7 @@
         },
         "language": {
           "type": "string",
-          "enum": [
-            "en",
-            "it",
-            "de",
-            "fr",
-            "es",
-            "unknown"
-          ]
+          "enum": ["en", "it", "de", "fr", "es", "unknown"]
         }
       }
     }
@@ -80,7 +66,7 @@
     "mode": "exact_hash",
     "quorum": {
       "type": "pct",
-      "value": 0.67
+      "value": 0.6
     }
   },
   "timeouts": {

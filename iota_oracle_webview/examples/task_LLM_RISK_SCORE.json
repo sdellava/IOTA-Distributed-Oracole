@@ -7,10 +7,7 @@
     "mimeType": "application/pdf",
     "url": "https://www.gsa.gov/cdnstatic/SF_1103.pdf",
     "pdf": {
-      "pageRange": [
-        1,
-        1
-      ],
+      "pageRange": [1, 1],
       "extractText": true,
       "ocrFallback": false
     }
@@ -30,9 +27,7 @@
     "output_schema": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "risk_score_bps"
-      ],
+      "required": ["risk_score_bps"],
       "properties": {
         "risk_score_bps": {
           "type": "integer",
@@ -52,7 +47,7 @@
     "mode": "exact_hash",
     "quorum": {
       "type": "pct",
-      "value": 0.67
+      "value": 0.6
     },
     "numericPath": "risk_score_bps"
   },
