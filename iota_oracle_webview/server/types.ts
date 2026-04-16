@@ -78,3 +78,34 @@ export type OracleStatusResponse = {
   recentEvents: OracleEventItem[];
   warnings: string[];
 };
+
+export type ScheduledTaskItem = {
+  id: string;
+  creator: string;
+  status: number;
+  statusLabel: string;
+  templateId: string;
+  nextRunMs: string;
+  lastRunMs: string;
+  startScheduleMs: string;
+  endScheduleMs: string;
+  intervalMs: string;
+  balanceIota: string;
+  lastSchedulerNode: string | null;
+};
+
+export type ScheduledTasksResponse = {
+  ok: boolean;
+  network: string;
+  registryId: string | null;
+  schedulerQueueId: string | null;
+  queue: {
+    head: string | null;
+    nodes: string[];
+    activeRoundStartedMs: string;
+    lastRoundCompletedMs: string;
+    roundCounter: string;
+  } | null;
+  items: ScheduledTaskItem[];
+  warnings: string[];
+};

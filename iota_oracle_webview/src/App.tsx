@@ -11,10 +11,11 @@ import TaskRunner from "./components/TaskRunner";
 import { fetchExamples, fetchIotaMarketPrice, fetchNetworkConfig, fetchStatus, updateActiveNetwork } from "./lib/api";
 import type { ExampleTask, IotaMarketPriceResponse, OracleNetwork, OracleStatus, OracleTemplateCost } from "./types";
 import ValidateTaskPage from "./pages/ValidateTaskPage";
+import ScheduledTasksPage from "./pages/ScheduledTasksPage";
 
 const REFRESH_MS = 10_000;
 
-type PageMode = "run" | "validate";
+type PageMode = "run" | "validate" | "scheduled";
 const FALLBACK_NETWORKS: OracleNetwork[] = ["mainnet", "testnet", "devnet"];
 
 function normalizeNetwork(value: string | null | undefined): OracleNetwork {
@@ -381,14 +382,16 @@ export default function App() {
                         mode="vertical"
                         selectedKeys={[pageMode]}
                         className="page-switcher-popup-menu"
-                        onClick={({ key }) => {
-                          if (key === "run" || key === "validate") {
+                        onClick={({ key }: { key: string }) => {
+                          if (key === "run" || key === "validate" || key === "scheduled") {
                             setPageMode(key);
                             setMenuOpen(false);
                           }
                         }}
                       >
                         <RcMenuItem key="run">Run task</RcMenuItem>
+                        <Divider />
+                        <RcMenuItem key="scheduled">Scheduled tasks</RcMenuItem>
                         <Divider />
                         <RcMenuItem key="validate">Validate task</RcMenuItem>
                       </Menu>
@@ -613,6 +616,8 @@ export default function App() {
             activeNetwork={activeNetwork}
           />
         </>
+      ) : pageMode === "scheduled" ? (
+        <ScheduledTasksPage />
       ) : (
         <ValidateTaskPage />
       )}

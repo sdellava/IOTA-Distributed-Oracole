@@ -47,6 +47,36 @@ export function getStateId(): string {
   );
 }
 
+export function getTreasuryId(): string {
+  return (
+    envByNetwork("ORACLE_TREASURY_ID") ||
+    envByNetwork("ORACLE_TREASURY_OBJECT_ID") ||
+    mustEnv("ORACLE_TREASURY_ID")
+  );
+}
+
+export function getRandomId(): string {
+  return (envByNetwork("IOTA_RANDOM_OBJECT_ID") || "0x8").trim() || "0x8";
+}
+
+export function getClockId(): string {
+  return (envByNetwork("IOTA_CLOCK_OBJECT_ID") || envByNetwork("IOTA_CLOCK_ID") || "0x6").trim() || "0x6";
+}
+
+export function getSchedulerQueueId(): string {
+  return (
+    envByNetwork("ORACLE_SCHEDULER_QUEUE_ID") ||
+    mustEnv("ORACLE_SCHEDULER_QUEUE_ID")
+  );
+}
+
+export function getScheduledTaskRegistryId(): string {
+  return (
+    envByNetwork("ORACLE_SCHEDULED_TASK_REGISTRY_ID") ||
+    mustEnv("ORACLE_SCHEDULED_TASK_REGISTRY_ID")
+  );
+}
+
 export function defaultEventType(envKey: string, suffix: string): string {
   const v = process.env[envKey]?.trim();
   if (v) return v;

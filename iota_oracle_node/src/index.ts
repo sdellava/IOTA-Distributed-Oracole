@@ -27,6 +27,7 @@ import { processDataRequested } from "./handlers/dataRequested";
 import { processMediationStarted } from "./handlers/mediationStarted";
 import { startMonitorServer, type MonitorRuntimeState } from "./monitor";
 import type { NodeContext } from "./nodeContext";
+import { startSchedulerWorker } from "./services/schedulerWorker";
 
 function buildContext(): NodeContext {
   const nodeId = parseNodeId(process.argv);
@@ -205,6 +206,7 @@ async function main() {
   }
 
   startListeners(ctx);
+  startSchedulerWorker(ctx);
   runtimeState.listenersStarted = true;
   runtimeState.booting = false;
 

@@ -132,7 +132,7 @@ module iota_oracle_tasks::oracle_tasks {
         st: &mut systemState::State,
         system: &mut IotaSystemState,
         treasury: &mut systemState::OracleTreasury,
-        mut payment: Coin<IOTA>,
+        payment: Coin<IOTA>,
         rnd: &Random,
         clock: &Clock,
         template_id: u64,
@@ -146,6 +146,48 @@ module iota_oracle_tasks::oracle_tasks {
         create_result_controller_cap: u8,
         ctx: &mut TxContext
     ) {
+        let sender = tx_context::sender(ctx);
+        let _ = create_task_internal(
+            st,
+            system,
+            treasury,
+            payment,
+            rnd,
+            clock,
+            template_id,
+            requested_nodes,
+            quorum_k,
+            payload,
+            retention_days,
+            declared_download_bytes,
+            mediation_mode,
+            variance_max,
+            create_result_controller_cap,
+            sender,
+            ctx
+        );
+    }
+
+    #[allow(lint(public_random))]
+    public fun create_task_internal(
+        st: &mut systemState::State,
+        system: &mut IotaSystemState,
+        treasury: &mut systemState::OracleTreasury,
+        mut payment: Coin<IOTA>,
+        rnd: &Random,
+        clock: &Clock,
+        template_id: u64,
+        requested_nodes: u64,
+        quorum_k: u64,
+        payload: vector<u8>,
+        retention_days: u64,
+        declared_download_bytes: u64,
+        mediation_mode: u8,
+        variance_max: u64,
+        create_result_controller_cap: u8,
+        creator: address,
+        ctx: &mut TxContext
+    ): object::ID {
         systemState::prune_oracle_nodes_if_epoch_changed(st, system, ctx);
         assert!(vector::length(&payload) > 0, EInvalidPayload);
         assert!(
@@ -194,17 +236,16 @@ module iota_oracle_tasks::oracle_tasks {
             j = j + 1;
         };
 
-        let sender = tx_context::sender(ctx);
         let now = timestamp_ms(clock);
 
         if (paid > required_payment) {
             let refund_amount = paid - required_payment;
             let refund = coin::split(&mut payment, refund_amount, ctx);
-            transfer::public_transfer(refund, sender);
+            transfer::public_transfer(refund, creator);
         };
         if (system_fee > 0) {
             let treasury_fee = coin::split(&mut payment, system_fee, ctx);
-            systemState::deposit_treasury_iota(treasury, treasury_fee, sender);
+            systemState::deposit_treasury_iota(treasury, treasury_fee, creator);
         };
 
         let task_uid = object::new(ctx);
@@ -227,7 +268,7 @@ module iota_oracle_tasks::oracle_tasks {
 
         let task = Task {
             id: task_uid,
-            creator: sender,
+            creator,
             state: STATE_OPEN,
 
             template_id,
@@ -261,7 +302,7 @@ module iota_oracle_tasks::oracle_tasks {
         event::emit(TaskLifecycleEvent {
             task_id: tid,
             kind: LIFECYCLE_CREATED,
-            actor: sender,
+            actor: creator,
             round: 0,
             value0: template_id,
             value1: required_payment,
@@ -275,7 +316,7 @@ module iota_oracle_tasks::oracle_tasks {
             event::emit(TaskLifecycleEvent {
                 task_id: tid,
                 kind: LIFECYCLE_ASSIGNED,
-                actor: sender,
+                actor: creator,
                 round: 0,
                 value0: 0,
                 value1: 0,
@@ -290,7 +331,8 @@ module iota_oracle_tasks::oracle_tasks {
         transfer::public_share_object(runtime);
         transfer::share_object(task);
 
-        transfer::public_transfer(TaskOwnerCap { id: object::new(ctx), task_id: tid }, sender);
+        transfer::public_transfer(TaskOwnerCap { id: object::new(ctx), task_id: tid }, creator);
+        tid
     }
 
     /// Marks that exact consensus was not reached and that the next round/result will be mediated off-chain.
@@ -669,4 +711,3 @@ module iota_oracle_tasks::oracle_tasks {
         object::delete(id);
     }
 }
-

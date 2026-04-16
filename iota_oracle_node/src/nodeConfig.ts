@@ -33,7 +33,7 @@ export function parseAcceptedTemplateIds(raw = process.env.ORACLE_ACCEPTED_TEMPL
     const s = part.trim();
     if (!s) continue;
     const n = Number(s);
-    if (!Number.isFinite(n) || n <= 0 || !Number.isInteger(n)) {
+    if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
       throw new Error(`Invalid ORACLE_ACCEPTED_TEMPLATE_IDS entry: ${s}`);
     }
     if (!out.includes(n)) out.push(n);

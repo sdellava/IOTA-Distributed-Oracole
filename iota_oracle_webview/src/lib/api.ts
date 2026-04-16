@@ -9,6 +9,7 @@ import type {
   OracleStatus,
   PreparedWalletTaskResponse,
   IotaMarketPriceResponse,
+  ScheduledTasksResponse,
 } from '../types';
 
 async function ensureOk<T>(response: Response): Promise<T> {
@@ -77,4 +78,8 @@ export async function prepareWalletTask(
 
 export async function fetchIotaMarketPrice(): Promise<IotaMarketPriceResponse> {
   return ensureOk<IotaMarketPriceResponse>(await fetch('/api/market/iota-price'));
+}
+
+export async function fetchScheduledTasks(): Promise<ScheduledTasksResponse> {
+  return ensureOk<ScheduledTasksResponse>(await fetch('/api/scheduled-tasks'));
 }

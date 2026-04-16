@@ -491,6 +491,12 @@ th {
   border: 1px solid #c7d3e5;
 }
 
+.template-status-badge.is-warn {
+  background: #fff6dd;
+  color: #9a6b00;
+  border: 1px solid #e9c96f;
+}
+
 .template-details-grid {
   display: grid;
   gap: 10px;
@@ -517,6 +523,10 @@ th {
   color: var(--theme-surface-text, #171d26);
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.scheduled-queue-item {
+  grid-column: 1 / -1;
 }
 
 .template-price-profile {

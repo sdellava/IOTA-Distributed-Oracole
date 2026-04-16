@@ -67,6 +67,7 @@ module iota_oracle_system_state::systemState {
         is_enabled: u8,
 
         base_price_iota: u64,
+        scheduler_fee_iota: u64,
 
         max_input_bytes: u64,
         max_output_bytes: u64,
@@ -89,6 +90,7 @@ module iota_oracle_system_state::systemState {
         task_type: vector<u8>,
         is_enabled: u8,
         base_price_iota: u64,
+        scheduler_fee_iota: u64,
         max_input_bytes: u64,
         max_output_bytes: u64,
         included_download_bytes: u64,
@@ -252,6 +254,7 @@ module iota_oracle_system_state::systemState {
         task_type: vector<u8>,
         is_enabled: u8,
         base_price_iota: u64,
+        scheduler_fee_iota: u64,
         max_input_bytes: u64,
         max_output_bytes: u64,
         included_download_bytes: u64,
@@ -276,6 +279,7 @@ module iota_oracle_system_state::systemState {
             task_type,
             is_enabled,
             base_price_iota,
+            scheduler_fee_iota,
             max_input_bytes,
             max_output_bytes,
             included_download_bytes,
@@ -319,6 +323,7 @@ module iota_oracle_system_state::systemState {
             task_type: vector::empty(),
             is_enabled: 0,
             base_price_iota: 0,
+            scheduler_fee_iota: 0,
             max_input_bytes: 0,
             max_output_bytes: 0,
             included_download_bytes: 0,
@@ -442,6 +447,11 @@ module iota_oracle_system_state::systemState {
     public fun task_template_base_price_iota(st: &State, template_id: u64): u64 {
         let tpl = borrow_task_template(st, template_id);
         tpl.base_price_iota
+    }
+
+    public fun task_template_scheduler_fee_iota(st: &State, template_id: u64): u64 {
+        let tpl = borrow_task_template(st, template_id);
+        tpl.scheduler_fee_iota
     }
 
     public fun task_template_max_input_bytes(st: &State, template_id: u64): u64 {
@@ -697,6 +707,7 @@ module iota_oracle_system_state::systemState {
             task_type: copy_bytes(&p.task_type),
             is_enabled: p.is_enabled,
             base_price_iota: p.base_price_iota,
+            scheduler_fee_iota: p.scheduler_fee_iota,
             max_input_bytes: p.max_input_bytes,
             max_output_bytes: p.max_output_bytes,
             included_download_bytes: p.included_download_bytes,
@@ -939,4 +950,3 @@ module iota_oracle_system_state::systemState {
         true
     }
 }
-

@@ -21,6 +21,7 @@ import {
 } from "./services/oracleClient.js";
 import { getIotaMarketPrice } from "./services/marketData.js";
 import { getOracleStatus } from "./services/oracleStatus.js";
+import { getScheduledTasks } from "./services/scheduledTasks.js";
 
 const app = express();
 
@@ -130,6 +131,15 @@ app.get("/api/status", async (_req, res) => {
   try {
     const status = await getOracleStatus();
     res.json(status);
+  } catch (error) {
+    sendApiError(res, 500, error);
+  }
+});
+
+app.get("/api/scheduled-tasks", async (_req, res) => {
+  try {
+    const data = await getScheduledTasks();
+    res.json(data);
   } catch (error) {
     sendApiError(res, 500, error);
   }
