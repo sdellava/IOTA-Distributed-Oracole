@@ -1,4 +1,15 @@
-import "dotenv/config";
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+try {
+  require("dotenv/config");
+} catch {
+  // Optional dependency in minimal/runtime-only containers.
+}
+
 import fs from "node:fs";
 import path from "node:path";
 import { Transaction } from "@iota/iota-sdk/transactions";
@@ -43,12 +54,14 @@ type PreparedTask = {
   varianceMax: number;
   retentionDays: number;
   declaredDownloadBytes: bigint;
+  createResultControllerCap: number;
   storageSourceUrl?: string;
 };
 
 type CreateTaskContext = {
   tasksPkg: string;
   stateId: string;
+  systemId: string;
   treasuryId: string;
   randomId: string;
   clockId: string;
@@ -66,6 +79,8 @@ type PreparedWalletTransaction = {
   gasBudget: string;
   requiredPayment: string;
   rawPrice: string;
+  systemFee: string;
+  totalPrice: string;
   downloadPrice: string;
   extraDownloadBytes: string;
   balance: string;
@@ -81,6 +96,7 @@ type PreparedWalletTransaction = {
     quorumK: number;
     retentionDays: number;
     declaredDownloadBytes: string;
+    createResultControllerCap: number;
     mediationMode: number;
     varianceMax: number;
     storageSourceUrl?: string;
@@ -89,6 +105,16 @@ type PreparedWalletTransaction = {
 };
 
 const EMediationVarianceTooHigh = 401;
+const IOTA_DECIMALS = 1_000_000_000n;
+const CMC_IOTA_SOURCE_URL = "https://coinmarketcap.com/currencies/iota/";
+const CMC_PUBLIC_QUOTE_URL = "https://api.coinmarketcap.com/data-api/v3/cryptocurrency/quote/latest?id=1720";
+
+type StructRef = { address: string; module: string; name: string };
+type IotaUsdQuote = {
+  usdPrice: number;
+  fetchedAtIso: string;
+  sourceUrl: string;
+};
 
 function mustEnv(k: string): string {
   const v = process.env[k]?.trim();
@@ -394,6 +420,131 @@ function asNumber(v: unknown, fallback = 0): number {
   return Math.floor(n);
 }
 
+function asFiniteNumber(v: unknown): number | null {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
+function extractUsdPriceFromCoinMarketCapPayload(payload: unknown): number | null {
+  const root = payload as any;
+
+  const directCandidates: unknown[] = [
+    root?.data?.[0]?.quotes?.[0]?.price,
+    root?.data?.[0]?.quote?.USD?.price,
+    root?.data?.[1720]?.quote?.USD?.price,
+    root?.data?.["1720"]?.quote?.USD?.price,
+    root?.data?.IOTA?.[0]?.quote?.USD?.price,
+    root?.data?.IOTA?.quote?.USD?.price,
+  ];
+
+  for (const candidate of directCandidates) {
+    const v = asFiniteNumber(candidate);
+    if (v != null) return v;
+  }
+
+  const candidates = Array.isArray(root?.data?.quotes) ? root.data.quotes : [];
+  for (const q of candidates) {
+    const symbol = String(q?.name ?? q?.symbol ?? "").trim().toUpperCase();
+    if (symbol !== "USD") continue;
+    const v = asFiniteNumber(q?.price);
+    if (v != null) return v;
+  }
+
+  return null;
+}
+
+async function fetchIotaUsdQuoteFromCoinMarketCap(): Promise<IotaUsdQuote | null> {
+  try {
+    const res = await fetch(CMC_PUBLIC_QUOTE_URL, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return null;
+    const payload = await res.json();
+    const usdPrice = extractUsdPriceFromCoinMarketCapPayload(payload);
+    if (usdPrice == null) return null;
+    return {
+      usdPrice,
+      fetchedAtIso: new Date().toISOString(),
+      sourceUrl: CMC_IOTA_SOURCE_URL,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function collectStructRefsFromNormalizedType(typeNode: unknown): StructRef[] {
+  const out: StructRef[] = [];
+
+  const walk = (node: unknown) => {
+    if (!node) return;
+    if (typeof node === "string") {
+      const m = node.match(/^(0x[a-fA-F0-9]+)::([^:]+)::([^:<]+)$/);
+      if (m) out.push({ address: m[1].toLowerCase(), module: m[2], name: m[3] });
+      return;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item);
+      return;
+    }
+    if (typeof node !== "object") return;
+
+    const rec = node as Record<string, unknown>;
+    if (rec.Struct && typeof rec.Struct === "object") {
+      const s = rec.Struct as Record<string, unknown>;
+      const address = String(s.address ?? "").trim().toLowerCase();
+      const module = String(s.module ?? "").trim();
+      const name = String(s.name ?? "").trim();
+      if (address && module && name) out.push({ address, module, name });
+      walk(s.typeArguments);
+    }
+
+    for (const value of Object.values(rec)) walk(value);
+  };
+
+  walk(typeNode);
+  return out;
+}
+
+async function assertCreateTaskCompatibility(client: AnyClient, tasksPkg: string, systemPkg: string): Promise<void> {
+  const getNormalizedMoveFunction = (client as any)?.getNormalizedMoveFunction;
+  if (typeof getNormalizedMoveFunction !== "function") return;
+
+  const normalized: any = await getNormalizedMoveFunction.call(client, {
+    package: tasksPkg,
+    module: "oracle_tasks",
+    function: "create_task",
+  });
+
+  const parameters: unknown[] = Array.isArray(normalized?.parameters) ? normalized.parameters : [];
+  if (parameters.length < 2) return;
+
+  const p0 = collectStructRefsFromNormalizedType(parameters[0]);
+  const p1 = collectStructRefsFromNormalizedType(parameters[1]);
+  const p2 = collectStructRefsFromNormalizedType(parameters[2]);
+  const expected = systemPkg.toLowerCase();
+
+  const p0Ok = p0.some((s) => s.address === expected && s.module === "systemState" && s.name === "State");
+  const p1IsSystemState = p1.some((s) => s.module === "iota_system" && s.name === "IotaSystemState");
+  const p1IsTreasury = p1.some((s) => s.address === expected && s.module === "systemState" && s.name === "OracleTreasury");
+  const p2IsTreasury = p2.some((s) => s.address === expected && s.module === "systemState" && s.name === "OracleTreasury");
+
+  // Current signature:
+  //   create_task(&mut State, &mut IotaSystemState, &mut OracleTreasury, ...)
+  // Older supported signature:
+  //   create_task(&State, &mut OracleTreasury, ...)
+  if ((p0Ok && p1IsSystemState && p2IsTreasury) || (p0Ok && p1IsTreasury)) return;
+
+  const got0 = p0[0] ? `${p0[0].address}::${p0[0].module}::${p0[0].name}` : "<unknown>";
+  const got1 = p1[0] ? `${p1[0].address}::${p1[0].module}::${p1[0].name}` : "<unknown>";
+  const got2 = p2[0] ? `${p2[0].address}::${p2[0].module}::${p2[0].name}` : "<unknown>";
+  throw new Error(
+    `Package mismatch: ORACLE_TASKS_PACKAGE_ID=${tasksPkg} expects create_task params [${got0}, ${got1}, ${got2}], ` +
+      `but ORACLE_SYSTEM_PACKAGE_ID=${systemPkg}. Republish oracle_tasks against the current oracle_system_state package and update env.`,
+  );
+}
+
 function normalizeTaskPayload(taskObj: any): PreparedTask {
   const templateId = parseTemplateId(taskObj);
   const taskType = String(taskObj?.type ?? "").trim();
@@ -410,9 +561,12 @@ function normalizeTaskPayload(taskObj: any): PreparedTask {
     throw new Error("Invalid variance_max. Must be a non-negative integer.");
   }
   const retentionDays = parseRetentionDays(taskObj);
+  const createResultControllerCap =
+    taskObj?.create_result_controller_cap === true || taskObj?.create_result_controller_cap === 1 ? 1 : 0;
 
   const payloadJson: any = { ...taskObj, requested_nodes: requestedNodes };
   delete payloadJson.nodes;
+  delete payloadJson.create_result_controller_cap;
 
   let declaredDownloadBytes = 0n;
   let storageSourceUrl: string | undefined;
@@ -445,6 +599,7 @@ function normalizeTaskPayload(taskObj: any): PreparedTask {
     varianceMax,
     retentionDays,
     declaredDownloadBytes,
+    createResultControllerCap,
     storageSourceUrl,
   };
 }
@@ -594,8 +749,10 @@ function validateAgainstTemplate(prepared: PreparedTask, template: TaskTemplateI
   const downloadPrice = extraDownloadBytes * template.pricePerDownloadByteIota;
   const rawPrice =
     template.basePriceIota + downloadPrice + BigInt(prepared.retentionDays) * template.pricePerRetentionDayIota;
-  const requiredPayment = rawPrice > economics.minPayment ? rawPrice : economics.minPayment;
-  return { rawPrice, requiredPayment, downloadPrice, extraDownloadBytes };
+  const systemFee = (rawPrice * economics.systemFeeBps + 9_999n) / 10_000n;
+  const totalPrice = rawPrice + systemFee;
+  const requiredPayment = totalPrice > economics.minPayment ? totalPrice : economics.minPayment;
+  return { rawPrice, systemFee, totalPrice, requiredPayment, downloadPrice, extraDownloadBytes };
 }
 
 async function fetchIotaBalance(client: AnyClient, owner: string): Promise<bigint> {
@@ -886,13 +1043,14 @@ function makeLegacyCreateTaskTx(ctx: CreateTaskContext): Transaction {
       tx.pure(bcsVecU8(utf8ToBytes(prepared.payloadText))),
       tx.pure(bcsU8(prepared.mediationMode)),
       tx.pure(bcsU64(prepared.varianceMax)),
+      tx.pure(bcsU8(prepared.createResultControllerCap)),
     ],
   });
   return tx;
 }
 
 function makeTemplateCreateTaskTx(ctx: CreateTaskContext, variant: string): Transaction {
-  const { tasksPkg, stateId, treasuryId, randomId, clockId, prepared, requiredPayment, gasBudget } = ctx;
+  const { tasksPkg, stateId, systemId, treasuryId, randomId, clockId, prepared, requiredPayment, gasBudget } = ctx;
   const tx = new Transaction();
   tx.setGasBudget(Number(gasBudget));
   const [paymentCoin] = tx.splitCoins(tx.gas, [tx.pure(bcsU64(requiredPayment))]);
@@ -906,6 +1064,7 @@ function makeTemplateCreateTaskTx(ctx: CreateTaskContext, variant: string): Tran
       ...common,
       arguments: [
         tx.object(stateId),
+        tx.object(systemId),
         tx.object(treasuryId),
         paymentCoin,
         tx.object(randomId),
@@ -918,6 +1077,7 @@ function makeTemplateCreateTaskTx(ctx: CreateTaskContext, variant: string): Tran
         tx.pure(bcsU64(prepared.declaredDownloadBytes)),
         tx.pure(bcsU8(prepared.mediationMode)),
         tx.pure(bcsU64(prepared.varianceMax)),
+        tx.pure(bcsU8(prepared.createResultControllerCap)),
       ],
     });
     return tx;
@@ -939,6 +1099,7 @@ function makeTemplateCreateTaskTx(ctx: CreateTaskContext, variant: string): Tran
         tx.pure(bcsVecU8(utf8ToBytes(prepared.payloadText))),
         tx.pure(bcsU8(prepared.mediationMode)),
         tx.pure(bcsU64(prepared.varianceMax)),
+        tx.pure(bcsU8(prepared.createResultControllerCap)),
       ],
     });
     return tx;
@@ -960,6 +1121,7 @@ function makeTemplateCreateTaskTx(ctx: CreateTaskContext, variant: string): Tran
         tx.pure(bcsU8(prepared.mediationMode)),
         tx.pure(bcsU64(prepared.varianceMax)),
         tx.pure(bcsU64(prepared.retentionDays)),
+        tx.pure(bcsU8(prepared.createResultControllerCap)),
       ],
     });
     return tx;
@@ -980,6 +1142,7 @@ function makeTemplateCreateTaskTx(ctx: CreateTaskContext, variant: string): Tran
         tx.pure(bcsVecU8(utf8ToBytes(prepared.payloadText))),
         tx.pure(bcsU8(prepared.mediationMode)),
         tx.pure(bcsU64(prepared.varianceMax)),
+        tx.pure(bcsU8(prepared.createResultControllerCap)),
       ],
     });
     return tx;
@@ -1000,6 +1163,7 @@ function makeTemplateCreateTaskTx(ctx: CreateTaskContext, variant: string): Tran
         tx.pure(bcsU8(prepared.mediationMode)),
         tx.pure(bcsU64(prepared.varianceMax)),
         tx.pure(bcsU64(prepared.retentionDays)),
+        tx.pure(bcsU8(prepared.createResultControllerCap)),
       ],
     });
     return tx;
@@ -1119,9 +1283,11 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
   const tasksPkg = getTasksPackageId();
   const systemPkg = getSystemPackageId();
   const stateId = getStateId();
+  const systemId = (process.env.IOTA_SYSTEM_STATE_ID ?? "0x5").trim() || "0x5";
   const treasuryId = getTreasuryId();
   const randomId = (process.env.IOTA_RANDOM_OBJECT_ID ?? "0x8").trim() || "0x8";
   const clockId = (process.env.IOTA_CLOCK_OBJECT_ID ?? process.env.IOTA_CLOCK_ID ?? "0x6").trim() || "0x6";
+  await assertCreateTaskCompatibility(client, tasksPkg, systemPkg);
 
   const taskObj = loadTaskJson(taskArg);
   const prepared = normalizeTaskPayload(taskObj);
@@ -1139,7 +1305,7 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
   }
 
   const economics = await getStateEconomics(client, stateId);
-  const { rawPrice, requiredPayment, downloadPrice, extraDownloadBytes } = validateAgainstTemplate(
+  const { rawPrice, systemFee, totalPrice, requiredPayment, downloadPrice, extraDownloadBytes } = validateAgainstTemplate(
     prepared,
     template,
     economics,
@@ -1156,6 +1322,7 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
   const builders = buildCreateTaskVariants({
     tasksPkg,
     stateId,
+    systemId,
     treasuryId,
     randomId,
     clockId,
@@ -1176,6 +1343,8 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
     template,
     economics,
     rawPrice,
+    systemFee,
+    totalPrice,
     requiredPayment,
     downloadPrice,
     extraDownloadBytes,
@@ -1209,6 +1378,8 @@ async function runPrepareWebview(taskArg: string | undefined, sender: string | u
     gasBudget: plan.gasBudget.toString(),
     requiredPayment: plan.requiredPayment.toString(),
     rawPrice: plan.rawPrice.toString(),
+    systemFee: plan.systemFee.toString(),
+    totalPrice: plan.totalPrice.toString(),
     downloadPrice: plan.downloadPrice.toString(),
     extraDownloadBytes: plan.extraDownloadBytes.toString(),
     balance: plan.balance.toString(),
@@ -1224,6 +1395,7 @@ async function runPrepareWebview(taskArg: string | undefined, sender: string | u
       quorumK: plan.prepared.quorumK,
       retentionDays: plan.prepared.retentionDays,
       declaredDownloadBytes: plan.prepared.declaredDownloadBytes.toString(),
+      createResultControllerCap: plan.prepared.createResultControllerCap,
       mediationMode: plan.prepared.mediationMode,
       varianceMax: plan.prepared.varianceMax,
       storageSourceUrl: plan.prepared.storageSourceUrl,
@@ -1242,13 +1414,30 @@ async function runCliCreate(taskArg?: string) {
   await requestFaucetIfEnabled(id.address);
 
   const plan = await prepareCreateTaskPlan(client, id.address, taskArg);
+  const quote = await fetchIotaUsdQuoteFromCoinMarketCap();
 
   console.log(
     `[client] template=${plan.template.templateId} template_task_type=${plan.template.taskType || "<empty>"} requested_type=${plan.prepared.taskType} treasury=${plan.treasuryId}`,
   );
   console.log(
-    `[client] price raw=${plan.rawPrice.toString()} download_price=${plan.downloadPrice.toString()} extra_download_bytes=${plan.extraDownloadBytes.toString()} min_payment=${plan.economics.minPayment.toString()} required=${plan.requiredPayment.toString()} retention_days=${plan.prepared.retentionDays} declared_download_bytes=${plan.prepared.declaredDownloadBytes.toString()}`,
+    `[client] price raw=${plan.rawPrice.toString()} system_fee=${plan.systemFee.toString()} total=${plan.totalPrice.toString()} download_price=${plan.downloadPrice.toString()} extra_download_bytes=${plan.extraDownloadBytes.toString()} min_payment=${plan.economics.minPayment.toString()} required=${plan.requiredPayment.toString()} retention_days=${plan.prepared.retentionDays} declared_download_bytes=${plan.prepared.declaredDownloadBytes.toString()}`,
   );
+  if (quote) {
+    const requiredIota = Number(plan.requiredPayment) / Number(IOTA_DECIMALS);
+    const rawIota = Number(plan.rawPrice) / Number(IOTA_DECIMALS);
+    const feeIota = Number(plan.systemFee) / Number(IOTA_DECIMALS);
+    const usdRaw = rawIota * quote.usdPrice;
+    const usdFee = feeIota * quote.usdPrice;
+    const usdRequired = requiredIota * quote.usdPrice;
+    console.log(
+      `[client] cmc_iota_usd=${quote.usdPrice.toFixed(8)} source=${quote.sourceUrl} fetched_at=${quote.fetchedAtIso}`,
+    );
+    console.log(
+      `[client] price_usd raw=${usdRaw.toFixed(6)} fee=${usdFee.toFixed(6)} required=${usdRequired.toFixed(6)}`,
+    );
+  } else {
+    console.log("[client] cmc_iota_usd unavailable (source fetch failed)");
+  }
 
   const needed = plan.requiredPayment + plan.gasBudget;
   console.log(`[client] balance=${plan.balance.toString()} need_at_least=${needed.toString()} (payment + gas_budget)`);
