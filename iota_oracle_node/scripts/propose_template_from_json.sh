@@ -278,6 +278,7 @@ const vals = [
   taskType,
   toInt(pick("is_enabled"), 1),
   toInt(pick("base_price_iota"), isStorage ? 0 : 1000000000),
+  toInt(pick("scheduler_fee_iota"), 0),
   toInt(pick("max_input_bytes"), 8192),
   toInt(pick("max_output_bytes"), isStorage ? 10485760 : 8192),
   toInt(pick("included_download_bytes"), isStorage ? 10485760 : 8192),
@@ -291,7 +292,7 @@ process.stdout.write(vals.join(" "));
   ' "$FULL_JSON_PATH" "$TEMPLATE_ID_OVERRIDE"
 )"
 
-read -r TEMPLATE_ID TASK_TYPE IS_ENABLED BASE_PRICE MAX_INPUT MAX_OUTPUT INCLUDED_DOWNLOAD PRICE_PER_DOWNLOAD ALLOW_STORAGE MIN_RETENTION MAX_RETENTION PRICE_PER_RETENTION <<<"$PARSED_TEMPLATE"
+read -r TEMPLATE_ID TASK_TYPE IS_ENABLED BASE_PRICE SCHEDULER_FEE MAX_INPUT MAX_OUTPUT INCLUDED_DOWNLOAD PRICE_PER_DOWNLOAD ALLOW_STORAGE MIN_RETENTION MAX_RETENTION PRICE_PER_RETENTION <<<"$PARSED_TEMPLATE"
 
 if [[ "$ALLOW_DUPLICATE" -ne 1 ]]; then
   STATUS="$(template_status "$TEMPLATE_ID")"
@@ -342,6 +343,7 @@ iota client ptb \
   "\"$TASK_TYPE\"" \
   "$IS_ENABLED" \
   "$BASE_PRICE" \
+  "$SCHEDULER_FEE" \
   "$MAX_INPUT" \
   "$MAX_OUTPUT" \
   "$INCLUDED_DOWNLOAD" \

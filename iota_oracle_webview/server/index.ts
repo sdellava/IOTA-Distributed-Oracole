@@ -16,6 +16,7 @@ import {
 import {
   executeOracleTask,
   listExampleTasks,
+  prepareOracleScheduledTaskForWallet,
   prepareOracleTaskForWallet,
   readExampleTask,
 } from "./services/oracleClient.js";
@@ -127,28 +128,31 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "iota_oracle_webview", time: new Date().toISOString() });
 });
 
-app.get("/api/status", async (_req, res) => {
+app.get("/api/status", async (req, res) => {
   try {
-    const status = await getOracleStatus();
+    const network = typeof req.query.network === "string" ? req.query.network : undefined;
+    const status = await getOracleStatus(network);
     res.json(status);
   } catch (error) {
     sendApiError(res, 500, error);
   }
 });
 
-app.get("/api/scheduled-tasks", async (_req, res) => {
+app.get("/api/scheduled-tasks", async (req, res) => {
   try {
-    const data = await getScheduledTasks();
+    const network = typeof req.query.network === "string" ? req.query.network : undefined;
+    const data = await getScheduledTasks(network);
     res.json(data);
   } catch (error) {
     sendApiError(res, 500, error);
   }
 });
 
-app.get("/api/network", (_req, res) => {
-  const runtime = getRuntimeConfig();
+app.get("/api/network", (req, res) => {
+  const requested = typeof req.query.network === "string" ? req.query.network : undefined;
+  const runtime = getRuntimeConfig(requested);
   res.json({
-    activeNetwork: getActiveNetwork(),
+    activeNetwork: requested ? runtime.network : getActiveNetwork(),
     supportedNetworks: getSupportedNetworks(),
     rpcUrl: runtime.rpcUrl,
     tasksPackageId: runtime.oracleTasksPackageId || null,
@@ -348,6 +352,27 @@ app.post("/api/tasks/prepare-wallet", async (req, res) => {
     res.json(result);
   } catch (error) {
     sendApiError(res, 500, error);
+  }
+});
+
+app.post("/api/tasks/prepare-scheduled-wallet", async (req, res) => {
+  try {
+    const task = (req.body as any)?.task;
+    const schedule = (req.body as any)?.schedule;
+    const sender = String((req.body as any)?.sender ?? "").trim();
+    const network = typeof (req.body as any)?.network === "string" ? (req.body as any).network : undefined;
+    if (!sender) {
+      res.status(400).json({ error: "Body must include sender." });
+      return;
+    }
+    if (!schedule || typeof schedule !== "object" || Array.isArray(schedule)) {
+      res.status(400).json({ error: "Body must include schedule object." });
+      return;
+    }
+    const prepared = await prepareOracleScheduledTaskForWallet(task, schedule, sender, network);
+    res.json(prepared);
+  } catch (error) {
+    sendApiError(res, 400, error);
   }
 });
 

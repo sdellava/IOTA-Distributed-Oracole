@@ -139,6 +139,47 @@ export type PreparedWalletTaskResponse = {
   finishedAt: string;
 };
 
+export type PreparedScheduledWalletTaskResponse = {
+  ok: true;
+  mode: "prepare-scheduled-webview";
+  sender: string;
+  serializedTransaction: string;
+  gasBudget: string;
+  initialFunds: string;
+  requiredPerRun: string;
+  estimatedRuns: string | null;
+  template: {
+    templateId: number;
+    taskType: string;
+  };
+  schedule: {
+    startScheduleMs: string;
+    endScheduleMs: string;
+    intervalMs: string;
+  };
+  prepared: {
+    templateId: number;
+    taskType: string;
+    requestedNodes: number;
+    quorumK: number;
+    retentionDays: number;
+    declaredDownloadBytes: string;
+    mediationMode: number;
+    varianceMax: number;
+    createResultControllerCap: number;
+    storageSourceUrl?: string;
+    payloadJson: unknown;
+  };
+  cwd: string;
+  command: string;
+  taskFilePath: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  startedAt: string;
+  finishedAt: string;
+};
+
 export type IotaMarketPriceResponse = {
   symbol: "IOTA";
   quoteCurrency: "USD";

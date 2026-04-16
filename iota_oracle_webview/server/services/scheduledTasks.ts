@@ -85,8 +85,8 @@ async function readScheduledTask(client: IotaClient, id: string): Promise<Schedu
   };
 }
 
-export async function getScheduledTasks(): Promise<ScheduledTasksResponse> {
-  const runtime = getRuntimeConfig();
+export async function getScheduledTasks(network?: string): Promise<ScheduledTasksResponse> {
+  const runtime = getRuntimeConfig(network);
   const warnings: string[] = [];
   const registryId = runtime.oracleScheduledTaskRegistryId || null;
   const schedulerQueueId = runtime.oracleSchedulerQueueId || null;

@@ -17,6 +17,7 @@ type TaskTemplateInfo = {
   taskType: string;
   isEnabled: number;
   basePriceIota: bigint;
+  schedulerFeeIota: bigint;
   maxInputBytes: bigint;
   maxOutputBytes: bigint;
   includedDownloadBytes: bigint;
@@ -43,18 +44,27 @@ type PreparedTask = {
   varianceMax: number;
   retentionDays: number;
   declaredDownloadBytes: bigint;
+  createResultControllerCap: number;
   storageSourceUrl?: string;
 };
 
 type CreateTaskContext = {
   tasksPkg: string;
   stateId: string;
+  iotaSystemStateId: string;
   treasuryId: string;
   randomId: string;
   clockId: string;
   prepared: PreparedTask;
   requiredPayment: bigint;
   gasBudget: bigint;
+};
+
+type ScheduleInput = {
+  startScheduleMs: bigint;
+  endScheduleMs: bigint;
+  intervalMs: bigint;
+  initialFunds: bigint;
 };
 
 type PreparedWalletTransaction = {
@@ -83,6 +93,40 @@ type PreparedWalletTransaction = {
     declaredDownloadBytes: string;
     mediationMode: number;
     varianceMax: number;
+    createResultControllerCap: number;
+    storageSourceUrl?: string;
+    payloadJson: any;
+  };
+};
+
+type PreparedScheduledWalletTransaction = {
+  ok: true;
+  mode: "prepare-scheduled-webview";
+  sender: string;
+  serializedTransaction: string;
+  gasBudget: string;
+  initialFunds: string;
+  requiredPerRun: string;
+  estimatedRuns: string | null;
+  template: {
+    templateId: number;
+    taskType: string;
+  };
+  schedule: {
+    startScheduleMs: string;
+    endScheduleMs: string;
+    intervalMs: string;
+  };
+  prepared: {
+    templateId: number;
+    taskType: string;
+    requestedNodes: number;
+    quorumK: number;
+    retentionDays: number;
+    declaredDownloadBytes: string;
+    mediationMode: number;
+    varianceMax: number;
+    createResultControllerCap: number;
     storageSourceUrl?: string;
     payloadJson: any;
   };
@@ -128,6 +172,22 @@ function getTreasuryId(): string {
   return v;
 }
 
+function getIotaSystemStateId(): string {
+  return envAny("IOTA_SYSTEM_STATE_ID") ?? "0x5";
+}
+
+function getSchedulerPackageId(): string {
+  const v = envAny("ORACLE_SCHEDULER_PACKAGE_ID");
+  if (!v) throw new Error("Missing env ORACLE_SCHEDULER_PACKAGE_ID");
+  return v;
+}
+
+function getScheduledTaskRegistryId(): string {
+  const v = envAny("ORACLE_SCHEDULED_TASK_REGISTRY_ID");
+  if (!v) throw new Error("Missing env ORACLE_SCHEDULED_TASK_REGISTRY_ID");
+  return v;
+}
+
 function loadTaskJson(arg?: string): any {
   if (!arg) {
     const defaults = ["task.json", "examples/task.json", "examples/task_weather.json", "examples/task_storage.json"];
@@ -140,6 +200,13 @@ function loadTaskJson(arg?: string): any {
     throw new Error("Usage: npm run create -- <task.json | inline-json>");
   }
 
+  const p = path.resolve(process.cwd(), arg);
+  const raw = fs.existsSync(p) && fs.statSync(p).isFile() ? fs.readFileSync(p, "utf8") : arg;
+  return JSON.parse(raw);
+}
+
+function loadJsonArg(arg: string | undefined, usage: string): any {
+  if (!arg) throw new Error(usage);
   const p = path.resolve(process.cwd(), arg);
   const raw = fs.existsSync(p) && fs.statSync(p).isFile() ? fs.readFileSync(p, "utf8") : arg;
   return JSON.parse(raw);
@@ -213,6 +280,89 @@ function parseDeclaredDownloadBytes(taskObj: any): bigint {
   } catch {
     throw new Error(`Invalid declared_download_bytes: ${String(raw)}`);
   }
+}
+
+function parseCreateResultControllerCap(taskObj: any): number {
+  const raw =
+    taskObj?.create_result_controller_cap ??
+    taskObj?.createResultControllerCap ??
+    taskObj?.result?.create_result_controller_cap ??
+    taskObj?.result?.createResultControllerCap ??
+    0;
+
+  if (typeof raw === "boolean") return raw ? 1 : 0;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || (n !== 0 && n !== 1)) {
+    throw new Error("Invalid create_result_controller_cap. Allowed: true/false or 0/1.");
+  }
+  return Math.floor(n);
+}
+
+function parseTimestampMs(raw: unknown, field: string): bigint {
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) throw new Error(`Missing ${field}`);
+    if (/^\d+$/.test(trimmed)) return BigInt(trimmed);
+    const parsed = Date.parse(trimmed);
+    if (Number.isFinite(parsed) && parsed >= 0) return BigInt(Math.floor(parsed));
+    throw new Error(`Invalid ${field}: ${String(raw)}`);
+  }
+
+  if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) {
+    return BigInt(Math.floor(raw));
+  }
+
+  throw new Error(`Invalid ${field}: ${String(raw)}`);
+}
+
+function parseNonNegativeBigInt(raw: unknown, field: string): bigint {
+  try {
+    const value = BigInt(String(raw ?? "").trim());
+    if (value < 0n) throw new Error("negative");
+    return value;
+  } catch {
+    throw new Error(`Invalid ${field}: ${String(raw)}`);
+  }
+}
+
+function parseIotaToNano(raw: unknown, field: string): bigint {
+  const text = String(raw ?? "").trim();
+  if (!text) throw new Error(`Missing ${field}`);
+  if (!/^\d+(\.\d+)?$/.test(text)) throw new Error(`Invalid ${field}: ${String(raw)}`);
+  const [wholePart, fracPart = ""] = text.split(".");
+  const whole = BigInt(wholePart || "0") * 1_000_000_000n;
+  const frac = BigInt((fracPart + "000000000").slice(0, 9) || "0");
+  return whole + frac;
+}
+
+function normalizeScheduleInput(input: any): ScheduleInput {
+  const startRaw = input?.start_schedule_ms ?? input?.startScheduleMs ?? input?.start ?? input?.startAt;
+  const endRaw = input?.end_schedule_ms ?? input?.endScheduleMs ?? input?.end ?? input?.endAt ?? 0;
+  const intervalRaw =
+    input?.interval_ms ?? input?.intervalMs ?? (input?.interval_minutes != null ? BigInt(input.interval_minutes) * 60_000n : input?.intervalMinutes != null ? BigInt(input.intervalMinutes) * 60_000n : null);
+  const fundsRaw =
+    input?.initial_funds_nano_iota ??
+    input?.initialFundsNanoIota ??
+    input?.initial_funds_iota ??
+    input?.initialFundsIota;
+
+  if (intervalRaw == null) throw new Error("Missing interval_ms or intervalMinutes in schedule.");
+  if (fundsRaw == null || String(fundsRaw).trim() === "") throw new Error("Missing initial funds for schedule.");
+
+  const startScheduleMs = parseTimestampMs(startRaw, "start_schedule_ms");
+  const endScheduleMs = endRaw === 0 || endRaw === "0" || endRaw == null || String(endRaw).trim() === "" ? 0n : parseTimestampMs(endRaw, "end_schedule_ms");
+  const intervalMs = parseNonNegativeBigInt(intervalRaw, "interval_ms");
+  const initialFunds =
+    input?.initial_funds_nano_iota != null || input?.initialFundsNanoIota != null
+      ? parseNonNegativeBigInt(fundsRaw, "initial_funds_nano_iota")
+      : parseIotaToNano(fundsRaw, "initial_funds_iota");
+
+  return {
+    startScheduleMs,
+    endScheduleMs,
+    intervalMs,
+    initialFunds,
+  };
 }
 
 function toPlainStringMap(input: unknown): Record<string, string> {
@@ -410,6 +560,7 @@ function normalizeTaskPayload(taskObj: any): PreparedTask {
     throw new Error("Invalid variance_max. Must be a non-negative integer.");
   }
   const retentionDays = parseRetentionDays(taskObj);
+  const createResultControllerCap = parseCreateResultControllerCap(taskObj);
 
   const payloadJson: any = { ...taskObj, requested_nodes: requestedNodes };
   delete payloadJson.nodes;
@@ -445,6 +596,7 @@ function normalizeTaskPayload(taskObj: any): PreparedTask {
     varianceMax,
     retentionDays,
     declaredDownloadBytes,
+    createResultControllerCap,
     storageSourceUrl,
   };
 }
@@ -522,6 +674,7 @@ async function getTaskTemplateById(
         taskType: bytesToUtf8(decodeVecU8(v.task_type)),
         isEnabled: asNumber(v.is_enabled),
         basePriceIota: asBigInt(v.base_price_iota),
+        schedulerFeeIota: asBigInt(v.scheduler_fee_iota),
         maxInputBytes: asBigInt(v.max_input_bytes),
         maxOutputBytes: asBigInt(v.max_output_bytes),
         includedDownloadBytes: asBigInt(v.included_download_bytes),
@@ -594,8 +747,11 @@ function validateAgainstTemplate(prepared: PreparedTask, template: TaskTemplateI
   const downloadPrice = extraDownloadBytes * template.pricePerDownloadByteIota;
   const rawPrice =
     template.basePriceIota + downloadPrice + BigInt(prepared.retentionDays) * template.pricePerRetentionDayIota;
-  const requiredPayment = rawPrice > economics.minPayment ? rawPrice : economics.minPayment;
-  return { rawPrice, requiredPayment, downloadPrice, extraDownloadBytes };
+  const systemFee = rawPrice === 0n || economics.systemFeeBps === 0n ? 0n : (rawPrice * economics.systemFeeBps + 9999n) / 10000n;
+  const totalPrice = rawPrice + systemFee;
+  const requiredPayment = totalPrice > economics.minPayment ? totalPrice : economics.minPayment;
+  const requiredPerRun = requiredPayment + template.schedulerFeeIota;
+  return { rawPrice, systemFee, totalPrice, requiredPayment, requiredPerRun, downloadPrice, extraDownloadBytes };
 }
 
 async function fetchIotaBalance(client: AnyClient, owner: string): Promise<bigint> {
@@ -892,7 +1048,8 @@ function makeLegacyCreateTaskTx(ctx: CreateTaskContext): Transaction {
 }
 
 function makeTemplateCreateTaskTx(ctx: CreateTaskContext, variant: string): Transaction {
-  const { tasksPkg, stateId, treasuryId, randomId, clockId, prepared, requiredPayment, gasBudget } = ctx;
+  const { tasksPkg, stateId, iotaSystemStateId, treasuryId, randomId, clockId, prepared, requiredPayment, gasBudget } =
+    ctx;
   const tx = new Transaction();
   tx.setGasBudget(Number(gasBudget));
   const [paymentCoin] = tx.splitCoins(tx.gas, [tx.pure(bcsU64(requiredPayment))]);
@@ -906,6 +1063,7 @@ function makeTemplateCreateTaskTx(ctx: CreateTaskContext, variant: string): Tran
       ...common,
       arguments: [
         tx.object(stateId),
+        tx.object(iotaSystemStateId),
         tx.object(treasuryId),
         paymentCoin,
         tx.object(randomId),
@@ -918,6 +1076,7 @@ function makeTemplateCreateTaskTx(ctx: CreateTaskContext, variant: string): Tran
         tx.pure(bcsU64(prepared.declaredDownloadBytes)),
         tx.pure(bcsU8(prepared.mediationMode)),
         tx.pure(bcsU64(prepared.varianceMax)),
+        tx.pure(bcsU8(prepared.createResultControllerCap)),
       ],
     });
     return tx;
@@ -1013,6 +1172,41 @@ function buildCreateTaskVariants(ctx: CreateTaskContext): Record<string, () => T
     state_treasury_payment_v1: () => makeTemplateCreateTaskTx(ctx, "state_treasury_payment_v1"),
     legacy_v0: () => makeLegacyCreateTaskTx(ctx),
   };
+}
+
+function makeCreateScheduledTaskTx(args: {
+  schedulerPkg: string;
+  registryId: string;
+  stateId: string;
+  prepared: PreparedTask;
+  schedule: ScheduleInput;
+  gasBudget: bigint;
+}): Transaction {
+  const { schedulerPkg, registryId, stateId, prepared, schedule, gasBudget } = args;
+  const tx = new Transaction();
+  tx.setGasBudget(Number(gasBudget));
+  const [fundingCoin] = tx.splitCoins(tx.gas, [tx.pure(bcsU64(schedule.initialFunds))]);
+  tx.moveCall({
+    target: `${schedulerPkg}::oracle_scheduled_tasks::create_scheduled_task`,
+    arguments: [
+      tx.object(registryId),
+      tx.object(stateId),
+      fundingCoin,
+      tx.pure(bcsU64(prepared.templateId)),
+      tx.pure(bcsU64(prepared.requestedNodes)),
+      tx.pure(bcsU64(prepared.quorumK)),
+      tx.pure(bcsVecU8(utf8ToBytes(prepared.payloadText))),
+      tx.pure(bcsU64(prepared.retentionDays)),
+      tx.pure(bcsU64(prepared.declaredDownloadBytes)),
+      tx.pure(bcsU8(prepared.mediationMode)),
+      tx.pure(bcsU64(prepared.varianceMax)),
+      tx.pure(bcsU8(prepared.createResultControllerCap)),
+      tx.pure(bcsU64(schedule.startScheduleMs)),
+      tx.pure(bcsU64(schedule.endScheduleMs)),
+      tx.pure(bcsU64(schedule.intervalMs)),
+    ],
+  });
+  return tx;
 }
 
 function isSignatureMismatchError(error: unknown): boolean {
@@ -1119,6 +1313,7 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
   const tasksPkg = getTasksPackageId();
   const systemPkg = getSystemPackageId();
   const stateId = getStateId();
+  const iotaSystemStateId = getIotaSystemStateId();
   const treasuryId = getTreasuryId();
   const randomId = (process.env.IOTA_RANDOM_OBJECT_ID ?? "0x8").trim() || "0x8";
   const clockId = (process.env.IOTA_CLOCK_OBJECT_ID ?? process.env.IOTA_CLOCK_ID ?? "0x6").trim() || "0x6";
@@ -1139,7 +1334,8 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
   }
 
   const economics = await getStateEconomics(client, stateId);
-  const { rawPrice, requiredPayment, downloadPrice, extraDownloadBytes } = validateAgainstTemplate(
+  const { rawPrice, systemFee, totalPrice, requiredPayment, requiredPerRun, downloadPrice, extraDownloadBytes } =
+    validateAgainstTemplate(
     prepared,
     template,
     economics,
@@ -1156,6 +1352,7 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
   const builders = buildCreateTaskVariants({
     tasksPkg,
     stateId,
+    iotaSystemStateId,
     treasuryId,
     randomId,
     clockId,
@@ -1168,6 +1365,7 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
     tasksPkg,
     systemPkg,
     stateId,
+    iotaSystemStateId,
     treasuryId,
     randomId,
     clockId,
@@ -1176,13 +1374,90 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
     template,
     economics,
     rawPrice,
+    systemFee,
+    totalPrice,
     requiredPayment,
+    requiredPerRun,
     downloadPrice,
     extraDownloadBytes,
     balance,
     treasuryBalanceBefore,
     builders,
   };
+}
+
+async function runPrepareScheduledWebview(
+  taskArg: string | undefined,
+  scheduleArg: string | undefined,
+  sender: string | undefined,
+) {
+  const normalizedSender = String(sender ?? "").trim();
+  if (!normalizedSender) {
+    throw new Error(
+      "Usage: npm run create -- prepare-scheduled-webview <task.json | inline-json> <schedule.json | inline-json> <sender-address>",
+    );
+  }
+
+  const client = iotaClient() as AnyClient;
+  const plan = await prepareCreateTaskPlan(client, normalizedSender, taskArg);
+  const schedule = normalizeScheduleInput(
+    loadJsonArg(
+      scheduleArg,
+      "Usage: npm run create -- prepare-scheduled-webview <task.json | inline-json> <schedule.json | inline-json> <sender-address>",
+    ),
+  );
+
+  const schedulerPkg = getSchedulerPackageId();
+  const registryId = getScheduledTaskRegistryId();
+  const tx = makeCreateScheduledTaskTx({
+    schedulerPkg,
+    registryId,
+    stateId: plan.stateId,
+    prepared: plan.prepared,
+    schedule,
+    gasBudget: plan.gasBudget,
+  });
+  tx.setSender(normalizedSender);
+
+  const estimatedRuns =
+    schedule.endScheduleMs > 0n && schedule.endScheduleMs >= schedule.startScheduleMs
+      ? ((schedule.endScheduleMs - schedule.startScheduleMs) / schedule.intervalMs + 1n).toString()
+      : null;
+
+  const payload: PreparedScheduledWalletTransaction = {
+    ok: true,
+    mode: "prepare-scheduled-webview",
+    sender: normalizedSender,
+    serializedTransaction: serializeTransactionForWallet(tx),
+    gasBudget: plan.gasBudget.toString(),
+    initialFunds: schedule.initialFunds.toString(),
+    requiredPerRun: plan.requiredPerRun.toString(),
+    estimatedRuns,
+    template: {
+      templateId: plan.template.templateId,
+      taskType: plan.template.taskType,
+    },
+    schedule: {
+      startScheduleMs: schedule.startScheduleMs.toString(),
+      endScheduleMs: schedule.endScheduleMs.toString(),
+      intervalMs: schedule.intervalMs.toString(),
+    },
+    prepared: {
+      templateId: plan.prepared.templateId,
+      taskType: plan.prepared.taskType,
+      requestedNodes: plan.prepared.requestedNodes,
+      quorumK: plan.prepared.quorumK,
+      retentionDays: plan.prepared.retentionDays,
+      declaredDownloadBytes: plan.prepared.declaredDownloadBytes.toString(),
+      mediationMode: plan.prepared.mediationMode,
+      varianceMax: plan.prepared.varianceMax,
+      createResultControllerCap: plan.prepared.createResultControllerCap,
+      storageSourceUrl: plan.prepared.storageSourceUrl,
+      payloadJson: plan.prepared.payloadJson,
+    },
+  };
+
+  process.stdout.write(`${JSON.stringify(payload)}\n`);
 }
 
 async function runPrepareWebview(taskArg: string | undefined, sender: string | undefined) {
@@ -1209,6 +1484,8 @@ async function runPrepareWebview(taskArg: string | undefined, sender: string | u
     gasBudget: plan.gasBudget.toString(),
     requiredPayment: plan.requiredPayment.toString(),
     rawPrice: plan.rawPrice.toString(),
+    systemFee: plan.systemFee.toString(),
+    totalPrice: plan.totalPrice.toString(),
     downloadPrice: plan.downloadPrice.toString(),
     extraDownloadBytes: plan.extraDownloadBytes.toString(),
     balance: plan.balance.toString(),
@@ -1226,6 +1503,7 @@ async function runPrepareWebview(taskArg: string | undefined, sender: string | u
       declaredDownloadBytes: plan.prepared.declaredDownloadBytes.toString(),
       mediationMode: plan.prepared.mediationMode,
       varianceMax: plan.prepared.varianceMax,
+      createResultControllerCap: plan.prepared.createResultControllerCap,
       storageSourceUrl: plan.prepared.storageSourceUrl,
       payloadJson: plan.prepared.payloadJson,
     },
@@ -1318,6 +1596,11 @@ async function main() {
   const mode = String(process.argv[2] ?? "").trim();
   if (mode === "prepare-webview") {
     await runPrepareWebview(process.argv[3], process.argv[4]);
+    return;
+  }
+
+  if (mode === "prepare-scheduled-webview") {
+    await runPrepareScheduledWebview(process.argv[3], process.argv[4], process.argv[5]);
     return;
   }
 

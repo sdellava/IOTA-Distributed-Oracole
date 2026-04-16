@@ -8,9 +8,9 @@ import {
   getClockId,
   getRandomId,
   getScheduledTaskRegistryId,
+  getSchedulerPackageId,
   getSchedulerQueueId,
   getStateId,
-  getTasksPackageId,
   getTreasuryId,
 } from "./config/env";
 import type { NodeContext } from "./nodeContext";
@@ -24,8 +24,8 @@ function gasBudget(envKey: string, def: number): number {
   return Math.floor(n);
 }
 
-function tasksPkg(): string {
-  return getTasksPackageId();
+function schedulerPkg(): string {
+  return getSchedulerPackageId();
 }
 
 export async function reconcileSchedulerQueueTx(ctx: NodeContext): Promise<string> {
@@ -36,7 +36,7 @@ export async function reconcileSchedulerQueueTx(ctx: NodeContext): Promise<strin
       const tx = new Transaction();
       tx.setGasBudget(gasBudget("GAS_BUDGET_SCHEDULER_RECONCILE", gasBudget("GAS_BUDGET", 20_000_000)));
       tx.moveCall({
-        target: `${tasksPkg()}::oracle_scheduled_tasks::reconcile_scheduler_queue`,
+        target: `${schedulerPkg()}::oracle_scheduled_tasks::reconcile_scheduler_queue`,
         arguments: [tx.object(getSchedulerQueueId()), tx.object(getStateId())],
       });
       return tx;
@@ -55,7 +55,7 @@ export async function startSchedulerRoundTx(ctx: NodeContext): Promise<string> {
       const tx = new Transaction();
       tx.setGasBudget(gasBudget("GAS_BUDGET_SCHEDULER_START", gasBudget("GAS_BUDGET", 20_000_000)));
       tx.moveCall({
-        target: `${tasksPkg()}::oracle_scheduled_tasks::start_scheduler_round`,
+        target: `${schedulerPkg()}::oracle_scheduled_tasks::start_scheduler_round`,
         arguments: [tx.object(getSchedulerQueueId()), tx.object(getStateId()), tx.object(getClockId())],
       });
       return tx;
@@ -74,7 +74,7 @@ export async function advanceSchedulerQueueTx(ctx: NodeContext): Promise<string>
       const tx = new Transaction();
       tx.setGasBudget(gasBudget("GAS_BUDGET_SCHEDULER_ADVANCE", gasBudget("GAS_BUDGET", 20_000_000)));
       tx.moveCall({
-        target: `${tasksPkg()}::oracle_scheduled_tasks::advance_scheduler_queue`,
+        target: `${schedulerPkg()}::oracle_scheduled_tasks::advance_scheduler_queue`,
         arguments: [tx.object(getSchedulerQueueId()), tx.object(getStateId()), tx.object(getClockId())],
       });
       return tx;
@@ -93,7 +93,7 @@ export async function completeSchedulerRoundTx(ctx: NodeContext, processedTasks:
       const tx = new Transaction();
       tx.setGasBudget(gasBudget("GAS_BUDGET_SCHEDULER_COMPLETE", gasBudget("GAS_BUDGET", 20_000_000)));
       tx.moveCall({
-        target: `${tasksPkg()}::oracle_scheduled_tasks::complete_scheduler_round`,
+        target: `${schedulerPkg()}::oracle_scheduled_tasks::complete_scheduler_round`,
         arguments: [
           tx.object(getSchedulerQueueId()),
           tx.object(getStateId()),
@@ -117,7 +117,7 @@ export async function submitScheduledTaskTx(ctx: NodeContext, scheduledTaskId: s
       const tx = new Transaction();
       tx.setGasBudget(gasBudget("GAS_BUDGET_SCHEDULED_TASK_SUBMIT", gasBudget("GAS_BUDGET", 35_000_000)));
       tx.moveCall({
-        target: `${tasksPkg()}::oracle_scheduled_tasks::submit_scheduled_task`,
+        target: `${schedulerPkg()}::oracle_scheduled_tasks::submit_scheduled_task`,
         arguments: [
           tx.object(getSchedulerQueueId()),
           tx.object(scheduledTaskId),

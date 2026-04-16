@@ -3,7 +3,11 @@
 
 import { useEffect, useState } from "react";
 import { fetchScheduledTasks } from "../lib/api";
-import type { ScheduledTaskItem, ScheduledTasksResponse } from "../types";
+import type { OracleNetwork, ScheduledTaskItem, ScheduledTasksResponse } from "../types";
+
+type Props = {
+  activeNetwork: OracleNetwork;
+};
 
 function shortAddress(address: string | null | undefined, start = 6, end = 4): string {
   const value = String(address ?? "").trim();
@@ -47,7 +51,7 @@ function statusClass(item: ScheduledTaskItem): string {
   return "is-warn";
 }
 
-export default function ScheduledTasksPage() {
+export default function ScheduledTasksPage({ activeNetwork }: Props) {
   const [data, setData] = useState<ScheduledTasksResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +60,7 @@ export default function ScheduledTasksPage() {
     let cancelled = false;
     (async () => {
       try {
-        const response = await fetchScheduledTasks();
+        const response = await fetchScheduledTasks(activeNetwork);
         if (!cancelled) {
           setData(response);
           setError(null);
@@ -70,7 +74,7 @@ export default function ScheduledTasksPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeNetwork]);
 
   return (
     <>

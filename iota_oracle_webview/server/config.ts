@@ -5,6 +5,7 @@ import "dotenv/config";
 import path from "node:path";
 
 export type OracleNetwork = "mainnet" | "testnet" | "devnet";
+const ALL_NETWORKS: OracleNetwork[] = ["mainnet", "testnet", "devnet"];
 
 function toNumber(value: string | undefined, fallback: number): number {
   const n = Number(value);
@@ -37,6 +38,12 @@ function networkPrefix(network: OracleNetwork): string {
   return network.toUpperCase();
 }
 
+function hasScopedNetworkConfig(key: string): boolean {
+  return ALL_NETWORKS.some((network) =>
+    Object.prototype.hasOwnProperty.call(process.env, `${networkPrefix(network)}_${key}`),
+  );
+}
+
 const rootDir = process.cwd();
 const clientDir = path.resolve(rootDir, process.env.ORACLE_CLIENT_DIR ?? "../iota_oracle_client");
 const examplesDirRaw = process.env.ORACLE_EXAMPLES_DIR?.trim() || process.env.ORACLE_CLIENT_EXAMPLES_DIR?.trim() || "examples";
@@ -52,8 +59,10 @@ let activeNetwork: OracleNetwork = supportedNetworks.includes(configuredDefault)
 if (!supportedNetworks.includes(activeNetwork)) activeNetwork = supportedNetworks[0]!;
 
 function pickNetworkValue(network: OracleNetwork, key: string, fallback = ""): string {
-  const prefixed = process.env[`${networkPrefix(network)}_${key}`]?.trim();
-  if (prefixed) return prefixed;
+  const scopedKey = `${networkPrefix(network)}_${key}`;
+  if (hasScopedNetworkConfig(key)) {
+    return process.env[scopedKey]?.trim() || fallback;
+  }
   return process.env[key]?.trim() || fallback;
 }
 
@@ -81,6 +90,7 @@ export function getRuntimeConfig(network = activeNetwork) {
     rpcUrl: pickNetworkValue(selected, "IOTA_RPC_URL", "https://api.mainnet.iota.cafe"),
     oracleTasksPackageId: pickNetworkValue(selected, "ORACLE_TASKS_PACKAGE_ID"),
     oracleSystemPackageId: pickNetworkValue(selected, "ORACLE_SYSTEM_PACKAGE_ID"),
+    oracleSchedulerPackageId: pickNetworkValue(selected, "ORACLE_SCHEDULER_PACKAGE_ID"),
     oracleStateId: pickNetworkValue(selected, "ORACLE_STATE_ID", pickNetworkValue(selected, "ORACLE_SYSTEM_STATE_ID", pickNetworkValue(selected, "ORACLE_STATUS_ID"))),
     oracleTreasuryId: pickNetworkValue(selected, "ORACLE_TREASURY_ID", pickNetworkValue(selected, "ORACLE_TREASURY_OBJECT_ID")),
     oracleScheduledTaskRegistryId: pickNetworkValue(selected, "ORACLE_SCHEDULED_TASK_REGISTRY_ID"),

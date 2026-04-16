@@ -8,7 +8,7 @@ import Menu, { Item as RcMenuItem, Divider } from "rc-menu";
 import ActivityTable from "./components/ActivityTable";
 import MetricCard from "./components/MetricCard";
 import TaskRunner from "./components/TaskRunner";
-import { fetchExamples, fetchIotaMarketPrice, fetchNetworkConfig, fetchStatus, updateActiveNetwork } from "./lib/api";
+import { fetchExamples, fetchIotaMarketPrice, fetchNetworkConfig, fetchStatusForNetwork, updateActiveNetwork } from "./lib/api";
 import type { ExampleTask, IotaMarketPriceResponse, OracleNetwork, OracleStatus, OracleTemplateCost } from "./types";
 import ValidateTaskPage from "./pages/ValidateTaskPage";
 import ScheduledTasksPage from "./pages/ScheduledTasksPage";
@@ -210,6 +210,7 @@ export default function App() {
   const [activeNetwork, setActiveNetworkState] = useState<OracleNetwork>("mainnet");
   const [networkLoading, setNetworkLoading] = useState(false);
   const [iotaMarketPrice, setIotaMarketPrice] = useState<IotaMarketPriceResponse | null>(null);
+  const activeNetworkRef = useRef<OracleNetwork>("mainnet");
   const menuRef = useRef<HTMLDivElement | null>(null);
   const hostingText = import.meta.env.VITE_HOSTING_TEXT?.trim() || "";
   const inputBackground = import.meta.env.VITE_THEME_INPUT_BG?.trim() || "#0f1730";
@@ -242,9 +243,9 @@ export default function App() {
     }
   }, [themeStyle]);
 
-  async function refreshStatus() {
+  async function refreshStatus(network = activeNetworkRef.current) {
     try {
-      const data = await fetchStatus();
+      const data = await fetchStatusForNetwork(network);
       setStatus(data);
       setError(null);
     } catch (err) {
@@ -271,7 +272,9 @@ export default function App() {
           networkConfig.supportedNetworks?.length ? networkConfig.supportedNetworks : FALLBACK_NETWORKS
         ).map((item) => normalizeNetwork(item));
         setSupportedNetworks(Array.from(new Set(supported)));
-        setActiveNetworkState(normalizeNetwork(networkConfig.activeNetwork));
+        const normalizedNetwork = normalizeNetwork(networkConfig.activeNetwork);
+        activeNetworkRef.current = normalizedNetwork;
+        setActiveNetworkState(normalizedNetwork);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
@@ -287,6 +290,10 @@ export default function App() {
       window.clearInterval(priceTimer);
     };
   }, []);
+
+  useEffect(() => {
+    activeNetworkRef.current = activeNetwork;
+  }, [activeNetwork]);
 
   useEffect(() => {
     fetchExamples()
@@ -345,8 +352,10 @@ export default function App() {
     setNetworkLoading(true);
     try {
       const networkConfig = await updateActiveNetwork(next);
-      setActiveNetworkState(normalizeNetwork(networkConfig.activeNetwork));
-      await refreshStatus();
+      const normalized = normalizeNetwork(networkConfig.activeNetwork);
+      activeNetworkRef.current = normalized;
+      setActiveNetworkState(normalized);
+      await refreshStatus(normalized);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -477,13 +486,13 @@ export default function App() {
             <MetricCard label="Total oracle events" value={status?.metrics.totalOracleEvents ?? "-"} hint="" />
           </section>
 
-          <TaskRunner
-            examples={examples}
-            activeNetwork={activeNetwork}
-            registeredNodes={status?.registeredNodes ?? []}
-            onExecuted={() => void refreshStatus()}
-            onTemplateIdChange={setSelectedTemplateId}
-          />
+            <TaskRunner
+              examples={examples}
+              activeNetwork={activeNetwork}
+              registeredNodes={status?.registeredNodes ?? []}
+              onExecuted={() => void refreshStatus(activeNetwork)}
+              onTemplateIdChange={setSelectedTemplateId}
+            />
 
           <section className="card card-spaced">
             <div className="section-title">Configured costs</div>
@@ -617,7 +626,7 @@ export default function App() {
           />
         </>
       ) : pageMode === "scheduled" ? (
-        <ScheduledTasksPage />
+        <ScheduledTasksPage activeNetwork={activeNetwork} />
       ) : (
         <ValidateTaskPage />
       )}

@@ -805,8 +805,8 @@ async function enrichRegisteredNodesWithValidatorInfo(
   );
 }
 
-export async function getOracleStatus(): Promise<OracleStatusResponse> {
-  const runtime = getRuntimeConfig();
+export async function getOracleStatus(network?: string): Promise<OracleStatusResponse> {
+  const runtime = getRuntimeConfig(network);
   const client = new IotaClient({ url: runtime.rpcUrl });
   const warnings: string[] = [];
   if (!runtime.oracleTasksPackageId) {

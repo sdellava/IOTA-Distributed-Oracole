@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Stefano Della Valle
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
-module iota_oracle_tasks::oracle_scheduled_tasks {
+module iota_oracle_scheduler::oracle_scheduled_tasks {
     use iota::balance::{Self as balance, Balance};
     use iota::clock::{Clock, timestamp_ms};
     use iota::coin::{Self as coin, Coin};

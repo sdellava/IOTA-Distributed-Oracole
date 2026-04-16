@@ -5,10 +5,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCurrentAccount, useSignAndExecuteTransaction } from '@iota/dapp-kit';
 import { IotaClient, type ChainType } from '@iota/iota-sdk/client';
 import { Transaction } from '@iota/iota-sdk/transactions';
-import { fetchExampleContent, prepareWalletTask } from '../lib/api';
+import { fetchExampleContent, prepareWalletScheduledTask, prepareWalletTask } from '../lib/api';
 import { resolveApiBaseUrl } from '../lib/apiBase';
 import { validateTaskMultisig } from '../lib/multisigValidation';
-import type { ExampleTask, OracleNetwork, PreparedWalletTaskResponse, RegisteredOracleNode } from '../types';
+import type {
+  ExampleTask,
+  OracleNetwork,
+  PreparedScheduledWalletTaskResponse,
+  PreparedWalletTaskResponse,
+  RegisteredOracleNode,
+} from '../types';
 
 type Props = {
   examples: ExampleTask[];
@@ -48,6 +54,12 @@ type WalletRunResult = {
   digest: string;
   taskId: string;
   live: TaskLiveState;
+};
+
+type WalletScheduledResult = {
+  prepared: PreparedScheduledWalletTaskResponse;
+  digest: string;
+  scheduledTaskId: string | null;
 };
 
 type TaskDetail = {
@@ -237,6 +249,41 @@ function extractTaskId(execution: any): string {
   const parsed = asRecord(createdEvent?.parsedJson) ?? asRecord(createdEvent?.parsed_json) ?? {};
   const byEvent = moveObjectIdToString(parsed.task_id ?? parsed.taskId);
   return byEvent;
+}
+
+function extractScheduledTaskId(execution: any): string {
+  const objectChanges = extractArrayLike(execution?.objectChanges ?? execution?.object_changes);
+  const createdTask = objectChanges.find(
+    (item: any) =>
+      item?.type === 'created' &&
+      String(item?.objectType ?? item?.object_type ?? '').includes('::oracle_scheduled_tasks::ScheduledTask') &&
+      !String(item?.objectType ?? item?.object_type ?? '').includes('ScheduledTaskOwnerCap'),
+  );
+  const byObjectChange = String(createdTask?.objectId ?? createdTask?.object_id ?? '').trim();
+  if (byObjectChange) return byObjectChange;
+
+  const events = extractArrayLike(execution?.events);
+  const createdEvent = events.find((item: any) => {
+    const type = String(item?.type ?? '');
+    return type.endsWith('::oracle_scheduled_tasks::ScheduledTaskCreated');
+  });
+
+  const parsed = asRecord(createdEvent?.parsedJson) ?? asRecord(createdEvent?.parsed_json) ?? {};
+  return moveObjectIdToString(parsed.scheduled_task_id ?? parsed.scheduledTaskId);
+}
+
+function formatDateTimeLocalInput(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function datetimeLocalToMs(value: string): number {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? Math.floor(parsed) : Number.NaN;
 }
 
 async function fetchExecutionForDigest(iotaClient: any, digest: string, fallbackExecution: any): Promise<any> {
@@ -701,13 +748,24 @@ function formatUserFacingError(error: unknown): string {
 }
 
 export default function TaskRunner({ examples, activeNetwork, registeredNodes, onExecuted, onTemplateIdChange }: Props) {
+  const defaultStart = useMemo(() => {
+    const date = new Date();
+    date.setMinutes(date.getMinutes() + 5, 0, 0);
+    return formatDateTimeLocalInput(date);
+  }, []);
   const [taskText, setTaskText] = useState<string>('{}');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<WalletRunResult | null>(null);
+  const [scheduledResult, setScheduledResult] = useState<WalletScheduledResult | null>(null);
   const [taskDetail, setTaskDetail] = useState<TaskDetail | null>(null);
   const [taskEvents, setTaskEvents] = useState<TaskEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selectedExample, setSelectedExample] = useState<string>('');
+  const [submissionMode, setSubmissionMode] = useState<'run' | 'schedule'>('run');
+  const [scheduleStart, setScheduleStart] = useState<string>(defaultStart);
+  const [scheduleEnd, setScheduleEnd] = useState<string>('');
+  const [scheduleIntervalMinutes, setScheduleIntervalMinutes] = useState<string>('60');
+  const [scheduleInitialFundsIota, setScheduleInitialFundsIota] = useState<string>('5');
   const currentAccount = useCurrentAccount();
   const iotaClients = useMemo(
     () => ({
@@ -1010,7 +1068,9 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
   async function onSubmit() {
     setError(null);
     setResult(null);
+    setScheduledResult(null);
     setTaskDetail(null);
+    setTaskEvents([]);
 
     if (!parsedTask) {
       setError('Task JSON is not valid.');
@@ -1033,43 +1093,86 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
       const chain = CHAIN_BY_NETWORK[activeNetwork];
       executionClientRef.current = networkClient;
 
-      const prepared = await prepareWalletTask(task, currentAccount.address, activeNetwork);
-      const transaction = Transaction.from(prepared.serializedTransaction);
-      const execution = await signAndExecuteTransaction({ transaction, chain });
-      const digest = String(execution?.digest ?? '').trim();
-      const confirmedExecution = await fetchExecutionForDigest(networkClient, digest, execution);
-      const taskId = extractTaskId(confirmedExecution) || extractTaskId(execution);
+      if (submissionMode === 'schedule') {
+        const startMs = datetimeLocalToMs(scheduleStart);
+        const endMs = scheduleEnd ? datetimeLocalToMs(scheduleEnd) : 0;
+        const intervalMinutes = Number(scheduleIntervalMinutes);
 
-      if (!taskId) {
-        throw new Error(
-          `Wallet execution succeeded, but the created task id could not be extracted from the transaction. digest=${digest || '<unknown>'}`,
+        if (!Number.isFinite(startMs)) {
+          throw new Error('Invalid start schedule date.');
+        }
+        if (scheduleEnd && !Number.isFinite(endMs)) {
+          throw new Error('Invalid end schedule date.');
+        }
+        if (scheduleEnd && endMs < startMs) {
+          throw new Error('End schedule must be after the start schedule.');
+        }
+        if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
+          throw new Error('Interval must be a positive number of minutes.');
+        }
+
+        const prepared = await prepareWalletScheduledTask(
+          task,
+          {
+            startScheduleMs: startMs,
+            endScheduleMs: scheduleEnd ? endMs : 0,
+            intervalMinutes,
+            initialFundsIota: scheduleInitialFundsIota,
+          },
+          currentAccount.address,
+          activeNetwork,
         );
+        const transaction = Transaction.from(prepared.serializedTransaction);
+        const execution = await signAndExecuteTransaction({ transaction, chain });
+        const digest = String(execution?.digest ?? '').trim();
+        const confirmedExecution = await fetchExecutionForDigest(networkClient, digest, execution);
+        const scheduledTaskId = extractScheduledTaskId(confirmedExecution) || extractScheduledTaskId(execution) || null;
+
+        setScheduledResult({
+          prepared,
+          digest,
+          scheduledTaskId,
+        });
+        onExecuted();
+      } else {
+        const prepared = await prepareWalletTask(task, currentAccount.address, activeNetwork);
+        const transaction = Transaction.from(prepared.serializedTransaction);
+        const execution = await signAndExecuteTransaction({ transaction, chain });
+        const digest = String(execution?.digest ?? '').trim();
+        const confirmedExecution = await fetchExecutionForDigest(networkClient, digest, execution);
+        const taskId = extractTaskId(confirmedExecution) || extractTaskId(execution);
+
+        if (!taskId) {
+          throw new Error(
+            `Wallet execution succeeded, but the created task id could not be extracted from the transaction. digest=${digest || '<unknown>'}`,
+          );
+        }
+
+        const token = pollTokenRef.current + 1;
+        pollTokenRef.current = token;
+
+        setResult({
+          prepared,
+          digest,
+          taskId,
+          live: {
+            kind: 'submitted',
+            state: null,
+            phaseLabel: 'Submitted',
+            detail: 'Transaction accepted. Waiting for the oracle network to process the task.',
+            round: 0,
+            mediationAttempts: 0,
+            mediationStatus: 0,
+            mediationVariance: 0,
+            resultText: null,
+            noCommitMessages: [],
+            updatedAt: new Date().toISOString(),
+          },
+        });
+
+        void monitorTask(networkClient, taskId, prepared, digest, token);
+        onExecuted();
       }
-
-      const token = pollTokenRef.current + 1;
-      pollTokenRef.current = token;
-
-      setResult({
-        prepared,
-        digest,
-        taskId,
-        live: {
-          kind: 'submitted',
-          state: null,
-          phaseLabel: 'Submitted',
-          detail: 'Transaction accepted. Waiting for the oracle network to process the task.',
-          round: 0,
-          mediationAttempts: 0,
-          mediationStatus: 0,
-          mediationVariance: 0,
-          resultText: null,
-          noCommitMessages: [],
-          updatedAt: new Date().toISOString(),
-        },
-      });
-
-      void monitorTask(networkClient, taskId, prepared, digest, token);
-      onExecuted();
     } catch (err) {
       setError(formatUserFacingError(err));
     } finally {
@@ -1079,9 +1182,9 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
 
   return (
     <section className="card task-card">
-      <div className="section-title">Run a task</div>
+      <div className="section-title">Run or schedule a task</div>
       <div className="task-intro">
-        The server prepares the transaction, your wallet signs it, and the webview then follows the task on-chain until a terminal state.
+        The server prepares the transaction, your wallet signs it, and the webview either follows the task on-chain or creates a scheduled task.
       </div>
 
       <div className="task-toolbar task-toolbar-grid">
@@ -1121,14 +1224,139 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
         spellCheck={false}
       />
 
+      <div className={`schedule-form-grid ${submissionMode !== 'schedule' ? 'is-disabled' : ''}`}>
+        <label>
+          Start schedule
+          <input
+            type="datetime-local"
+            value={scheduleStart}
+            onChange={(e) => setScheduleStart(e.target.value)}
+            disabled={submissionMode !== 'schedule'}
+          />
+        </label>
+
+        <label>
+          End schedule
+          <input
+            type="datetime-local"
+            value={scheduleEnd}
+            onChange={(e) => setScheduleEnd(e.target.value)}
+            disabled={submissionMode !== 'schedule'}
+          />
+        </label>
+
+        <label>
+          Interval (minutes)
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={scheduleIntervalMinutes}
+            onChange={(e) => setScheduleIntervalMinutes(e.target.value)}
+            disabled={submissionMode !== 'schedule'}
+          />
+        </label>
+
+        <label>
+          Initial funds (IOTA)
+          <input
+            type="number"
+            min="0"
+            step="0.000000001"
+            value={scheduleInitialFundsIota}
+            onChange={(e) => setScheduleInitialFundsIota(e.target.value)}
+            disabled={submissionMode !== 'schedule'}
+          />
+        </label>
+      </div>
+
       <div className="task-actions task-actions-mobile">
         <button className="wallet-submit-button" onClick={() => void onSubmit()} disabled={busy || !parsedTask || !currentAccount}>
-          {busy ? 'Opening wallet...' : 'Sign and execute with wallet'}
+          {busy ? 'Opening wallet...' : submissionMode === 'schedule' ? 'Sign and create scheduled task' : 'Sign and execute with wallet'}
         </button>
+        <fieldset className="task-mode-radio-group task-mode-toggle-inline" aria-label="Submission mode">
+          <label className="task-mode-radio">
+            <input
+              type="radio"
+              name="submissionMode"
+              checked={submissionMode === 'run'}
+              onChange={() => setSubmissionMode('run')}
+            />
+            <span>Run</span>
+          </label>
+          <label className="task-mode-radio">
+            <input
+              type="radio"
+              name="submissionMode"
+              checked={submissionMode === 'schedule'}
+              onChange={() => setSubmissionMode('schedule')}
+            />
+            <span>Schedule</span>
+          </label>
+        </fieldset>
         {!parsedTask ? <span className="error-inline">Invalid JSON</span> : null}
       </div>
 
       {error ? <div className="alert alert-error">{error}</div> : null}
+
+      {scheduledResult ? (
+        <div className="result-grid">
+          <div className="task-summary-grid">
+            <div className="task-summary-card">
+              <div className="summary-label">Scheduled task</div>
+              <div className="summary-value mono">
+                {scheduledResult.scheduledTaskId ? shortAddress(scheduledResult.scheduledTaskId, 14, 10) : 'Pending extraction'}
+              </div>
+              <div className="summary-hint mono full-value">{scheduledResult.scheduledTaskId ?? '-'}</div>
+            </div>
+            <div className="task-summary-card">
+              <div className="summary-label">Tx digest</div>
+              <div className="summary-value mono">{shortAddress(scheduledResult.digest, 10, 8)}</div>
+              <div className="summary-hint mono full-value">{scheduledResult.digest || '-'}</div>
+            </div>
+            <div className="task-summary-card">
+              <div className="summary-label">Schedule</div>
+              <div className="summary-value">
+                every {Math.max(1, Math.floor(Number(scheduledResult.prepared.schedule.intervalMs) / 60000))} min
+              </div>
+              <div className="summary-hint">
+                Initial funds: <span className="mono">{scheduledResult.prepared.initialFunds}</span> nano-IOTA
+              </div>
+            </div>
+          </div>
+
+          <div className="template-details-card">
+            <div className="template-details-head">
+              <div className="template-details-title">Scheduled task created</div>
+              <span className="template-status-badge is-on">active</span>
+            </div>
+            <div className="template-details-grid">
+              <div className="template-kv-item">
+                <div className="template-kv-label">Template</div>
+                <div className="template-kv-value">
+                  {scheduledResult.prepared.template.templateId} - {scheduledResult.prepared.template.taskType}
+                </div>
+              </div>
+              <div className="template-kv-item">
+                <div className="template-kv-label">Required per run</div>
+                <div className="template-kv-value mono">{scheduledResult.prepared.requiredPerRun}</div>
+              </div>
+              <div className="template-kv-item">
+                <div className="template-kv-label">Start</div>
+                <div className="template-kv-value">{new Date(Number(scheduledResult.prepared.schedule.startScheduleMs)).toLocaleString()}</div>
+              </div>
+              <div className="template-kv-item">
+                <div className="template-kv-label">End</div>
+                <div className="template-kv-value">
+                  {scheduledResult.prepared.schedule.endScheduleMs === '0'
+                    ? 'Open-ended'
+                    : new Date(Number(scheduledResult.prepared.schedule.endScheduleMs)).toLocaleString()}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {result ? (
         <div className="result-grid">

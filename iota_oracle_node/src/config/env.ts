@@ -30,6 +30,13 @@ export function getTasksPackageId(): string {
   return envByNetwork("ORACLE_TASKS_PACKAGE_ID") || mustEnv("ORACLE_PACKAGE_ID");
 }
 
+export function getSchedulerPackageId(): string {
+  return (
+    envByNetwork("ORACLE_SCHEDULER_PACKAGE_ID") ||
+    getTasksPackageId()
+  );
+}
+
 export function getSystemPackageId(): string {
   return (
     envByNetwork("ORACLE_SYSTEM_PACKAGE_ID") ||

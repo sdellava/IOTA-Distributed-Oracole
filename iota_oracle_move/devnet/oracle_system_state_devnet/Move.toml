@@ -1,0 +1,10 @@
+[package]
+name = "iota_oracle_system_state"
+version = "0.0.1"
+edition = "2024.beta"
+published-at = "0xc51974f982a592947d7022fdff09513ae6b3848327673758cbde43bfce7aea5c"
+# license = "SPDX-License-Identifier: AGPLv3"
+# authors = [""]
+
+[addresses]
+iota_oracle_system_state = "0xc51974f982a592947d7022fdff09513ae6b3848327673758cbde43bfce7aea5c"

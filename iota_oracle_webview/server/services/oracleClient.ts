@@ -52,6 +52,18 @@ async function buildClientEnv(network?: OracleNetwork): Promise<NodeJS.ProcessEn
     runtimeOverrides.ORACLE_TREASURY_OBJECT_ID = runtime.oracleTreasuryId;
   }
 
+  if (runtime.oracleScheduledTaskRegistryId) {
+    runtimeOverrides.ORACLE_SCHEDULED_TASK_REGISTRY_ID = runtime.oracleScheduledTaskRegistryId;
+  }
+
+  if (runtime.oracleSchedulerQueueId) {
+    runtimeOverrides.ORACLE_SCHEDULER_QUEUE_ID = runtime.oracleSchedulerQueueId;
+  }
+
+  if (runtime.oracleSchedulerPackageId) {
+    runtimeOverrides.ORACLE_SCHEDULER_PACKAGE_ID = runtime.oracleSchedulerPackageId;
+  }
+
   if (runtime.iotaRandomObjectId) {
     runtimeOverrides.IOTA_RANDOM_OBJECT_ID = runtime.iotaRandomObjectId;
   }
@@ -251,6 +263,18 @@ async function spawnPrepareWalletTask(taskFilePath: string, sender: string, netw
   return spawnClientCommand(["run", "create", "--", "prepare-webview", taskFilePath, sender], network);
 }
 
+async function spawnPrepareScheduledWalletTask(
+  taskFilePath: string,
+  scheduleFilePath: string,
+  sender: string,
+  network?: OracleNetwork,
+) {
+  return spawnClientCommand(
+    ["run", "create", "--", "prepare-scheduled-webview", taskFilePath, scheduleFilePath, sender],
+    network,
+  );
+}
+
 export async function listExampleTasks() {
   try {
     const entries = await fs.readdir(config.oracleExamplesDir, { withFileTypes: true });
@@ -318,6 +342,71 @@ export async function prepareOracleTaskForWallet(task: unknown, sender: string, 
         process.platform === "win32"
           ? `cmd.exe /d /s /c npm --silent run create -- prepare-webview ${taskFilePath} ${normalizedSender}`
           : `${npmCommand()} --silent run create -- prepare-webview ${taskFilePath} ${normalizedSender}`,
+      taskFilePath,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.exitCode,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+    };
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+export async function prepareOracleScheduledTaskForWallet(
+  task: unknown,
+  schedule: unknown,
+  sender: string,
+  network?: OracleNetwork,
+) {
+  await fs.access(config.oracleClientDir).catch(() => {
+    throw new Error(`Oracle client directory not found: ${config.oracleClientDir}`);
+  });
+
+  const normalizedSender = String(sender ?? "").trim();
+  if (!normalizedSender) {
+    throw new Error("Wallet sender address is required.");
+  }
+
+  const normalizedTask = normalizeTaskPayloadInput(task);
+  const normalizedSchedule =
+    schedule && typeof schedule === "object" && !Array.isArray(schedule)
+      ? { ...(schedule as Record<string, unknown>) }
+      : (() => {
+          throw new Error("Schedule payload must be a JSON object.");
+        })();
+
+  await fs.mkdir(path.join(os.tmpdir(), "iota_oracle_webview"), { recursive: true });
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "iota_oracle_webview", "scheduled-task-"));
+  const taskFilePath = path.join(tempDir, "task.json");
+  const scheduleFilePath = path.join(tempDir, "schedule.json");
+  await fs.writeFile(taskFilePath, `${JSON.stringify(normalizedTask, null, 2)}\n`, "utf8");
+  await fs.writeFile(scheduleFilePath, `${JSON.stringify(normalizedSchedule, null, 2)}\n`, "utf8");
+
+  const startedAt = new Date().toISOString();
+  try {
+    const result = await runChildCommand(
+      spawnPrepareScheduledWalletTask(taskFilePath, scheduleFilePath, normalizedSender, network),
+    );
+
+    if (result.exitCode !== 0) {
+      throw new Error(
+        result.stderr.trim() ||
+          result.stdout.trim() ||
+          `Scheduled wallet preparation failed with exit code ${String(result.exitCode)}`,
+      );
+    }
+
+    const parsed = extractJsonFromStdout(result.stdout);
+
+    return {
+      ...parsed,
+      cwd: config.oracleClientDir,
+      command:
+        process.platform === "win32"
+          ? `cmd.exe /d /s /c npm --silent run create -- prepare-scheduled-webview ${taskFilePath} ${scheduleFilePath} ${normalizedSender}`
+          : `${npmCommand()} --silent run create -- prepare-scheduled-webview ${taskFilePath} ${scheduleFilePath} ${normalizedSender}`,
       taskFilePath,
       stdout: result.stdout,
       stderr: result.stderr,

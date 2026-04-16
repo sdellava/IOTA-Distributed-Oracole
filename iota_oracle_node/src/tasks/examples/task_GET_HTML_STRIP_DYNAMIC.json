@@ -40,6 +40,7 @@
     "template_id": 11,
     "is_enabled": 1,
     "base_price_iota": 1000000000,
+    "scheduler_fee_iota": 21323200,
     "max_input_bytes": 8192,
     "max_output_bytes": 8192,
     "included_download_bytes": 8192,

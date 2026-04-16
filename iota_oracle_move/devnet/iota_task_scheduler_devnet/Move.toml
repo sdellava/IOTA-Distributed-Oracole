@@ -1,0 +1,11 @@
+[package]
+name = "iota_oracle_scheduler"
+version = "0.0.1"
+edition = "2024.beta"
+published-at = "0x3728532cf7ea9206eb3365d4bbcd485a4f18b5a2ee731aa9f45477137662388d"
+
+[dependencies]
+iota_oracle_tasks = { local = "../oracle_tasks_devnet" }
+
+[addresses]
+iota_oracle_scheduler = "0x3728532cf7ea9206eb3365d4bbcd485a4f18b5a2ee731aa9f45477137662388d"
