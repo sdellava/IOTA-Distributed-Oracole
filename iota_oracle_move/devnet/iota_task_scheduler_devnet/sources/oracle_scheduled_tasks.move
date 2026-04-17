@@ -315,6 +315,7 @@ module iota_oracle_scheduler::oracle_scheduled_tasks {
         ctx: &mut TxContext
     ) {
         assert!(template_id != SCHEDULER_TEMPLATE_ID, EInvalidTaskTemplate);
+        assert!(count_scheduler_nodes(st) > 0, ENoSchedulerNodes);
         assert!(interval_ms >= MIN_INTERVAL_MS, EInvalidInterval);
         assert!(end_schedule_ms == 0 || start_schedule_ms <= end_schedule_ms, EInvalidScheduleWindow);
         let (_, _, _) = systemState::validate_task_request_and_get_payment_split(
@@ -618,6 +619,20 @@ module iota_oracle_scheduler::oracle_scheduled_tasks {
             i = i + 1;
         };
         false
+    }
+
+    fun count_scheduler_nodes(st: &systemState::State): u64 {
+        let nodes_ref = systemState::oracle_nodes(st);
+        let mut count = 0;
+        let mut i = 0;
+        while (i < vector::length(nodes_ref)) {
+            let node = vector::borrow(nodes_ref, i);
+            if (systemState::oracle_node_accepts_template(node, SCHEDULER_TEMPLATE_ID)) {
+                count = count + 1;
+            };
+            i = i + 1;
+        };
+        count
     }
 
     fun maybe_mark_ended(task: &mut ScheduledTask, now: u64) {

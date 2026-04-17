@@ -148,15 +148,16 @@ const data = JSON.parse(fs.readFileSync(0, "utf8"));
 const approved = Array.isArray(data?.approvedTemplates) ? data.approvedTemplates : [];
 const pending = Array.isArray(data?.pendingProposals) ? data.pendingProposals : [];
 const map = new Map();
+map.set(0, { id: 0, type: "SCHEDULER", src: "implicit" });
 for (const t of approved) {
   const id = Number(t?.templateId);
-  if (!Number.isFinite(id) || id <= 0) continue;
+  if (!Number.isFinite(id) || id < 0) continue;
   map.set(id, { id, type: String(t?.taskType ?? ""), src: "approved" });
 }
 for (const p of pending) {
   if (String(p?.kind ?? "") !== "upsert") continue;
   const id = Number(p?.templateId);
-  if (!Number.isFinite(id) || id <= 0) continue;
+  if (!Number.isFinite(id) || id < 0) continue;
   if (!map.has(id)) map.set(id, { id, type: "", src: "pending-upsert" });
 }
 for (const x of [...map.values()].sort((a,b)=>a.id-b.id)) {
@@ -200,7 +201,7 @@ else
   done
   echo ""
   echo "Select templates that this node should support:"
-  echo "  - one/more selections (example: 1 3 5 or 1,3,5)"
+  echo "  - one/more template ids (example: 0 4 5 or 0,4,5)"
   echo "  - or 'all'"
   read -r -p "> " SEL
   SEL="$(echo "$SEL" | tr '[:upper:]' '[:lower:]' | xargs)"
@@ -214,13 +215,17 @@ else
   else
     NORM="$(echo "$SEL" | tr ',' ' ')"
     declare -A seen=()
+    declare -A valid_ids=()
+    for line in "${CANDIDATES[@]}"; do
+      tid="$(printf "%s" "$line" | cut -f1)"
+      valid_ids["$tid"]=1
+    done
     for token in $NORM; do
       [[ "$token" =~ ^[0-9]+$ ]] || { echo "[error] invalid token: $token" >&2; exit 1; }
-      idx=$((token - 1))
-      (( idx >= 0 && idx < ${#CANDIDATES[@]} )) || { echo "[error] selection out of range: $token" >&2; exit 1; }
-      if [[ -z "${seen[$idx]:-}" ]]; then
-        seen[$idx]=1
-        SELECTED_IDS+=("$(printf "%s" "${CANDIDATES[$idx]}" | cut -f1)")
+      [[ -n "${valid_ids[$token]:-}" ]] || { echo "[error] unknown template id: $token" >&2; exit 1; }
+      if [[ -z "${seen[$token]:-}" ]]; then
+        seen[$token]=1
+        SELECTED_IDS+=("$token")
       fi
     done
   fi

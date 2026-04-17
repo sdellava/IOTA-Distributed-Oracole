@@ -224,7 +224,7 @@ export async function registerOracleNode(opts: {
   const pkg = await resolveSystemPackageId(client, stateId, getSystemPackageId());
   const acceptedTemplateIds = (opts.acceptedTemplateIds?.length ? [...opts.acceptedTemplateIds] : parseAcceptedTemplateIds())
     .map((n) => Math.floor(Number(n)))
-    .filter((n) => Number.isFinite(n) && n > 0);
+    .filter((n) => Number.isFinite(n) && n >= 0);
 
   const mode = resolveRegisterMode();
   if (mode === "off") return "";

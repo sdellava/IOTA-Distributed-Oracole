@@ -9,6 +9,8 @@ type Props = {
   activeNetwork: OracleNetwork;
 };
 
+const REFRESH_MS = 10000;
+
 function shortAddress(address: string | null | undefined, start = 6, end = 4): string {
   const value = String(address ?? "").trim();
   if (!value) return "-";
@@ -58,7 +60,8 @@ export default function ScheduledTasksPage({ activeNetwork }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    const load = async (withLoading = false) => {
+      if (withLoading) setLoading(true);
       try {
         const response = await fetchScheduledTasks(activeNetwork);
         if (!cancelled) {
@@ -68,11 +71,18 @@ export default function ScheduledTasksPage({ activeNetwork }: Props) {
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && withLoading) setLoading(false);
       }
-    })();
+    };
+
+    void load(true);
+    const timer = window.setInterval(() => {
+      void load(false);
+    }, REFRESH_MS);
+
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, [activeNetwork]);
 
