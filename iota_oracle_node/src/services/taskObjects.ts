@@ -30,11 +30,11 @@ export type TaskBundle = {
   runtimeFields: Record<string, any>;
 };
 
-export function taskCreatedAtMs(bundle: Pick<TaskBundle, "runtimeFields">): number {
-  return Number(bundle.runtimeFields?.created_at_ms ?? 0) || 0;
+export function taskCreatedAtMs(bundle: Pick<TaskBundle, "taskFields" | "runtimeFields">): number {
+  return Number(bundle.taskFields?.last_run_ms ?? bundle.runtimeFields?.created_at_ms ?? 0) || 0;
 }
 
-export function isTaskFreshForNode(bundle: Pick<TaskBundle, "runtimeFields">, startupMs: number): boolean {
+export function isTaskFreshForNode(bundle: Pick<TaskBundle, "taskFields" | "runtimeFields">, startupMs: number): boolean {
   const createdAt = taskCreatedAtMs(bundle);
   const skewMs = 5_000;
   return createdAt <= 0 || createdAt + skewMs >= startupMs;
@@ -44,20 +44,12 @@ export async function loadTaskBundle(client: IotaClient, taskId: string): Promis
   const taskObj = await client.getObject({ id: taskId, options: { showContent: true, showType: true } });
   const taskFields = getMoveFields(taskObj);
 
-  const configId = extractObjectId(taskFields.config_id);
-  const runtimeId = extractObjectId(taskFields.runtime_id);
-
-  const [configObj, runtimeObj] = await Promise.all([
-    configId ? client.getObject({ id: configId, options: { showContent: true, showType: true } }) : Promise.resolve(null as any),
-    runtimeId ? client.getObject({ id: runtimeId, options: { showContent: true, showType: true } }) : Promise.resolve(null as any),
-  ]);
-
   return {
     taskId,
     taskFields,
-    configId,
-    runtimeId,
-    configFields: configObj ? getMoveFields(configObj) : {},
-    runtimeFields: runtimeObj ? getMoveFields(runtimeObj) : {},
+    configId: taskId,
+    runtimeId: taskId,
+    configFields: taskFields,
+    runtimeFields: taskFields,
   };
 }

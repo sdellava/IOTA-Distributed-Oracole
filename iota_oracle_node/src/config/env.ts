@@ -30,13 +30,6 @@ export function getTasksPackageId(): string {
   return envByNetwork("ORACLE_TASKS_PACKAGE_ID") || mustEnv("ORACLE_PACKAGE_ID");
 }
 
-export function getSchedulerPackageId(): string {
-  return (
-    envByNetwork("ORACLE_SCHEDULER_PACKAGE_ID") ||
-    getTasksPackageId()
-  );
-}
-
 export function getSystemPackageId(): string {
   return (
     envByNetwork("ORACLE_SYSTEM_PACKAGE_ID") ||
@@ -70,18 +63,12 @@ export function getClockId(): string {
   return (envByNetwork("IOTA_CLOCK_OBJECT_ID") || envByNetwork("IOTA_CLOCK_ID") || "0x6").trim() || "0x6";
 }
 
-export function getSchedulerQueueId(): string {
-  return (
-    envByNetwork("ORACLE_SCHEDULER_QUEUE_ID") ||
-    mustEnv("ORACLE_SCHEDULER_QUEUE_ID")
-  );
+export function getTaskSchedulerQueueId(): string {
+  return envByNetwork("ORACLE_TASK_SCHEDULER_QUEUE_ID") || mustEnv("ORACLE_TASK_SCHEDULER_QUEUE_ID");
 }
 
-export function getScheduledTaskRegistryId(): string {
-  return (
-    envByNetwork("ORACLE_SCHEDULED_TASK_REGISTRY_ID") ||
-    mustEnv("ORACLE_SCHEDULED_TASK_REGISTRY_ID")
-  );
+export function getTaskRegistryId(): string {
+  return envByNetwork("ORACLE_TASK_REGISTRY_ID") || mustEnv("ORACLE_TASK_REGISTRY_ID");
 }
 
 export function defaultEventType(envKey: string, suffix: string): string {

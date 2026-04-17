@@ -139,9 +139,9 @@ export type PreparedWalletTaskResponse = {
   finishedAt: string;
 };
 
-export type PreparedScheduledWalletTaskResponse = {
+export type PreparedTaskScheduleWalletResponse = {
   ok: true;
-  mode: "prepare-scheduled-webview";
+  mode: "prepare-task-schedule-webview";
   sender: string;
   serializedTransaction: string;
   gasBudget: string;
@@ -199,7 +199,7 @@ export type NetworkConfigResponse = {
   stateId: string | null;
 };
 
-export type ScheduledTaskItem = {
+export type TaskScheduleItem = {
   id: string;
   creator: string;
   status: number;
@@ -214,7 +214,7 @@ export type ScheduledTaskItem = {
   lastSchedulerNode: string | null;
 };
 
-export type ScheduledTasksResponse = {
+export type TaskSchedulesResponse = {
   ok: boolean;
   network: string;
   registryId: string | null;
@@ -226,6 +226,6 @@ export type ScheduledTasksResponse = {
     lastRoundCompletedMs: string;
     roundCounter: string;
   } | null;
-  items: ScheduledTaskItem[];
+  items: TaskScheduleItem[];
   warnings: string[];
 };

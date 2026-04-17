@@ -55,6 +55,8 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PROPOSER_SCRIPT="${SCRIPT_DIR}/propose_template_from_json.sh"
+REPO_ROOT="$(cd "${PROJECT_DIR}/.." && pwd)"
+DEVNET_SYSTEM_STATE_REPORT="${REPO_ROOT}/iota_oracle_move/devnet/oracle_system_state_devnet/devnet_system_state.txt"
 
 [[ -f "$PROPOSER_SCRIPT" ]] || { echo "[error] proposer script not found: $PROPOSER_SCRIPT" >&2; exit 1; }
 
@@ -114,6 +116,29 @@ get_prefixed_env() {
   printf "%s" "${!key:-}"
 }
 
+controller_cap_id_from_report() {
+  local report_file="$1"
+  [[ -f "$report_file" ]] || return 1
+  node -e '
+const fs = require("fs");
+const text = fs.readFileSync(process.argv[1], "utf8");
+const match = text.match(/ObjectID:\s*(0x[a-fA-F0-9]+)[\s\S]*?ObjectType:\s*(0x[a-fA-F0-9]+::systemState::ControllerCap)/);
+if (match) process.stdout.write(match[1]);
+' "$report_file"
+}
+
+read_object_type() {
+  local object_id="$1"
+  iota client object "$object_id" --json \
+    | node -e '
+const fs = require("fs");
+const txt = fs.readFileSync(0, "utf8");
+const data = JSON.parse(txt);
+const type = data?.data?.type ?? data?.type ?? data?.content?.type ?? "";
+if (type) process.stdout.write(String(type));
+'
+}
+
 SYSTEM_PKG="$(get_prefixed_env ORACLE_SYSTEM_PACKAGE_ID)"
 STATE_ID="$(get_prefixed_env ORACLE_STATE_ID)"
 CLOCK_ID="$(get_prefixed_env IOTA_CLOCK_ID)"
@@ -131,6 +156,26 @@ fi
 [[ -n "$STATE_ID" ]] || { echo "[error] missing ${NET_PREFIX}_ORACLE_STATE_ID (or ORACLE_STATE_ID) in env" >&2; exit 1; }
 [[ -n "$CONTROLLER_CAP_ID" ]] || { echo "[error] missing ${NET_PREFIX}_CONTROLLER_CAP_ID (or CONTROLLER_CAP_ID) in env" >&2; exit 1; }
 [[ -n "$CONTROLLER_ADDRESS_OR_ALIAS" ]] || { echo "[error] missing controller address/alias in env and active-address unavailable" >&2; exit 1; }
+
+EXPECTED_CONTROLLER_CAP_TYPE="${SYSTEM_PKG}::systemState::ControllerCap"
+CURRENT_CONTROLLER_CAP_TYPE="$(read_object_type "${CONTROLLER_CAP_ID}" || true)"
+if [[ "$CURRENT_CONTROLLER_CAP_TYPE" != "$EXPECTED_CONTROLLER_CAP_TYPE" ]]; then
+  REPORT_CONTROLLER_CAP_ID="$(controller_cap_id_from_report "$DEVNET_SYSTEM_STATE_REPORT" || true)"
+  if [[ -n "$REPORT_CONTROLLER_CAP_ID" ]]; then
+    REPORT_CONTROLLER_CAP_TYPE="$(read_object_type "${REPORT_CONTROLLER_CAP_ID}" || true)"
+    if [[ "$REPORT_CONTROLLER_CAP_TYPE" == "$EXPECTED_CONTROLLER_CAP_TYPE" ]]; then
+      echo "[warn] controller cap from env is invalid for current package: id=${CONTROLLER_CAP_ID} type=${CURRENT_CONTROLLER_CAP_TYPE:-unknown}"
+      echo "[info] using ControllerCap from publish report: ${REPORT_CONTROLLER_CAP_ID}"
+      CONTROLLER_CAP_ID="$REPORT_CONTROLLER_CAP_ID"
+    fi
+  fi
+fi
+
+[[ "$(read_object_type "${CONTROLLER_CAP_ID}" || true)" == "$EXPECTED_CONTROLLER_CAP_TYPE" ]] || {
+  echo "[error] CONTROLLER_CAP_ID=${CONTROLLER_CAP_ID} is not ${EXPECTED_CONTROLLER_CAP_TYPE}" >&2
+  echo "[error] rerun update_devnet_envs.sh or fix the .env manually." >&2
+  exit 1
+}
 
 CAP_OWNER_ADDRESS="$(
   iota client object "${CONTROLLER_CAP_ID}" --json \

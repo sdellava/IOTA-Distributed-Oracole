@@ -5,13 +5,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCurrentAccount, useSignAndExecuteTransaction } from '@iota/dapp-kit';
 import { IotaClient, type ChainType } from '@iota/iota-sdk/client';
 import { Transaction } from '@iota/iota-sdk/transactions';
-import { fetchExampleContent, prepareWalletScheduledTask, prepareWalletTask } from '../lib/api';
+import { fetchExampleContent, prepareWalletTask, prepareWalletTaskSchedule } from '../lib/api';
 import { resolveApiBaseUrl } from '../lib/apiBase';
 import { validateTaskMultisig } from '../lib/multisigValidation';
 import type {
   ExampleTask,
   OracleNetwork,
-  PreparedScheduledWalletTaskResponse,
+  PreparedTaskScheduleWalletResponse,
   PreparedWalletTaskResponse,
   RegisteredOracleNode,
 } from '../types';
@@ -57,14 +57,17 @@ type WalletRunResult = {
 };
 
 type WalletScheduledResult = {
-  prepared: PreparedScheduledWalletTaskResponse;
+  prepared: PreparedTaskScheduleWalletResponse;
   digest: string;
-  scheduledTaskId: string | null;
+  taskId: string | null;
 };
 
 type TaskDetail = {
   assigned_nodes?: Array<string | number>;
   certificate_signers?: Array<string | number>;
+  status?: number | string | null;
+  execution_state?: number | string | null;
+  active_round?: number | string | null;
   multisig_bytes?: unknown;
   multisig_addr?: string | null;
   quorum_k?: number | string;
@@ -211,6 +214,31 @@ function bytesToPrettyText(bytes: Uint8Array): string | null {
   }
 }
 
+function resultValueToPrettyText(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (!text) return null;
+    try {
+      return JSON.stringify(JSON.parse(text), null, 2);
+    } catch {
+      return text;
+    }
+  }
+
+  const bytesText = bytesToPrettyText(decodeVecU8(value as any));
+  if (bytesText) return bytesText;
+
+  const record = asRecord(value);
+  if (!record) return null;
+  for (const key of ['result', 'result_bytes', 'bytes', 'value', 'contents', 'data']) {
+    if (!(key in record)) continue;
+    const nested = resultValueToPrettyText(record[key]);
+    if (nested) return nested;
+  }
+
+  return null;
+}
+
 function shortAddress(address: string, start = 10, end = 8): string {
   if (!address) return '-';
   if (address.length <= start + end + 3) return address;
@@ -251,13 +279,16 @@ function extractTaskId(execution: any): string {
   return byEvent;
 }
 
-function extractScheduledTaskId(execution: any): string {
+function extractCreatedTaskId(execution: any): string {
   const objectChanges = extractArrayLike(execution?.objectChanges ?? execution?.object_changes);
   const createdTask = objectChanges.find(
     (item: any) =>
       item?.type === 'created' &&
-      String(item?.objectType ?? item?.object_type ?? '').includes('::oracle_scheduled_tasks::ScheduledTask') &&
-      !String(item?.objectType ?? item?.object_type ?? '').includes('ScheduledTaskOwnerCap'),
+      String(item?.objectType ?? item?.object_type ?? '').includes('::oracle_tasks::Task') &&
+      !String(item?.objectType ?? item?.object_type ?? '').includes('TaskOwnerCap') &&
+      !String(item?.objectType ?? item?.object_type ?? '').includes('TaskControllerCap') &&
+      !String(item?.objectType ?? item?.object_type ?? '').includes('TaskRegistry') &&
+      !String(item?.objectType ?? item?.object_type ?? '').includes('TaskResult'),
   );
   const byObjectChange = String(createdTask?.objectId ?? createdTask?.object_id ?? '').trim();
   if (byObjectChange) return byObjectChange;
@@ -265,11 +296,11 @@ function extractScheduledTaskId(execution: any): string {
   const events = extractArrayLike(execution?.events);
   const createdEvent = events.find((item: any) => {
     const type = String(item?.type ?? '');
-    return type.endsWith('::oracle_scheduled_tasks::ScheduledTaskCreated');
+    return type.endsWith('::oracle_tasks::TaskCreated');
   });
 
   const parsed = asRecord(createdEvent?.parsedJson) ?? asRecord(createdEvent?.parsed_json) ?? {};
-  return moveObjectIdToString(parsed.scheduled_task_id ?? parsed.scheduledTaskId);
+  return moveObjectIdToString(parsed.task_id ?? parsed.taskId);
 }
 
 function formatDateTimeLocalInput(date: Date): string {
@@ -526,20 +557,24 @@ function normalizeTaskText(value: string): { task: unknown; normalizedText: stri
 async function readTaskCompositeState(iotaClient: any, taskId: string): Promise<TaskCompositeState> {
   const taskObj = await iotaClient.getObject({ id: taskId, options: { showContent: true, showType: true } });
   const taskFields = getMoveFields(taskObj);
-  const configId = moveObjectIdToString(taskFields.config_id);
-  const runtimeId = moveObjectIdToString(taskFields.runtime_id);
-
-  const [configObj, runtimeObj] = await Promise.all([
-    configId ? iotaClient.getObject({ id: configId, options: { showContent: true, showType: true } }) : null,
-    runtimeId ? iotaClient.getObject({ id: runtimeId, options: { showContent: true, showType: true } }) : null,
-  ]);
 
   return {
     taskFields,
-    configFields: configObj ? getMoveFields(configObj) : {},
-    runtimeFields: runtimeObj ? getMoveFields(runtimeObj) : {},
+    configFields: taskFields,
+    runtimeFields: taskFields,
     taskType: String(taskObj?.data?.type ?? ''),
   };
+}
+
+function compatStateFromTask(task: Record<string, any>): number {
+  const direct = Number(task.state ?? NaN);
+  if (Number.isFinite(direct)) return direct;
+  const executionState = Number(task.execution_state ?? -1);
+  if (executionState === 1) return 1;
+  if (executionState === 2) return 2;
+  if (executionState === 9) return 9;
+  if (executionState === 10) return 10;
+  return 0;
 }
 
 function phaseLabelForState(state: number): string {
@@ -570,13 +605,20 @@ function describeSnapshot(
   const config = snapshot.configFields;
   const runtime = snapshot.runtimeFields;
 
-  const state = Number(task.state ?? -1);
-  const round = Number(task.active_round ?? 0);
+  const state = compatStateFromTask(task);
+  const round = Number(task.active_round ?? runtime.active_round ?? 0);
   const mediationMode = Number(task.mediation_mode ?? config.mediation_mode ?? runtime.mediation_mode ?? 0);
   const mediationAttempts = Number(task.mediation_attempts ?? runtime.mediation_attempts ?? 0);
   const mediationStatus = Number(task.mediation_status ?? runtime.mediation_status ?? 0);
   const mediationVariance = Number(task.mediation_variance ?? runtime.mediation_variance ?? 0);
-  const resultText = bytesToPrettyText(decodeVecU8(task.result));
+  const executionState = Number(task.execution_state ?? runtime.execution_state ?? -1);
+  const resultText =
+    resultValueToPrettyText(taskDetail?.result) ??
+    resultValueToPrettyText(taskDetail?.result_bytes) ??
+    resultValueToPrettyText(task.result) ??
+    resultValueToPrettyText(runtime.result) ??
+    resultValueToPrettyText(task.result_bytes) ??
+    resultValueToPrettyText(runtime.result_bytes);
   const mediationEnabled = mediationMode === MEDIATION_MEAN_U64;
   const multisigValidation = validateTaskMultisig(
     taskDetail ?? {
@@ -590,15 +632,24 @@ function describeSnapshot(
     },
     registeredNodes,
   );
-  const finalizedOnChain = state === 9;
+  const finalizedOnChain = state === 9 || executionState === 9;
   const finalizedWithValidMultisig = finalizedOnChain && multisigValidation.addressStatus === 'match';
 
-  if (resultText || finalizedWithValidMultisig) {
+  if (finalizedOnChain || resultText) {
+    const detail = resultText
+      ? 'Result received from oracle network.'
+      : finalizedWithValidMultisig
+        ? 'Task finalized on-chain.'
+        : multisigValidation.addressStatus === 'stored_is_signer'
+          ? 'Task finalized on-chain. Dashboard multisig verification is inconclusive because the stored multisig address matches a signer address.'
+          : typeof multisigValidation.derivedError === 'string' && multisigValidation.derivedError.trim()
+            ? `Task finalized on-chain. Dashboard multisig verification is unavailable: ${multisigValidation.derivedError}`
+            : 'Task finalized on-chain.';
     return {
       kind: 'finalized',
       state,
       phaseLabel: 'Completed',
-      detail: resultText ? 'Result received from oracle network.' : 'Task finalized on-chain.',
+      detail,
       round,
       mediationAttempts,
       mediationStatus,
@@ -609,26 +660,7 @@ function describeSnapshot(
     };
   }
 
-  if (finalizedOnChain) {
-    return {
-      kind: 'error',
-      state,
-      phaseLabel: 'Invalid finalization',
-      detail:
-        multisigValidation.addressStatus === 'stored_is_signer'
-          ? 'Task reached completed state on-chain, but multisig_addr matches a signer address instead of the derived multisig.'
-          : multisigValidation.derivedError || 'Task reached completed state on-chain, but the certificate multisig address is invalid.',
-      round,
-      mediationAttempts,
-      mediationStatus,
-      mediationVariance,
-      resultText,
-      noCommitMessages: [],
-      updatedAt: new Date().toISOString(),
-    };
-  }
-
-  if (state === 10) {
+  if (state === 10 || executionState === 10) {
     if (mediationEnabled && (mediationStatus === 2 || mediationAttempts > 0)) {
       return {
         kind: 'no_consensus',
@@ -700,12 +732,22 @@ function describeSnapshot(
 }
 
 
-function buildProtocolStages(live: TaskLiveState): ProtocolStage[] {
+function buildProtocolStages(
+  live: TaskLiveState,
+  opts?: {
+    anyCommitPublished?: boolean;
+    anyRevealPublished?: boolean;
+    anyPartialSignaturePublished?: boolean;
+  },
+): ProtocolStage[] {
   const terminalFail = live.kind === 'failed' || live.kind === 'error' || live.kind === 'no_consensus';
   const finalized = live.kind === 'finalized';
   const state = live.state ?? null;
   const mediationStarted = live.round > 0 || live.mediationAttempts > 0 || live.mediationStatus === 1;
   const mediationRunning = mediationStarted && !finalized && !terminalFail;
+  const anyCommitPublished = Boolean(opts?.anyCommitPublished);
+  const anyRevealPublished = Boolean(opts?.anyRevealPublished);
+  const anyPartialSignaturePublished = Boolean(opts?.anyPartialSignaturePublished);
 
   let currentKey = 'submitted';
   if (finalized) {
@@ -714,9 +756,11 @@ function buildProtocolStages(live: TaskLiveState): ProtocolStage[] {
     currentKey = 'fail';
   } else if (mediationRunning) {
     currentKey = 'mediation';
-  } else if (state === 2) {
+  } else if (anyPartialSignaturePublished) {
+    currentKey = 'finalize';
+  } else if (anyRevealPublished || state === 2) {
     currentKey = 'reveal';
-  } else if (state === 1 || live.kind === 'pending') {
+  } else if (anyCommitPublished || state === 1) {
     currentKey = 'commit';
   }
 
@@ -740,9 +784,25 @@ function statusBadgeClass(kind: TaskStatusKind): string {
 }
 
 function formatUserFacingError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  let message = rawMessage;
+
+  try {
+    const parsed = JSON.parse(rawMessage);
+    if (parsed && typeof parsed === 'object' && typeof (parsed as { error?: unknown }).error === 'string') {
+      message = (parsed as { error: string }).error;
+    }
+  } catch {
+    // Keep the original message when it is not JSON.
+  }
+
   if (/Insufficient IOTA for address/i.test(message)) {
     return 'Error: Insufficient IOTA';
+  }
+  const templateNotFound = message.match(/Template\s+(\d+)\s+not found under state\s+(0x[a-f0-9]+)/i);
+  if (templateNotFound) {
+    const [, templateId, stateId] = templateNotFound;
+    return `Template ${templateId} is not configured on-chain under state ${stateId}. If nodes list it as supported, it is likely still pending approval and must be proposed/approved before it can be used.`;
   }
   return message;
 }
@@ -756,7 +816,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
   const [taskText, setTaskText] = useState<string>('{}');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<WalletRunResult | null>(null);
-  const [scheduledResult, setScheduledResult] = useState<WalletScheduledResult | null>(null);
+  const [taskScheduleResult, setTaskScheduleResult] = useState<WalletScheduledResult | null>(null);
   const [taskDetail, setTaskDetail] = useState<TaskDetail | null>(null);
   const [taskEvents, setTaskEvents] = useState<TaskEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -850,28 +910,74 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
     };
   }, [result?.taskId, result?.live.updatedAt]);
 
+  useEffect(() => {
+    if (!result?.taskId) return;
+    if (!taskDetail && taskEvents.length === 0) return;
+
+    try {
+      const snapshot: TaskCompositeState = {
+        taskFields: (taskDetail as Record<string, any> | null) ?? {},
+        configFields: (taskDetail as Record<string, any> | null) ?? {},
+        runtimeFields: (taskDetail as Record<string, any> | null) ?? {},
+        taskType: '',
+      };
+      const baseLive = describeSnapshot(snapshot, taskDetail, registeredNodes);
+      const latestNoCommit = baseLive.kind === 'failed' ? extractLatestFailureReason(taskEvents) : null;
+
+      setResult((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          live: {
+            ...baseLive,
+            noCommitMessages: prev.live.noCommitMessages,
+            detail:
+              baseLive.kind === 'failed' && latestNoCommit
+                ? latestNoCommit.description
+                : baseLive.detail,
+            updatedAt: prev.live.updatedAt,
+          },
+        };
+      });
+    } catch {
+      // Keep the last live snapshot if detail/event hydration is incomplete.
+    }
+  }, [registeredNodes, result?.taskId, taskDetail, taskEvents]);
+
   const failureReason = useMemo(
     () => extractLatestFailureReason(taskEvents) ?? extractFailureReasonFromTaskDetail(taskDetail),
     [taskDetail, taskEvents],
   );
 
-  const assignedNodeRows = useMemo(() => {
-    const assignedNodes = Array.isArray(taskDetail?.assigned_nodes)
-      ? taskDetail.assigned_nodes.map((item) => normalizeAddress(String(item))).filter(Boolean)
-      : [];
-    const certificateSigners = new Set(
-      Array.isArray(taskDetail?.certificate_signers)
-        ? taskDetail.certificate_signers.map((item) => normalizeAddress(String(item))).filter(Boolean)
-        : [],
+  const displayResultText = useMemo(() => {
+    return (
+      result?.live.resultText ??
+      resultValueToPrettyText(taskDetail?.result) ??
+      resultValueToPrettyText(taskDetail?.result_bytes) ??
+      null
     );
-    const nodeProgress = extractNodeProtocolProgress(taskEvents);
+  }, [result?.live.resultText, taskDetail]);
 
-    return assignedNodes.map((address) => {
-      const nodeMeta = nodeMetaByAddress.get(address);
-      const progress = nodeProgress.get(address) ?? {
-        commitPublished: false,
-        revealPublished: false,
-        partialSignaturePublished: false,
+  const assignedNodeRows = useMemo(() => {
+      const assignedNodes = Array.isArray(taskDetail?.assigned_nodes)
+        ? taskDetail.assigned_nodes.map((item) => normalizeAddress(String(item))).filter(Boolean)
+        : [];
+      const certificateSigners = new Set(
+        Array.isArray(taskDetail?.certificate_signers)
+          ? taskDetail.certificate_signers.map((item) => normalizeAddress(String(item))).filter(Boolean)
+          : [],
+      );
+      const nodeProgress = extractNodeProtocolProgress(taskEvents);
+      const nodeAddresses = assignedNodes.length
+        ? assignedNodes
+        : Array.from(nodeProgress.keys()).filter(Boolean);
+
+      return nodeAddresses.map((address) => {
+        const nodeMeta = nodeMetaByAddress.get(address);
+        const progress = nodeProgress.get(address) ?? {
+          commitPublished: false,
+          revealPublished: false,
+          partialSignaturePublished: false,
       };
 
       let protocolLabel = certificateSigners.has(address) ? 'certificate signer' : 'assigned';
@@ -942,6 +1048,15 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
         : [],
     [assignedNodeRows, failureReason?.code],
   );
+
+    const protocolStageState = useMemo(() => {
+      const nodeProgress = extractNodeProtocolProgress(taskEvents);
+      const values = Array.from(nodeProgress.values());
+      const anyCommitPublished = values.some((item) => item.commitPublished);
+      const anyRevealPublished = values.some((item) => item.revealPublished);
+      const anyPartialSignaturePublished = values.some((item) => item.partialSignaturePublished);
+      return { anyCommitPublished, anyRevealPublished, anyPartialSignaturePublished };
+    }, [taskEvents]);
 
   const parsedTask = useMemo(() => {
     try {
@@ -1068,7 +1183,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
   async function onSubmit() {
     setError(null);
     setResult(null);
-    setScheduledResult(null);
+    setTaskScheduleResult(null);
     setTaskDetail(null);
     setTaskEvents([]);
 
@@ -1111,7 +1226,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
           throw new Error('Interval must be a positive number of minutes.');
         }
 
-        const prepared = await prepareWalletScheduledTask(
+        const prepared = await prepareWalletTaskSchedule(
           task,
           {
             startScheduleMs: startMs,
@@ -1126,12 +1241,12 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
         const execution = await signAndExecuteTransaction({ transaction, chain });
         const digest = String(execution?.digest ?? '').trim();
         const confirmedExecution = await fetchExecutionForDigest(networkClient, digest, execution);
-        const scheduledTaskId = extractScheduledTaskId(confirmedExecution) || extractScheduledTaskId(execution) || null;
+        const taskId = extractCreatedTaskId(confirmedExecution) || extractCreatedTaskId(execution) || null;
 
-        setScheduledResult({
+        setTaskScheduleResult({
           prepared,
           digest,
-          scheduledTaskId,
+          taskId,
         });
         onExecuted();
       } else {
@@ -1184,7 +1299,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
     <section className="card task-card">
       <div className="section-title">Run or schedule a task</div>
       <div className="task-intro">
-        The server prepares the transaction, your wallet signs it, and the webview either follows the task on-chain or creates a scheduled task.
+        The server prepares the transaction, your wallet signs it, and the webview either follows the task on-chain or creates a task with an embedded schedule.
       </div>
 
       <div className="task-toolbar task-toolbar-grid">
@@ -1272,7 +1387,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
 
       <div className="task-actions task-actions-mobile">
         <button className="wallet-submit-button" onClick={() => void onSubmit()} disabled={busy || !parsedTask || !currentAccount}>
-          {busy ? 'Opening wallet...' : submissionMode === 'schedule' ? 'Sign and create scheduled task' : 'Sign and execute with wallet'}
+          {busy ? 'Opening wallet...' : submissionMode === 'schedule' ? 'Sign and create task schedule' : 'Sign and execute with wallet'}
         </button>
         <fieldset className="task-mode-radio-group task-mode-toggle-inline" aria-label="Submission mode">
           <label className="task-mode-radio">
@@ -1299,58 +1414,58 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
 
       {error ? <div className="alert alert-error">{error}</div> : null}
 
-      {scheduledResult ? (
+      {taskScheduleResult ? (
         <div className="result-grid">
           <div className="task-summary-grid">
             <div className="task-summary-card">
-              <div className="summary-label">Scheduled task</div>
+              <div className="summary-label">Task id</div>
               <div className="summary-value mono">
-                {scheduledResult.scheduledTaskId ? shortAddress(scheduledResult.scheduledTaskId, 14, 10) : 'Pending extraction'}
+                {taskScheduleResult.taskId ? shortAddress(taskScheduleResult.taskId, 14, 10) : 'Pending extraction'}
               </div>
-              <div className="summary-hint mono full-value">{scheduledResult.scheduledTaskId ?? '-'}</div>
+              <div className="summary-hint mono full-value">{taskScheduleResult.taskId ?? '-'}</div>
             </div>
             <div className="task-summary-card">
               <div className="summary-label">Tx digest</div>
-              <div className="summary-value mono">{shortAddress(scheduledResult.digest, 10, 8)}</div>
-              <div className="summary-hint mono full-value">{scheduledResult.digest || '-'}</div>
+              <div className="summary-value mono">{shortAddress(taskScheduleResult.digest, 10, 8)}</div>
+              <div className="summary-hint mono full-value">{taskScheduleResult.digest || '-'}</div>
             </div>
             <div className="task-summary-card">
               <div className="summary-label">Schedule</div>
               <div className="summary-value">
-                every {Math.max(1, Math.floor(Number(scheduledResult.prepared.schedule.intervalMs) / 60000))} min
+                every {Math.max(1, Math.floor(Number(taskScheduleResult.prepared.schedule.intervalMs) / 60000))} min
               </div>
               <div className="summary-hint">
-                Initial funds: <span className="mono">{scheduledResult.prepared.initialFunds}</span> nano-IOTA
+                Initial funds: <span className="mono">{taskScheduleResult.prepared.initialFunds}</span> nano-IOTA
               </div>
             </div>
           </div>
 
           <div className="template-details-card">
             <div className="template-details-head">
-              <div className="template-details-title">Scheduled task created</div>
+              <div className="template-details-title">Task schedule created</div>
               <span className="template-status-badge is-on">active</span>
             </div>
             <div className="template-details-grid">
               <div className="template-kv-item">
                 <div className="template-kv-label">Template</div>
                 <div className="template-kv-value">
-                  {scheduledResult.prepared.template.templateId} - {scheduledResult.prepared.template.taskType}
+                  {taskScheduleResult.prepared.template.templateId} - {taskScheduleResult.prepared.template.taskType}
                 </div>
               </div>
               <div className="template-kv-item">
                 <div className="template-kv-label">Required per run</div>
-                <div className="template-kv-value mono">{scheduledResult.prepared.requiredPerRun}</div>
+                <div className="template-kv-value mono">{taskScheduleResult.prepared.requiredPerRun}</div>
               </div>
               <div className="template-kv-item">
                 <div className="template-kv-label">Start</div>
-                <div className="template-kv-value">{new Date(Number(scheduledResult.prepared.schedule.startScheduleMs)).toLocaleString()}</div>
+                <div className="template-kv-value">{new Date(Number(taskScheduleResult.prepared.schedule.startScheduleMs)).toLocaleString()}</div>
               </div>
               <div className="template-kv-item">
                 <div className="template-kv-label">End</div>
                 <div className="template-kv-value">
-                  {scheduledResult.prepared.schedule.endScheduleMs === '0'
+                  {taskScheduleResult.prepared.schedule.endScheduleMs === '0'
                     ? 'Open-ended'
-                    : new Date(Number(scheduledResult.prepared.schedule.endScheduleMs)).toLocaleString()}
+                    : new Date(Number(taskScheduleResult.prepared.schedule.endScheduleMs)).toLocaleString()}
                 </div>
               </div>
             </div>
@@ -1419,7 +1534,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
                   </td>
                   <td className="task-status-table-cell task-status-table-phases">
                     <div className="task-phase-stack" aria-label="Task protocol phases">
-                      {buildProtocolStages(result.live).map((stage) => (
+                      {buildProtocolStages(result.live, protocolStageState).map((stage) => (
                         <span
                           key={stage.key}
                           className={`phase-chip ${stage.active ? 'phase-chip-active' : ''} ${stage.completed ? 'phase-chip-completed' : ''} ${stage.tone === 'success' ? 'phase-chip-success' : ''} ${stage.tone === 'danger' ? 'phase-chip-danger' : ''}`}
@@ -1536,10 +1651,10 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
             </div>
           ) : null}
 
-          {result.live.resultText ? (
+          {displayResultText ? (
             <div>
               <div className="subsection-title">Task result</div>
-              <pre>{result.live.resultText}</pre>
+              <pre>{displayResultText}</pre>
             </div>
           ) : null}
         </div>

@@ -154,7 +154,6 @@ export async function finalizeTaskWithCertificate(opts: {
   client: IotaClient;
   keypair: Ed25519Keypair;
   taskId: string;
-  runtimeId: string;
   resultBytes: Uint8Array;
   multisigBytes: Uint8Array;
   multisigAddr: string;
@@ -172,7 +171,6 @@ export async function finalizeTaskWithCertificate(opts: {
         target: `${tasksPkg()}::oracle_tasks::finalize_task_with_certificate`,
         arguments: [
           tx.object(opts.taskId),
-          tx.object(opts.runtimeId),
           tx.pure(bcsVecU8(opts.resultBytes)),
           tx.pure(bcsVecU8(opts.multisigBytes)),
           tx.pure(bcsAddress(opts.multisigAddr)),
@@ -195,7 +193,6 @@ export async function abortTaskWithCertificate(opts: {
   client: IotaClient;
   keypair: Ed25519Keypair;
   taskId: string;
-  runtimeId: string;
   reasonCode: number;
   multisigBytes: Uint8Array;
   multisigAddr: string;
@@ -212,7 +209,6 @@ export async function abortTaskWithCertificate(opts: {
         target: `${tasksPkg()}::oracle_tasks::abort_task_with_certificate`,
         arguments: [
           tx.object(opts.taskId),
-          tx.object(opts.runtimeId),
           tx.pure(bcsU64(Math.max(1, Math.floor(opts.reasonCode)))),
           tx.pure(bcsVecU8(opts.multisigBytes)),
           tx.pure(bcsAddress(opts.multisigAddr)),
@@ -234,10 +230,7 @@ export async function startMediation(opts: {
   client: IotaClient;
   keypair: Ed25519Keypair;
   taskId: string;
-  configId: string;
-  runtimeId: string;
   observedVariance: number;
-  seedBytes: Uint8Array;
 }) {
   const res = await signAndExecuteWithLockRetry({
     client: opts.client,
@@ -249,11 +242,7 @@ export async function startMediation(opts: {
         target: `${tasksPkg()}::oracle_tasks::start_mediation`,
         arguments: [
           tx.object(opts.taskId),
-          tx.object(opts.configId),
-          tx.object(opts.runtimeId),
-          tx.object(clockId()),
           tx.pure(bcsU64(Math.max(0, Math.floor(opts.observedVariance)))),
-          tx.pure(bcsVecU8(opts.seedBytes)),
         ],
       });
       return tx;

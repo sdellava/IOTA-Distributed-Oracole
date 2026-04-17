@@ -116,6 +116,8 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="$(cd "${PROJECT_DIR}/.." && pwd)"
+DEVNET_SYSTEM_STATE_REPORT="${REPO_ROOT}/iota_oracle_move/devnet/oracle_system_state_devnet/devnet_system_state.txt"
 
 if [[ -z "$ENV_FILE" && -f "${PROJECT_DIR}/.env" ]]; then
   ENV_FILE="${PROJECT_DIR}/.env"
@@ -201,7 +203,72 @@ fi
 command -v iota >/dev/null 2>&1 || { echo "[error] iota CLI not found" >&2; exit 1; }
 command -v node >/dev/null 2>&1 || { echo "[error] node not found" >&2; exit 1; }
 
+controller_cap_id_from_report() {
+  local report_file="$1"
+  [[ -f "$report_file" ]] || return 1
+  node -e '
+const fs = require("fs");
+const text = fs.readFileSync(process.argv[1], "utf8");
+const match = text.match(/ObjectID:\s*(0x[a-fA-F0-9]+)[\s\S]*?ObjectType:\s*(0x[a-fA-F0-9]+::systemState::ControllerCap)/);
+if (match) process.stdout.write(match[1]);
+' "$report_file"
+}
+
+read_object_type() {
+  local object_id="$1"
+  iota client object "$object_id" --json \
+    | node -e '
+const fs = require("fs");
+const txt = fs.readFileSync(0, "utf8");
+const data = JSON.parse(txt);
+const type = data?.data?.type ?? data?.type ?? data?.content?.type ?? "";
+if (type) process.stdout.write(String(type));
+'
+}
+
+validate_or_resolve_controller_cap() {
+  local current_id="$1"
+  local expected_type="${SYSTEM_PKG}::systemState::ControllerCap"
+  local resolved_id="$current_id"
+  local current_type=""
+
+  if [[ -n "$resolved_id" ]]; then
+    current_type="$(read_object_type "$resolved_id" || true)"
+  fi
+
+  if [[ "$current_type" == "$expected_type" ]]; then
+    printf "%s" "$resolved_id"
+    return 0
+  fi
+
+  local report_id=""
+  report_id="$(controller_cap_id_from_report "$DEVNET_SYSTEM_STATE_REPORT" || true)"
+  if [[ -n "$report_id" ]]; then
+    local report_type=""
+    report_type="$(read_object_type "$report_id" || true)"
+    if [[ "$report_type" == "$expected_type" ]]; then
+      if [[ -n "$resolved_id" && "$resolved_id" != "$report_id" ]]; then
+        echo "[warn] CONTROLLER_CAP_ID=${resolved_id} is not a ControllerCap for package ${SYSTEM_PKG} (type=${current_type:-unknown})" >&2
+        echo "[info] using ControllerCap from publish report: ${report_id}" >&2
+      fi
+      printf "%s" "$report_id"
+      return 0
+    fi
+  fi
+
+  echo "[error] CONTROLLER_CAP_ID=${resolved_id:-<empty>} is invalid for ${expected_type}." >&2
+  if [[ -n "$current_type" ]]; then
+    echo "[error] current object type: ${current_type}" >&2
+  fi
+  if [[ -n "$report_id" ]]; then
+    echo "[error] publish report candidate exists but could not be validated: ${report_id}" >&2
+  fi
+  echo "[error] update CONTROLLER_CAP_ID in your .env or rerun update_devnet_envs.sh." >&2
+  exit 1
+}
+
 FULL_JSON_PATH="$(cd "$(dirname "$TEMPLATE_JSON")" && pwd)/$(basename "$TEMPLATE_JSON")"
+CONTROLLER_CAP_ID="$(validate_or_resolve_controller_cap "$CONTROLLER_CAP_ID")"
 
 current_proposal_counter() {
   iota client object "${STATE_ID}" --json \

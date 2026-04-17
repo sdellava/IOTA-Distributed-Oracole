@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
 import { IotaClient } from "@iota/iota-sdk/client";
-import { config, getRuntimeConfig } from "../config.js";
+import { config, getRuntimeConfig, type OracleNetwork } from "../config.js";
 import type {
   NodeActivity,
   OracleEventItem,
@@ -153,15 +153,45 @@ function toByteArray(value: unknown): number[] {
   return [];
 }
 
-function toStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map((item) => String(item));
-  const record = asRecord(value);
-  if (!record) return [];
-  for (const key of ["items", "contents", "vec", "value"]) {
-    const nested = record[key];
-    if (Array.isArray(nested)) return nested.map((item) => String(item));
+function toScalarString(value: unknown): string | null {
+  const u64 = toU64String(value);
+  if (u64 != null) return u64;
+
+  if (typeof value === "boolean") return value ? "true" : "false";
+
+  const text = toText(value).trim();
+  return text || null;
+}
+
+function collectStringValues(value: unknown, out: string[]): void {
+  const scalar = toScalarString(value);
+  if (scalar != null) {
+    out.push(scalar);
+    return;
   }
-  return [];
+
+  if (Array.isArray(value)) {
+    for (const item of value) collectStringValues(item, out);
+    return;
+  }
+
+  const record = asRecord(value);
+  if (!record) return;
+
+  const nestedFields = extractFields(value);
+  if (nestedFields && nestedFields !== record) {
+    collectStringValues(nestedFields, out);
+  }
+
+  for (const key of ["items", "contents", "vec", "value", "fields", "data"]) {
+    if (key in record) collectStringValues(record[key], out);
+  }
+}
+
+function toStringArray(value: unknown): string[] {
+  const out: string[] = [];
+  collectStringValues(value, out);
+  return out.filter((item, index) => item.length > 0 && out.indexOf(item) === index);
 }
 
 function toObjectId(value: unknown): string | null {
@@ -456,17 +486,17 @@ async function countOnChainTaskObjects(
 
   try {
     for (;;) {
-      const payload = await fetchGraphqlPayload<GraphqlTaskObjectsResponse>(graphqlUrl, query, {
+      const payload: GraphqlTaskObjectsResponse = await fetchGraphqlPayload<GraphqlTaskObjectsResponse>(graphqlUrl, query, {
         type: structType,
         after: cursor,
       });
       if (payload.errors?.length) {
-        const message = payload.errors.map((item) => item.message || "Unknown GraphQL error").join("; ");
+        const message = payload.errors.map((item: { message?: string }) => item.message || "Unknown GraphQL error").join("; ");
         throw new Error(message);
       }
 
       const nodes = payload.data?.objects?.nodes ?? [];
-      const pageInfo = payload.data?.objects?.pageInfo;
+      const pageInfo: { hasNextPage?: boolean; endCursor?: string | null } | undefined = payload.data?.objects?.pageInfo;
       total += nodes.length;
 
       if (!pageInfo?.hasNextPage) break;
@@ -505,17 +535,17 @@ async function countModuleEventsViaGraphql(
   let cursor: string | null = null;
 
   for (;;) {
-    const payload = await fetchGraphqlPayload<GraphqlEventsResponse>(graphqlUrl, query, {
+    const payload: GraphqlEventsResponse = await fetchGraphqlPayload<GraphqlEventsResponse>(graphqlUrl, query, {
       module: emittingModule,
       after: cursor,
     });
     if (payload.errors?.length) {
-      const message = payload.errors.map((item) => item.message || "Unknown GraphQL error").join("; ");
+      const message = payload.errors.map((item: { message?: string }) => item.message || "Unknown GraphQL error").join("; ");
       throw new Error(message);
     }
 
     const nodes = payload.data?.events?.nodes ?? [];
-    const pageInfo = payload.data?.events?.pageInfo;
+    const pageInfo: { hasNextPage?: boolean; endCursor?: string | null } | undefined = payload.data?.events?.pageInfo;
     total += nodes.length;
 
     if (!pageInfo?.hasNextPage) break;
@@ -806,7 +836,7 @@ async function enrichRegisteredNodesWithValidatorInfo(
 }
 
 export async function getOracleStatus(network?: string): Promise<OracleStatusResponse> {
-  const runtime = getRuntimeConfig(network);
+  const runtime = getRuntimeConfig(network as OracleNetwork | undefined);
   const client = new IotaClient({ url: runtime.rpcUrl });
   const warnings: string[] = [];
   if (!runtime.oracleTasksPackageId) {

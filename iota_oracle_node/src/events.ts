@@ -52,21 +52,6 @@ export function bytesToUtf8(bytes: Uint8Array): string {
   return new TextDecoder().decode(bytes);
 }
 
-async function bootstrapCursorLatest(client: IotaClient, moveEventType: string): Promise<any | null> {
-  try {
-    const page = await client.queryEvents({
-      query: { MoveEventType: moveEventType },
-      cursor: null,
-      limit: 1,
-      order: "descending",
-    } as any);
-    const last = (page.data ?? [])[0];
-    return last?.id ?? null;
-  } catch {
-    return null;
-  }
-}
-
 function eventKey(ev: any): string {
   const id = ev?.id;
   if (id && typeof id === "object") {
@@ -85,7 +70,7 @@ async function pollEvents(opts: {
   onEvent: (ev: any) => Promise<void> | void;
 }) {
   const { client, moveEventType, pollMs, minTimestampMs, onEvent } = opts;
-  let cursor: any = await bootstrapCursorLatest(client, moveEventType);
+  let cursor: any = null;
   const seen = new Set<string>();
 
   for (;;) {
@@ -169,14 +154,21 @@ export async function listenTaskAssigned(opts: {
     pollMs,
     minTimestampMs,
     onEvent: async (ev) => {
+      const type = String((ev as any)?.type ?? "");
       const pj: any = ev.parsedJson ?? {};
-      if (Number(pj.kind ?? -1) !== 2) return;
+      let taskId = "";
+      let creator = "";
 
-      const to = String(pj.addr0 ?? "").toLowerCase();
-      if (to !== myAddress.toLowerCase()) return;
+      if (type.endsWith("::oracle_tasks::TaskRunSubmitted")) {
+        taskId = String(pj.task_id ?? "");
+      } else {
+        if (Number(pj.kind ?? -1) !== 2) return;
+        const to = String(pj.addr0 ?? "").toLowerCase();
+        if (to !== myAddress.toLowerCase()) return;
+        taskId = String(pj.task_id ?? "");
+        creator = String(pj.actor ?? "");
+      }
 
-      const taskId = String(pj.task_id ?? "");
-      const creator = String(pj.actor ?? "");
       if (taskId) await onAssigned({ taskId, creator });
     },
   });
@@ -209,15 +201,12 @@ export async function listenTaskDataRequested(opts: {
 
 export async function listenTaskMediationStarted(opts: {
   client: IotaClient;
-  moveEventType: string; // `${pkg}::oracle_tasks::TaskLifecycleEvent`
+  moveEventType: string;
   pollMs: number;
   minTimestampMs?: number;
   onStarted: (a: {
     taskId: string;
-    fromRound: number;
-    toRound: number;
-    variance: string;
-    varianceMax: string;
+    toRound?: number;
   }) => Promise<void> | void;
 }) {
   const { client, moveEventType, pollMs, minTimestampMs, onStarted } = opts;
@@ -227,17 +216,19 @@ export async function listenTaskMediationStarted(opts: {
     pollMs,
     minTimestampMs,
     onEvent: async (ev) => {
+      const type = String((ev as any)?.type ?? "");
       const pj: any = ev.parsedJson ?? {};
+      if (type.endsWith("::oracle_tasks::TaskRunMediationStarted")) {
+        const taskId = String(pj.task_id ?? "");
+        if (!taskId) return;
+        await onStarted({ taskId });
+        return;
+      }
+
       if (Number(pj.kind ?? -1) !== 6) return;
       const taskId = String(pj.task_id ?? "");
       if (!taskId) return;
-      await onStarted({
-        taskId,
-        fromRound: Number(pj.value0 ?? 0),
-        toRound: Number(pj.round ?? 0),
-        variance: String(pj.value1 ?? "0"),
-        varianceMax: String(pj.value2 ?? "0"),
-      });
+      await onStarted({ taskId, toRound: Number(pj.round ?? 0) });
     },
   });
 }

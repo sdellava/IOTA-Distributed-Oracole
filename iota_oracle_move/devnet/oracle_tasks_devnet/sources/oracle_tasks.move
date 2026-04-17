@@ -5,6 +5,7 @@ module iota_oracle_tasks::oracle_tasks {
     use iota::balance::{Self as balance, Balance};
     use iota::clock::{Clock, timestamp_ms};
     use iota::coin::{Self as coin, Coin};
+    use iota::dynamic_field;
     use iota::event;
     use iota::iota::IOTA;
     use iota::random::{Random, RandomGenerator};
@@ -12,96 +13,105 @@ module iota_oracle_tasks::oracle_tasks {
     use std::hash;
 
     use iota_oracle_system_state::systemState;
-    use iota_oracle_system_state::systemState::DelegatedControllerCap;
-    use iota_oracle_tasks::oracle_task_config as task_config;
+    use iota_oracle_system_state::systemState::{ControllerCap, State};
     use iota_oracle_tasks::oracle_task_consensus as consensus;
-    use iota_oracle_tasks::oracle_task_runtime as task_runtime;
 
-    const EInvalidPayload: u64 = 101;
-    const ENotEnoughOracleNodes: u64 = 104;
-    const EInvalidQuorum: u64 = 110;
-    const EInsufficientPayment: u64 = 130;
-    const EConfigMismatch: u64 = 131;
-    const ERuntimeMismatch: u64 = 132;
+    const MIN_INTERVAL_MS: u64 = 300000;
+    const ROUND_TIMEOUT_MS: u64 = 30000;
+    const MAX_RESULT_HISTORY: u64 = 20;
 
-    const ENotAssigned: u64 = 200;
-    const EBadState: u64 = 210;
-    const EAlreadyTerminal: u64 = 211;
-    const EInvalidCertificate: u64 = 212;
-    const ECertificateBelowQuorum: u64 = 213;
-    const EDuplicateSigner: u64 = 214;
-    const ESignerNotAssigned: u64 = 215;
-    const EAbortReasonRequired: u64 = 217;
-    const EMediationNotEnabled: u64 = 400;
-    const EMediationAlreadyAttempted: u64 = 402;
-    const EInvalidMediationMode: u64 = 403;
-    const ETaskNotTerminalOrBlocked: u64 = 404;
-    const EAlreadySettled: u64 = 405;
-    const EInvalidFinalizeMode: u64 = 406;
-    const EInvalidControllerCapFlag: u64 = 407;
-    const ETaskOwnerCapMismatch: u64 = 408;
-    const ETaskDeleteRequiresTerminalState: u64 = 409;
-    const ETaskDeleteRequiresSettledFunds: u64 = 410;
+    const STATUS_ACTIVE: u8 = 1;
+    const STATUS_SUSPENDED: u8 = 2;
+    const STATUS_CANCELLED: u8 = 9;
+    const STATUS_ENDED: u8 = 10;
 
-    const STATE_OPEN: u8 = 1;
-    const STATE_MEDIATION_PENDING: u8 = 2;
-    const STATE_FINALIZED: u8 = 9;
-    const STATE_FAILED: u8 = 10;
+    const EXEC_IDLE: u8 = 0;
+    const EXEC_OPEN: u8 = 1;
+    const EXEC_MEDIATION_PENDING: u8 = 2;
+    const EXEC_FINALIZED: u8 = 9;
+    const EXEC_FAILED: u8 = 10;
 
     const MEDIATION_NONE: u8 = 0;
     const MEDIATION_MEAN_U64: u8 = 1;
-
     const FINALIZE_DIRECT: u8 = 1;
     const FINALIZE_MEDIATED: u8 = 2;
 
-    const LIFECYCLE_CREATED: u8 = 1;
-    const LIFECYCLE_ASSIGNED: u8 = 2;
-    const LIFECYCLE_MEDIATION_STARTED: u8 = 6;
-    const LIFECYCLE_MEDIATION_BLOCKED: u8 = 7;
-    const LIFECYCLE_FAILED: u8 = 8;
-    const LIFECYCLE_COMPLETED: u8 = 9;
-    const LIFECYCLE_SETTLED: u8 = 10;
-    const LIFECYCLE_ESCROW_SWEPT: u8 = 11;
+    const EInvalidTaskTemplate: u64 = 1000;
+    const EInvalidScheduleWindow: u64 = 1001;
+    const EInvalidInterval: u64 = 1002;
+    const ENoSchedulerNodes: u64 = 1003;
+    const EOwnerCapMismatch: u64 = 1004;
+    const ETaskNotActive: u64 = 1005;
+    const EDeleteRequiresSuspendedState: u64 = 1006;
+    const ENotHeadScheduler: u64 = 1007;
+    const ERoundStillOwnedByHead: u64 = 1008;
+    const EInvalidPayload: u64 = 1009;
+    const ENotEnoughOracleNodes: u64 = 1010;
+    const EInvalidQuorum: u64 = 1011;
+    const EInvalidMediationMode: u64 = 1012;
+    const EInvalidControllerCapFlag: u64 = 1013;
+    const ETaskOwnerMismatch: u64 = 1014;
+    const ETaskHasLiveExecution: u64 = 1015;
+    const ETaskNotSuspended: u64 = 1016;
+    const ETaskNotDue: u64 = 1017;
+    const EInsufficientTaskBalance: u64 = 1018;
+    const EInvalidCertificate: u64 = 1019;
+    const ECertificateBelowQuorum: u64 = 1020;
+    const EDuplicateSigner: u64 = 1021;
+    const ESignerNotAssigned: u64 = 1022;
+    const EAbortReasonRequired: u64 = 1023;
+    const EInvalidFinalizeMode: u64 = 1024;
+    const ENoResults: u64 = 1025;
+    const EResultIndexOutOfBounds: u64 = 1026;
+    const EMediationNotEnabled: u64 = 1027;
+    const EMediationAlreadyAttempted: u64 = 1028;
 
-    // Suggested fail causes for the client/UI.
-    const FAIL_ACCEPTANCE_TIMEOUT: u64 = 1001;
-    const FAIL_COMMIT_TIMEOUT: u64 = 1002;
-    const FAIL_REVEAL_NO_QUORUM: u64 = 1003;
-    const FAIL_REVEAL_INVALID_SIGNATURE: u64 = 1004;
-    const FAIL_PARTIAL_SIG_TIMEOUT: u64 = 1005;
-    const FAIL_FINALIZE_TIMEOUT: u64 = 1006;
-    const FAIL_MEDIATION_VARIANCE_TOO_HIGH: u64 = 1007;
-    const FAIL_ABORTED_BY_QUORUM: u64 = 1099;
+    public struct TaskRegistry has key, store {
+        id: object::UID,
+        live_task_ids: vector<object::ID>,
+    }
+
+    public struct SchedulerQueue has key, store {
+        id: object::UID,
+        nodes: vector<address>,
+        active_round_started_ms: u64,
+        last_round_completed_ms: u64,
+        round_counter: u64,
+    }
 
     public struct Task has key, store {
         id: object::UID,
         creator: address,
-        state: u8,
+        status: u8,
+        execution_state: u8,
 
         template_id: u64,
         task_type: vector<u8>,
         payload: vector<u8>,
-        payment_iota: u64,
-        escrow_iota: Balance<IOTA>,
-
+        retention_days: u64,
+        declared_download_bytes: u64,
+        mediation_mode: u8,
+        variance_max: u64,
         requested_nodes: u64,
         quorum_k: u64,
+
+        create_controller_cap: u8,
+        start_schedule_ms: u64,
+        end_schedule_ms: u64,
+        interval_ms: u64,
+        last_run_ms: u64,
+        next_run_ms: u64,
+        last_scheduler_node: address,
+
+        available_balance_iota: Balance<IOTA>,
+        run_escrow_iota: Balance<IOTA>,
+
+        active_run_index: u64,
+        active_round: u64,
         assigned_nodes: vector<address>,
 
-        active_round: u64,
-        create_result_controller_cap: u8,
-        finalization_mode: u8,
-        result: vector<u8>,
-        result_hash: vector<u8>,
-        multisig_bytes: vector<u8>,
-        multisig_addr: address,
-        certificate_signers: vector<address>,
-        certificate_blob: vector<u8>,
-        reason_code: u64,
-        settled: u8,
-
-        config_id: object::ID,
-        runtime_id: object::ID,
+        latest_result_seq: u64,
+        result_order: vector<u64>,
     }
 
     public struct TaskOwnerCap has key, store {
@@ -109,32 +119,265 @@ module iota_oracle_tasks::oracle_tasks {
         task_id: object::ID,
     }
 
-    public struct TaskResultControllerCap has key, store {
+    public struct TaskControllerCap has key, store {
         id: object::UID,
         task_id: object::ID,
+    }
+
+    public struct TaskResultKey has copy, drop, store {
+        seq: u64,
+    }
+
+    public struct TaskResult has store, drop {
+        run_index: u64,
+        produced_at_ms: u64,
         result: vector<u8>,
+        result_hash: vector<u8>,
+        multisig_bytes: vector<u8>,
+        multisig_addr: address,
+        certificate_signers: vector<address>,
+        certificate_blob: vector<u8>,
+        reason_code: u64,
     }
 
-    public struct TaskLifecycleEvent has copy, drop {
+    public struct TaskCreated has copy, drop {
         task_id: object::ID,
-        kind: u8,
-        actor: address,
-        round: u64,
-        value0: u64,
-        value1: u64,
-        value2: u64,
-        value3: u64,
-        addr0: address,
+        creator: address,
+        template_id: u64,
+        start_schedule_ms: u64,
+        end_schedule_ms: u64,
+        interval_ms: u64,
+        next_run_ms: u64,
+        funded_iota: u64,
+        has_controller_cap: u8,
     }
 
-    #[allow(lint(public_random))]
-    public entry fun create_task(
-        st: &mut systemState::State,
-        system: &mut IotaSystemState,
-        treasury: &mut systemState::OracleTreasury,
-        payment: Coin<IOTA>,
-        rnd: &Random,
+    public struct TaskUpdated has copy, drop {
+        task_id: object::ID,
+        by: address,
+        requested_nodes: u64,
+        quorum_k: u64,
+        declared_download_bytes: u64,
+        retention_days: u64,
+        next_run_ms: u64,
+    }
+
+    public struct TaskSuspended has copy, drop {
+        task_id: object::ID,
+        by: address,
+    }
+
+    public struct TaskReactivated has copy, drop {
+        task_id: object::ID,
+        by: address,
+        next_run_ms: u64,
+    }
+
+    public struct TaskDeleted has copy, drop {
+        task_id: object::ID,
+        by: address,
+        refunded_iota: u64,
+    }
+
+    public struct TaskFunded has copy, drop {
+        task_id: object::ID,
+        by: address,
+        amount: u64,
+        balance_after: u64,
+    }
+
+    public struct TaskRunSubmitted has copy, drop {
+        task_id: object::ID,
+        scheduler: address,
+        scheduled_for_ms: u64,
+        executed_at_ms: u64,
+        next_run_ms: u64,
+        run_index: u64,
+        scheduler_fee_iota: u64,
+        payment_iota: u64,
+        registry_live: u8,
+    }
+
+    public struct TaskRunMediationStarted has copy, drop {
+        task_id: object::ID,
+        by: address,
+        run_index: u64,
+        observed_variance: u64,
+        variance_max: u64,
+    }
+
+    public struct TaskRunFinalized has copy, drop {
+        task_id: object::ID,
+        by: address,
+        run_index: u64,
+        finalization_mode: u8,
+        result_seq: u64,
+        signer_count: u64,
+        next_run_ms: u64,
+    }
+
+    public struct TaskRunAborted has copy, drop {
+        task_id: object::ID,
+        by: address,
+        run_index: u64,
+        reason_code: u64,
+        result_seq: u64,
+        next_run_ms: u64,
+    }
+
+    public struct SchedulerQueueReconciled has copy, drop {
+        queue_len: u64,
+        head: address,
+        by: address,
+    }
+
+    public struct SchedulerRoundStarted has copy, drop {
+        by: address,
+        round_counter: u64,
+        started_ms: u64,
+        queue_len: u64,
+    }
+
+    public struct SchedulerRoundAdvanced has copy, drop {
+        by: address,
+        previous_head: address,
+        new_head: address,
+        timed_out: u8,
+        skipped_slots: u64,
+        round_counter: u64,
+    }
+
+    public struct SchedulerRoundCompleted has copy, drop {
+        by: address,
+        round_counter: u64,
+        completed_ms: u64,
+        processed_tasks: u64,
+        queue_len: u64,
+    }
+
+    fun init(ctx: &mut TxContext) {
+        transfer::share_object(TaskRegistry {
+            id: object::new(ctx),
+            live_task_ids: vector::empty(),
+        });
+        transfer::share_object(SchedulerQueue {
+            id: object::new(ctx),
+            nodes: vector::empty(),
+            active_round_started_ms: 0,
+            last_round_completed_ms: 0,
+            round_counter: 0,
+        });
+    }
+
+    public entry fun reconcile_scheduler_queue(
+        queue: &mut SchedulerQueue,
+        st: &State,
+        ctx: &mut TxContext
+    ) {
+        reconcile_queue_internal(queue, st);
+        let head = if (vector::length(&queue.nodes) > 0) *vector::borrow(&queue.nodes, 0) else @0x0;
+        event::emit(SchedulerQueueReconciled {
+            queue_len: vector::length(&queue.nodes),
+            head,
+            by: tx_context::sender(ctx),
+        });
+    }
+
+    public entry fun start_scheduler_round(
+        queue: &mut SchedulerQueue,
+        st: &State,
         clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        let now = timestamp_ms(clock);
+        reconcile_queue_internal(queue, st);
+        assert!(vector::length(&queue.nodes) > 0, ENoSchedulerNodes);
+        let sender = tx_context::sender(ctx);
+        assert!(*vector::borrow(&queue.nodes, 0) == sender, ENotHeadScheduler);
+        queue.active_round_started_ms = now;
+        queue.round_counter = queue.round_counter + 1;
+        event::emit(SchedulerRoundStarted {
+            by: sender,
+            round_counter: queue.round_counter,
+            started_ms: now,
+            queue_len: vector::length(&queue.nodes),
+        });
+    }
+
+    public entry fun advance_scheduler_queue(
+        queue: &mut SchedulerQueue,
+        st: &State,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        let now = timestamp_ms(clock);
+        reconcile_queue_internal(queue, st);
+        assert!(vector::length(&queue.nodes) > 0, ENoSchedulerNodes);
+
+        let sender = tx_context::sender(ctx);
+        let previous_head = *vector::borrow(&queue.nodes, 0);
+        let sender_idx = find_address_index(&queue.nodes, sender);
+        assert!(sender_idx < vector::length(&queue.nodes), ENotHeadScheduler);
+        let skipped_slots = if (sender == previous_head) {
+            1
+        } else {
+            assert!(sender_idx > 0, ENotHeadScheduler);
+            assert!(queue.active_round_started_ms > 0, ERoundStillOwnedByHead);
+            assert!(now >= queue.active_round_started_ms + (sender_idx * ROUND_TIMEOUT_MS), ERoundStillOwnedByHead);
+            sender_idx
+        };
+        let timed_out = if (sender == previous_head) 0 else 1;
+
+        let mut i = 0;
+        while (i < skipped_slots) {
+            rotate_head_to_tail(&mut queue.nodes);
+            i = i + 1;
+        };
+        reconcile_queue_internal(queue, st);
+        assert!(vector::length(&queue.nodes) > 0, ENoSchedulerNodes);
+
+        queue.active_round_started_ms = now;
+        event::emit(SchedulerRoundAdvanced {
+            by: sender,
+            previous_head,
+            new_head: *vector::borrow(&queue.nodes, 0),
+            timed_out,
+            skipped_slots,
+            round_counter: queue.round_counter,
+        });
+    }
+
+    public entry fun complete_scheduler_round(
+        queue: &mut SchedulerQueue,
+        st: &State,
+        clock: &Clock,
+        processed_tasks: u64,
+        ctx: &mut TxContext
+    ) {
+        let now = timestamp_ms(clock);
+        reconcile_queue_internal(queue, st);
+        assert!(vector::length(&queue.nodes) > 0, ENoSchedulerNodes);
+        let sender = tx_context::sender(ctx);
+        assert!(*vector::borrow(&queue.nodes, 0) == sender, ENotHeadScheduler);
+
+        queue.last_round_completed_ms = now;
+        rotate_head_to_tail(&mut queue.nodes);
+        reconcile_queue_internal(queue, st);
+        queue.active_round_started_ms = now;
+
+        event::emit(SchedulerRoundCompleted {
+            by: sender,
+            round_counter: queue.round_counter,
+            completed_ms: now,
+            processed_tasks,
+            queue_len: vector::length(&queue.nodes),
+        });
+    }
+
+    public entry fun create_task(
+        registry: &mut TaskRegistry,
+        st: &State,
+        initial_funds: Coin<IOTA>,
         template_id: u64,
         requested_nodes: u64,
         quorum_k: u64,
@@ -143,18 +386,134 @@ module iota_oracle_tasks::oracle_tasks {
         declared_download_bytes: u64,
         mediation_mode: u8,
         variance_max: u64,
-        create_result_controller_cap: u8,
+        create_controller_cap: u8,
+        start_schedule_ms: u64,
+        end_schedule_ms: u64,
+        interval_ms: u64,
         ctx: &mut TxContext
     ) {
-        let sender = tx_context::sender(ctx);
-        let _ = create_task_internal(
+        assert!(template_id != 0, EInvalidTaskTemplate);
+        assert!(count_scheduler_nodes(st) > 0, ENoSchedulerNodes);
+        assert!(vector::length(&payload) > 0, EInvalidPayload);
+        assert!(
+            mediation_mode == MEDIATION_NONE || mediation_mode == MEDIATION_MEAN_U64,
+            EInvalidMediationMode
+        );
+        assert!(
+            create_controller_cap == 0 || create_controller_cap == 1,
+            EInvalidControllerCapFlag
+        );
+        assert!(end_schedule_ms == 0 || start_schedule_ms <= end_schedule_ms, EInvalidScheduleWindow);
+        if (interval_ms != 0) {
+            assert!(interval_ms >= MIN_INTERVAL_MS, EInvalidInterval);
+        };
+
+        validate_request_shape(
             st,
-            system,
-            treasury,
-            payment,
-            rnd,
-            clock,
             template_id,
+            requested_nodes,
+            quorum_k,
+            &payload,
+            retention_days,
+            declared_download_bytes
+        );
+
+        let creator = tx_context::sender(ctx);
+        let funded_iota = coin::value(&initial_funds);
+        let uid = object::new(ctx);
+        let task_id = object::uid_to_inner(&uid);
+        let next_run_ms = initial_next_run_ms(start_schedule_ms, end_schedule_ms);
+
+        let task = Task {
+            id: uid,
+            creator,
+            status: if (next_run_ms == 0) STATUS_ENDED else STATUS_ACTIVE,
+            execution_state: EXEC_IDLE,
+            template_id,
+            task_type: systemState::task_template_task_type(st, template_id),
+            payload,
+            retention_days,
+            declared_download_bytes,
+            mediation_mode,
+            variance_max,
+            requested_nodes,
+            quorum_k,
+            create_controller_cap,
+            start_schedule_ms,
+            end_schedule_ms,
+            interval_ms,
+            last_run_ms: 0,
+            next_run_ms,
+            last_scheduler_node: @0x0,
+            available_balance_iota: coin::into_balance(initial_funds),
+            run_escrow_iota: balance::zero(),
+            active_run_index: 0,
+            active_round: 0,
+            assigned_nodes: vector::empty(),
+            latest_result_seq: 0,
+            result_order: vector::empty(),
+        };
+
+        if (next_run_ms != 0) {
+            add_registry_id(&mut registry.live_task_ids, task_id);
+        };
+
+        transfer::share_object(task);
+        transfer::public_transfer(TaskOwnerCap { id: object::new(ctx), task_id }, creator);
+        if (create_controller_cap == 1) {
+            transfer::public_transfer(TaskControllerCap { id: object::new(ctx), task_id }, creator);
+        };
+
+        event::emit(TaskCreated {
+            task_id,
+            creator,
+            template_id,
+            start_schedule_ms,
+            end_schedule_ms,
+            interval_ms,
+            next_run_ms,
+            funded_iota,
+            has_controller_cap: create_controller_cap,
+        });
+    }
+
+    public entry fun top_up_task(
+        task: &mut Task,
+        funds: Coin<IOTA>,
+        ctx: &mut TxContext
+    ) {
+        let amount = coin::value(&funds);
+        balance::join(&mut task.available_balance_iota, coin::into_balance(funds));
+        event::emit(TaskFunded {
+            task_id: object::id(task),
+            by: tx_context::sender(ctx),
+            amount,
+            balance_after: balance::value(&task.available_balance_iota),
+        });
+    }
+
+    public entry fun update_task_by_cap(
+        registry: &mut TaskRegistry,
+        cap: &TaskControllerCap,
+        st: &State,
+        task: &mut Task,
+        requested_nodes: u64,
+        quorum_k: u64,
+        payload: vector<u8>,
+        retention_days: u64,
+        declared_download_bytes: u64,
+        mediation_mode: u8,
+        variance_max: u64,
+        start_schedule_ms: u64,
+        end_schedule_ms: u64,
+        interval_ms: u64,
+        ctx: &mut TxContext
+    ) {
+        assert!(cap.task_id == object::id(task), EOwnerCapMismatch);
+        update_task_internal(
+            registry,
+            st,
+            task,
             requested_nodes,
             quorum_k,
             payload,
@@ -162,21 +521,17 @@ module iota_oracle_tasks::oracle_tasks {
             declared_download_bytes,
             mediation_mode,
             variance_max,
-            create_result_controller_cap,
-            sender,
-            ctx
+            start_schedule_ms,
+            end_schedule_ms,
+            interval_ms,
+            tx_context::sender(ctx),
         );
     }
 
-    #[allow(lint(public_random))]
-    public fun create_task_internal(
-        st: &mut systemState::State,
-        system: &mut IotaSystemState,
-        treasury: &mut systemState::OracleTreasury,
-        mut payment: Coin<IOTA>,
-        rnd: &Random,
-        clock: &Clock,
-        template_id: u64,
+    public entry fun update_task_by_owner(
+        registry: &mut TaskRegistry,
+        st: &State,
+        task: &mut Task,
         requested_nodes: u64,
         quorum_k: u64,
         payload: vector<u8>,
@@ -184,34 +539,465 @@ module iota_oracle_tasks::oracle_tasks {
         declared_download_bytes: u64,
         mediation_mode: u8,
         variance_max: u64,
-        create_result_controller_cap: u8,
-        creator: address,
+        start_schedule_ms: u64,
+        end_schedule_ms: u64,
+        interval_ms: u64,
         ctx: &mut TxContext
-    ): object::ID {
+    ) {
+        assert_task_owner(task, tx_context::sender(ctx));
+        update_task_internal(
+            registry,
+            st,
+            task,
+            requested_nodes,
+            quorum_k,
+            payload,
+            retention_days,
+            declared_download_bytes,
+            mediation_mode,
+            variance_max,
+            start_schedule_ms,
+            end_schedule_ms,
+            interval_ms,
+            tx_context::sender(ctx),
+        );
+    }
+
+    public entry fun suspend_task_by_cap(
+        registry: &mut TaskRegistry,
+        cap: &TaskControllerCap,
+        task: &mut Task,
+        ctx: &mut TxContext
+    ) {
+        assert!(cap.task_id == object::id(task), EOwnerCapMismatch);
+        suspend_task_internal(registry, task, tx_context::sender(ctx));
+    }
+
+    public entry fun suspend_task_by_owner(
+        registry: &mut TaskRegistry,
+        task: &mut Task,
+        ctx: &mut TxContext
+    ) {
+        assert_task_owner(task, tx_context::sender(ctx));
+        suspend_task_internal(registry, task, tx_context::sender(ctx));
+    }
+
+    public entry fun reactivate_task_by_cap(
+        registry: &mut TaskRegistry,
+        cap: &TaskControllerCap,
+        task: &mut Task,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        assert!(cap.task_id == object::id(task), EOwnerCapMismatch);
+        reactivate_task_internal(registry, task, timestamp_ms(clock), tx_context::sender(ctx));
+    }
+
+    public entry fun reactivate_task_by_owner(
+        registry: &mut TaskRegistry,
+        task: &mut Task,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        assert_task_owner(task, tx_context::sender(ctx));
+        reactivate_task_internal(registry, task, timestamp_ms(clock), tx_context::sender(ctx));
+    }
+
+    public entry fun supervisor_suspend_task(
+        registry: &mut TaskRegistry,
+        _cap: &ControllerCap,
+        task: &mut Task,
+        ctx: &mut TxContext
+    ) {
+        suspend_task_internal(registry, task, tx_context::sender(ctx));
+    }
+
+    public entry fun delete_task_by_owner_cap(
+        registry: &mut TaskRegistry,
+        cap: TaskOwnerCap,
+        task: Task,
+        ctx: &mut TxContext
+    ) {
+        let task_id = object::id(&task);
+        assert!(cap.task_id == task_id, EOwnerCapMismatch);
+        destroy_task_owner_cap(cap);
+        delete_task_internal(registry, task, tx_context::sender(ctx), ctx);
+    }
+
+    public entry fun delete_task_by_owner(
+        registry: &mut TaskRegistry,
+        task: Task,
+        ctx: &mut TxContext
+    ) {
+        assert_task_owner_ref(&task, tx_context::sender(ctx));
+        delete_task_internal(registry, task, tx_context::sender(ctx), ctx);
+    }
+
+    public entry fun delete_task_by_supervisor(
+        registry: &mut TaskRegistry,
+        _cap: &ControllerCap,
+        task: Task,
+        ctx: &mut TxContext
+    ) {
+        delete_task_internal(registry, task, tx_context::sender(ctx), ctx);
+    }
+
+    #[allow(lint(public_random))]
+    public entry fun submit_task_run(
+        registry: &mut TaskRegistry,
+        queue: &SchedulerQueue,
+        task: &mut Task,
+        st: &mut State,
+        system: &mut IotaSystemState,
+        treasury: &mut systemState::OracleTreasury,
+        rnd: &Random,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        let sender = tx_context::sender(ctx);
+        assert!(vector::length(&queue.nodes) > 0, ENoSchedulerNodes);
+        assert!(*vector::borrow(&queue.nodes, 0) == sender, ENotHeadScheduler);
+        assert!(task.status == STATUS_ACTIVE, ETaskNotActive);
+        assert!(task.execution_state != EXEC_OPEN && task.execution_state != EXEC_MEDIATION_PENDING, ETaskHasLiveExecution);
+
+        let now = timestamp_ms(clock);
+        assert!(task.next_run_ms != 0 && now >= task.next_run_ms, ETaskNotDue);
+
         systemState::prune_oracle_nodes_if_epoch_changed(st, system, ctx);
+        validate_request_shape(
+            st,
+            task.template_id,
+            task.requested_nodes,
+            task.quorum_k,
+            &task.payload,
+            task.retention_days,
+            task.declared_download_bytes
+        );
+
+        let (raw_payment, system_fee, required_payment) = systemState::validate_task_request_and_get_payment_split(
+            st,
+            task.template_id,
+            vector::length(&task.payload),
+            task.retention_days,
+            task.declared_download_bytes
+        );
+        let scheduler_fee_iota = systemState::task_template_scheduler_fee_iota(st, task.template_id);
+        let total_required = required_payment + scheduler_fee_iota;
+        assert!(balance::value(&task.available_balance_iota) >= total_required, EInsufficientTaskBalance);
+
+        if (scheduler_fee_iota > 0) {
+            let fee_balance = balance::split(&mut task.available_balance_iota, scheduler_fee_iota);
+            transfer::public_transfer(coin::from_balance(fee_balance, ctx), sender);
+        };
+        if (system_fee > 0) {
+            let treasury_fee = balance::split(&mut task.available_balance_iota, system_fee);
+            systemState::deposit_treasury_iota(
+                treasury,
+                coin::from_balance(treasury_fee, ctx),
+                task.creator
+            );
+        };
+        let new_run_escrow = balance::split(&mut task.available_balance_iota, raw_payment);
+        balance::join(&mut task.run_escrow_iota, new_run_escrow);
+        task.assigned_nodes = assign_nodes(st, task.template_id, task.requested_nodes, rnd, ctx);
+        task.active_run_index = task.active_run_index + 1;
+        task.active_round = 0;
+        task.last_run_ms = now;
+        task.last_scheduler_node = sender;
+        task.execution_state = EXEC_OPEN;
+
+        let scheduled_for_ms = task.next_run_ms;
+        task.next_run_ms = compute_following_run_ms(task, scheduled_for_ms, now);
+        reconcile_task_status(task);
+        sync_registry_membership(registry, task);
+
+        event::emit(TaskRunSubmitted {
+            task_id: object::id(task),
+            scheduler: sender,
+            scheduled_for_ms,
+            executed_at_ms: now,
+            next_run_ms: task.next_run_ms,
+            run_index: task.active_run_index,
+            scheduler_fee_iota,
+            payment_iota: raw_payment,
+            registry_live: if (should_be_in_registry(task)) 1 else 0,
+        });
+    }
+
+    public entry fun start_mediation(
+        task: &mut Task,
+        observed_variance: u64,
+        ctx: &mut TxContext
+    ) {
+        assert!(task.execution_state == EXEC_OPEN || task.execution_state == EXEC_MEDIATION_PENDING, ETaskHasLiveExecution);
+        assert!(task.mediation_mode == MEDIATION_MEAN_U64, EMediationNotEnabled);
+        assert!(task.active_round == 0, EMediationAlreadyAttempted);
+        assert_assigned_sender(task, tx_context::sender(ctx));
+
+        task.execution_state = EXEC_MEDIATION_PENDING;
+        task.active_round = task.active_round + 1;
+
+        event::emit(TaskRunMediationStarted {
+            task_id: object::id(task),
+            by: tx_context::sender(ctx),
+            run_index: task.active_run_index,
+            observed_variance,
+            variance_max: task.variance_max,
+        });
+    }
+
+    public entry fun finalize_task_with_certificate(
+        task: &mut Task,
+        result_bytes: vector<u8>,
+        multisig_bytes: vector<u8>,
+        multisig_addr: address,
+        signer_addrs: vector<address>,
+        certificate_blob: vector<u8>,
+        finalize_mode: u8,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        assert!(task.execution_state == EXEC_OPEN || task.execution_state == EXEC_MEDIATION_PENDING, ETaskHasLiveExecution);
+        assert!(finalize_mode == FINALIZE_DIRECT || finalize_mode == FINALIZE_MEDIATED, EInvalidFinalizeMode);
+        assert_assigned_sender(task, tx_context::sender(ctx));
+        assert_valid_certificate(task, &signer_addrs, &multisig_bytes);
+
+        let result_hash = hash::sha2_256(copy_bytes(&result_bytes));
+        let signer_count = vector::length(&signer_addrs);
+        let payout_signers = copy_addrs(&signer_addrs);
+        let run_index = task.active_run_index;
+        let result_seq = append_result_record(
+            task,
+            run_index,
+            timestamp_ms(clock),
+            result_bytes,
+            result_hash,
+            multisig_bytes,
+            multisig_addr,
+            signer_addrs,
+            certificate_blob,
+            0
+        );
+        pay_all_certificate_signers(task, &payout_signers, ctx);
+        task.execution_state = EXEC_FINALIZED;
+
+        event::emit(TaskRunFinalized {
+            task_id: object::id(task),
+            by: tx_context::sender(ctx),
+            run_index,
+            finalization_mode: finalize_mode,
+            result_seq,
+            signer_count,
+            next_run_ms: task.next_run_ms,
+        });
+    }
+
+    public entry fun abort_task_with_certificate(
+        task: &mut Task,
+        reason_code: u64,
+        multisig_bytes: vector<u8>,
+        multisig_addr: address,
+        signer_addrs: vector<address>,
+        certificate_blob: vector<u8>,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        assert!(task.execution_state == EXEC_OPEN || task.execution_state == EXEC_MEDIATION_PENDING, ETaskHasLiveExecution);
+        assert!(reason_code != 0, EAbortReasonRequired);
+        assert_assigned_sender(task, tx_context::sender(ctx));
+        assert_valid_certificate(task, &signer_addrs, &multisig_bytes);
+
+        let payout_signers = copy_addrs(&signer_addrs);
+        let run_index = task.active_run_index;
+        let result_seq = append_result_record(
+            task,
+            run_index,
+            timestamp_ms(clock),
+            vector::empty(),
+            vector::empty(),
+            multisig_bytes,
+            multisig_addr,
+            signer_addrs,
+            certificate_blob,
+            reason_code
+        );
+        pay_all_certificate_signers(task, &payout_signers, ctx);
+        task.execution_state = EXEC_FAILED;
+
+        event::emit(TaskRunAborted {
+            task_id: object::id(task),
+            by: tx_context::sender(ctx),
+            run_index,
+            reason_code,
+            result_seq,
+            next_run_ms: task.next_run_ms,
+        });
+    }
+
+    public fun registry_task_ids(registry: &TaskRegistry): &vector<object::ID> {
+        &registry.live_task_ids
+    }
+
+    public fun scheduler_nodes(queue: &SchedulerQueue): &vector<address> { &queue.nodes }
+    public fun scheduler_head(queue: &SchedulerQueue): address {
+        if (vector::length(&queue.nodes) == 0) @0x0 else *vector::borrow(&queue.nodes, 0)
+    }
+
+    public fun status(task: &Task): u8 { task.status }
+    public fun execution_state(task: &Task): u8 { task.execution_state }
+    public fun state(task: &Task): u8 {
+        if (task.execution_state == EXEC_OPEN) {
+            1
+        } else if (task.execution_state == EXEC_MEDIATION_PENDING) {
+            2
+        } else if (task.execution_state == EXEC_FINALIZED) {
+            9
+        } else if (task.execution_state == EXEC_FAILED) {
+            10
+        } else {
+            0
+        }
+    }
+    public fun next_run_ms(task: &Task): u64 { task.next_run_ms }
+    public fun creator(task: &Task): address { task.creator }
+    public fun available_balance_iota(task: &Task): u64 { balance::value(&task.available_balance_iota) }
+    public fun run_escrow_iota(task: &Task): u64 { balance::value(&task.run_escrow_iota) }
+    public fun active_round(task: &Task): u64 { task.active_round }
+    public fun assigned_nodes(task: &Task): &vector<address> { &task.assigned_nodes }
+    public fun result_sequences(task: &Task): &vector<u64> { &task.result_order }
+    public fun result_count(task: &Task): u64 { vector::length(&task.result_order) }
+    public fun latest_result_seq(task: &Task): u64 {
+        assert!(task.latest_result_seq > 0, ENoResults);
+        task.latest_result_seq
+    }
+
+    public fun borrow_result(task: &Task, seq: u64): &TaskResult {
+        dynamic_field::borrow<TaskResultKey, TaskResult>(&task.id, TaskResultKey { seq })
+    }
+
+    public fun borrow_latest_result(task: &Task): &TaskResult {
+        borrow_result(task, latest_result_seq(task))
+    }
+
+    public fun borrow_recent_result(task: &Task, reverse_index: u64): &TaskResult {
+        let len = vector::length(&task.result_order);
+        assert!(reverse_index < len, EResultIndexOutOfBounds);
+        let seq = *vector::borrow(&task.result_order, len - 1 - reverse_index);
+        borrow_result(task, seq)
+    }
+
+    public fun latest_result_bytes(task: &Task): &vector<u8> {
+        &borrow_latest_result(task).result
+    }
+
+    public fun latest_result_hash(task: &Task): &vector<u8> {
+        &borrow_latest_result(task).result_hash
+    }
+
+    public fun latest_result_reason_code(task: &Task): u64 {
+        borrow_latest_result(task).reason_code
+    }
+
+    public fun append_result_for_testing(
+        task: &mut Task,
+        produced_at_ms: u64,
+        result: vector<u8>,
+        result_hash: vector<u8>,
+        reason_code: u64
+    ) {
+        let run_index = task.active_run_index;
+        let _ = append_result_record(
+            task,
+            run_index,
+            produced_at_ms,
+            result,
+            result_hash,
+            vector::empty(),
+            @0x0,
+            vector::empty(),
+            vector::empty(),
+            reason_code
+        );
+    }
+
+    fun update_task_internal(
+        registry: &mut TaskRegistry,
+        st: &State,
+        task: &mut Task,
+        requested_nodes: u64,
+        quorum_k: u64,
+        payload: vector<u8>,
+        retention_days: u64,
+        declared_download_bytes: u64,
+        mediation_mode: u8,
+        variance_max: u64,
+        start_schedule_ms: u64,
+        end_schedule_ms: u64,
+        interval_ms: u64,
+        actor: address
+    ) {
+        assert!(task.execution_state != EXEC_OPEN && task.execution_state != EXEC_MEDIATION_PENDING, ETaskHasLiveExecution);
         assert!(vector::length(&payload) > 0, EInvalidPayload);
         assert!(
             mediation_mode == MEDIATION_NONE || mediation_mode == MEDIATION_MEAN_U64,
             EInvalidMediationMode
         );
-        assert!(
-            create_result_controller_cap == 0 || create_result_controller_cap == 1,
-            EInvalidControllerCapFlag
-        );
+        assert!(end_schedule_ms == 0 || start_schedule_ms <= end_schedule_ms, EInvalidScheduleWindow);
+        if (interval_ms != 0) {
+            assert!(interval_ms >= MIN_INTERVAL_MS, EInvalidInterval);
+        };
 
-        let (raw_payment, system_fee, required_payment) = systemState::validate_task_request_and_get_payment_split(
+        validate_request_shape(
             st,
-            template_id,
-            vector::length(&payload),
+            task.template_id,
+            requested_nodes,
+            quorum_k,
+            &payload,
             retention_days,
             declared_download_bytes
         );
 
-        let paid = coin::value(&payment);
-        assert!(paid >= required_payment, EInsufficientPayment);
+        task.payload = payload;
+        task.retention_days = retention_days;
+        task.declared_download_bytes = declared_download_bytes;
+        task.mediation_mode = mediation_mode;
+        task.variance_max = variance_max;
+        task.requested_nodes = requested_nodes;
+        task.quorum_k = quorum_k;
+        task.start_schedule_ms = start_schedule_ms;
+        task.end_schedule_ms = end_schedule_ms;
+        task.interval_ms = interval_ms;
 
-        let task_type = systemState::task_template_task_type(st, template_id);
+        if (task.last_run_ms == 0) {
+            task.next_run_ms = initial_next_run_ms(start_schedule_ms, end_schedule_ms);
+        } else if (task.interval_ms == 0) {
+            task.next_run_ms = 0;
+        } else {
+            task.next_run_ms = compute_next_run_ms(task.last_run_ms, task.interval_ms, task.end_schedule_ms);
+        };
 
+        reconcile_task_status(task);
+        sync_registry_membership(registry, task);
+
+        event::emit(TaskUpdated {
+            task_id: object::id(task),
+            by: actor,
+            requested_nodes,
+            quorum_k,
+            declared_download_bytes,
+            retention_days,
+            next_run_ms: task.next_run_ms,
+        });
+    }
+
+    #[allow(lint(public_random))]
+    fun assign_nodes(
+        st: &State,
+        template_id: u64,
+        requested_nodes: u64,
+        rnd: &Random,
+        ctx: &mut TxContext
+    ): vector<address> {
         let nodes_ref = systemState::oracle_nodes(st);
         let mut candidates = vector::empty<address>();
         let mut i = 0;
@@ -223,9 +1009,6 @@ module iota_oracle_tasks::oracle_tasks {
             i = i + 1;
         };
 
-        assert!(requested_nodes > 0 && requested_nodes <= vector::length(&candidates), ENotEnoughOracleNodes);
-        assert!(quorum_k > 0 && quorum_k <= requested_nodes, EInvalidQuorum);
-
         let mut g: RandomGenerator = iota::random::new_generator(rnd, ctx);
         iota::random::shuffle(&mut g, &mut candidates);
 
@@ -235,370 +1018,272 @@ module iota_oracle_tasks::oracle_tasks {
             vector::push_back(&mut assigned, *vector::borrow(&candidates, j));
             j = j + 1;
         };
-
-        let now = timestamp_ms(clock);
-
-        if (paid > required_payment) {
-            let refund_amount = paid - required_payment;
-            let refund = coin::split(&mut payment, refund_amount, ctx);
-            transfer::public_transfer(refund, creator);
-        };
-        if (system_fee > 0) {
-            let treasury_fee = coin::split(&mut payment, system_fee, ctx);
-            systemState::deposit_treasury_iota(treasury, treasury_fee, creator);
-        };
-
-        let task_uid = object::new(ctx);
-        let task_id = object::uid_to_inner(&task_uid);
-
-        let config = task_config::new(
-            task_id,
-            retention_days,
-            declared_download_bytes,
-            mediation_mode,
-            variance_max,
-            ctx
-        );
-        let config_id = object::id(&config);
-
-        // Keep runtime/status in a separate object. Deadlines are no longer protocol-critical,
-        // but we retain the object for status / mediation audit.
-        let runtime = task_runtime::new(task_id, now, 0, 0, 0, ctx);
-        let runtime_id = object::id(&runtime);
-
-        let task = Task {
-            id: task_uid,
-            creator,
-            state: STATE_OPEN,
-
-            template_id,
-            task_type,
-            payload,
-            payment_iota: raw_payment,
-            escrow_iota: coin::into_balance(payment),
-
-            requested_nodes,
-            quorum_k,
-            assigned_nodes: assigned,
-
-            active_round: 0,
-            create_result_controller_cap,
-            finalization_mode: 0,
-            result: vector::empty<u8>(),
-            result_hash: vector::empty<u8>(),
-            multisig_bytes: vector::empty<u8>(),
-            multisig_addr: @0x0,
-            certificate_signers: vector::empty<address>(),
-            certificate_blob: vector::empty<u8>(),
-            reason_code: 0,
-            settled: 0,
-
-            config_id,
-            runtime_id,
-        };
-
-        let tid = object::id(&task);
-
-        event::emit(TaskLifecycleEvent {
-            task_id: tid,
-            kind: LIFECYCLE_CREATED,
-            actor: creator,
-            round: 0,
-            value0: template_id,
-            value1: required_payment,
-            value2: retention_days,
-            value3: declared_download_bytes,
-            addr0: @0x0,
-        });
-
-        let mut k = 0;
-        while (k < vector::length(&task.assigned_nodes)) {
-            event::emit(TaskLifecycleEvent {
-                task_id: tid,
-                kind: LIFECYCLE_ASSIGNED,
-                actor: creator,
-                round: 0,
-                value0: 0,
-                value1: 0,
-                value2: 0,
-                value3: 0,
-                addr0: *vector::borrow(&task.assigned_nodes, k),
-            });
-            k = k + 1;
-        };
-
-        transfer::public_share_object(config);
-        transfer::public_share_object(runtime);
-        transfer::share_object(task);
-
-        transfer::public_transfer(TaskOwnerCap { id: object::new(ctx), task_id: tid }, creator);
-        tid
+        assigned
     }
 
-    /// Marks that exact consensus was not reached and that the next round/result will be mediated off-chain.
-    /// This is a small on-chain checkpoint for auditability; the mediation computation itself remains off-chain.
-    public entry fun start_mediation(
+    fun suspend_task_internal(
+        registry: &mut TaskRegistry,
         task: &mut Task,
-        config: &task_config::TaskConfig,
-        runtime: &mut task_runtime::TaskRuntime,
-        clock: &Clock,
-        observed_variance: u64,
-        seed_bytes: vector<u8>,
-        ctx: &mut TxContext
+        actor: address
     ) {
-        assert_config_match(task, config);
-        assert_runtime_match(task, runtime);
-        assert_openish(task);
-        assert!(task_config::mediation_mode(config) == MEDIATION_MEAN_U64, EMediationNotEnabled);
-        assert!(task_runtime::mediation_attempts(runtime) == 0, EMediationAlreadyAttempted);
-
-        if (observed_variance > task_config::variance_max(config)) {
-            task_runtime::set_mediation_attempts(runtime, 1);
-            task_runtime::set_mediation_status(runtime, 2);
-            task_runtime::set_mediation_variance(runtime, observed_variance);
-            task_runtime::set_mediation_seed_bytes(runtime, seed_bytes);
-            event::emit(TaskLifecycleEvent {
-                task_id: object::id(task),
-                kind: LIFECYCLE_MEDIATION_BLOCKED,
-                actor: tx_context::sender(ctx),
-                round: task.active_round,
-                value0: observed_variance,
-                value1: task_config::variance_max(config),
-                value2: FAIL_MEDIATION_VARIANCE_TOO_HIGH,
-                value3: 0,
-                addr0: @0x0,
-            });
-            return
-        };
-
-        task.state = STATE_MEDIATION_PENDING;
-        task.active_round = task.active_round + 1;
-
-        task_runtime::set_mediation_attempts(runtime, 1);
-        task_runtime::set_mediation_status(runtime, 1);
-        task_runtime::set_mediation_variance(runtime, observed_variance);
-        task_runtime::set_mediation_seed_bytes(runtime, seed_bytes);
-        task_runtime::set_created_at_ms(runtime, timestamp_ms(clock));
-
-        event::emit(TaskLifecycleEvent {
+        assert!(task.status == STATUS_ACTIVE, ETaskNotActive);
+        task.status = STATUS_SUSPENDED;
+        remove_registry_id(&mut registry.live_task_ids, object::id(task));
+        event::emit(TaskSuspended {
             task_id: object::id(task),
-            kind: LIFECYCLE_MEDIATION_STARTED,
-            actor: tx_context::sender(ctx),
-            round: task.active_round,
-            value0: observed_variance,
-            value1: task_config::variance_max(config),
-            value2: vector::length(task_runtime::mediation_seed_bytes(runtime)),
-            value3: 0,
-            addr0: @0x0,
+            by: actor,
         });
     }
 
-    /// Finalizes the task from an off-chain certificate.
-    ///
-    /// IMPORTANT: this entry verifies quorum membership and uniqueness on-chain, but it does not
-    /// cryptographically verify the multisig bytes. The cryptographic verification is expected to be
-    /// performed off-chain by oracle nodes and clients until a native Move-side multisig verifier is added.
-    public entry fun finalize_task_with_certificate(
+    fun reactivate_task_internal(
+        registry: &mut TaskRegistry,
         task: &mut Task,
-        runtime: &mut task_runtime::TaskRuntime,
-        result_bytes: vector<u8>,
-        multisig_bytes: vector<u8>,
-        multisig_addr: address,
-        signer_addrs: vector<address>,
-        certificate_blob: vector<u8>,
-        finalize_mode: u8,
-        clock: &Clock,
-        ctx: &mut TxContext
+        now: u64,
+        actor: address
     ) {
-        assert_runtime_match(task, runtime);
-        assert_openish(task);
-        assert!(finalize_mode == FINALIZE_DIRECT || finalize_mode == FINALIZE_MEDIATED, EInvalidFinalizeMode);
-        assert_assigned_sender(task, tx_context::sender(ctx));
-        assert_valid_certificate(task, &signer_addrs, &multisig_bytes);
-
-        let result_hash = hash::sha2_256(consensus::clone_bytes(&result_bytes));
-
-        task.state = STATE_FINALIZED;
-        task.finalization_mode = finalize_mode;
-        task.result = result_bytes;
-        task.result_hash = result_hash;
-        task.multisig_bytes = multisig_bytes;
-        task.multisig_addr = multisig_addr;
-        task.certificate_signers = signer_addrs;
-        task.certificate_blob = certificate_blob;
-        task.reason_code = 0;
-
-        // Reuse runtime as separate status/audit object.
-        task_runtime::set_created_at_ms(runtime, timestamp_ms(clock));
-        if (finalize_mode == FINALIZE_MEDIATED) {
-            task_runtime::set_mediation_status(runtime, 1);
+        assert!(task.status == STATUS_SUSPENDED, ETaskNotSuspended);
+        if (task.next_run_ms == 0) {
+            if (task.last_run_ms == 0) {
+                task.next_run_ms = initial_next_run_ms(task.start_schedule_ms, task.end_schedule_ms);
+            } else if (task.interval_ms != 0) {
+                task.next_run_ms = compute_next_run_ms(now, task.interval_ms, task.end_schedule_ms);
+            };
         };
-
-        event::emit(TaskLifecycleEvent {
-            task_id: object::id(task),
-            kind: LIFECYCLE_COMPLETED,
-            actor: tx_context::sender(ctx),
-            round: task.active_round,
-            value0: finalize_mode as u64,
-            value1: vector::length(&task.certificate_signers),
-            value2: task.quorum_k,
-            value3: vector::length(&task.result_hash),
-            addr0: task.multisig_addr,
-        });
-
-        if (task.create_result_controller_cap == 1) {
-            transfer::public_transfer(
-                TaskResultControllerCap {
-                    id: object::new(ctx),
-                    task_id: object::id(task),
-                    result: consensus::clone_bytes(&task.result),
-                },
-                task.creator,
-            );
+        reconcile_task_status(task);
+        if (task.status != STATUS_ENDED && task.status != STATUS_CANCELLED) {
+            task.status = STATUS_ACTIVE;
         };
-
-        settle_task_funds(task, ctx);
-    }
-
-    /// Records a quorum-backed abort certificate.
-    public entry fun abort_task_with_certificate(
-        task: &mut Task,
-        runtime: &mut task_runtime::TaskRuntime,
-        reason_code: u64,
-        multisig_bytes: vector<u8>,
-        multisig_addr: address,
-        signer_addrs: vector<address>,
-        certificate_blob: vector<u8>,
-        clock: &Clock,
-        ctx: &mut TxContext
-    ) {
-        assert_runtime_match(task, runtime);
-        assert_openish(task);
-        assert!(reason_code != 0, EAbortReasonRequired);
-        assert_assigned_sender(task, tx_context::sender(ctx));
-        assert_valid_certificate(task, &signer_addrs, &multisig_bytes);
-
-        task.state = STATE_FAILED;
-        task.finalization_mode = 0;
-        task.result = vector::empty<u8>();
-        task.result_hash = vector::empty<u8>();
-        task.multisig_bytes = multisig_bytes;
-        task.multisig_addr = multisig_addr;
-        task.certificate_signers = signer_addrs;
-        task.certificate_blob = certificate_blob;
-        task.reason_code = reason_code;
-
-        task_runtime::set_created_at_ms(runtime, timestamp_ms(clock));
-
-        event::emit(TaskLifecycleEvent {
+        sync_registry_membership(registry, task);
+        event::emit(TaskReactivated {
             task_id: object::id(task),
-            kind: LIFECYCLE_FAILED,
-            actor: tx_context::sender(ctx),
-            round: task.active_round,
-            value0: reason_code,
-            value1: vector::length(&task.certificate_signers),
-            value2: task.quorum_k,
-            value3: 0,
-            addr0: task.multisig_addr,
-        });
-
-        settle_task_funds(task, ctx);
-    }
-
-    public entry fun sweep_task_escrow_to_treasury_emergency(
-        _cap: &DelegatedControllerCap,
-        treasury: &mut systemState::OracleTreasury,
-        task: &mut Task,
-        ctx: &mut TxContext
-    ) {
-        assert!(task.state == STATE_FAILED || task.state == STATE_FINALIZED, ETaskNotTerminalOrBlocked);
-        assert!(task.settled == 0, EAlreadySettled);
-
-        let amount = balance::value(&task.escrow_iota);
-        if (amount > 0) {
-            let swept_balance = balance::split(&mut task.escrow_iota, amount);
-            let swept = coin::from_balance(swept_balance, ctx);
-            systemState::deposit_treasury_iota(treasury, swept, object::uid_to_address(&task.id));
-        };
-        task.settled = 1;
-
-        event::emit(TaskLifecycleEvent {
-            task_id: object::id(task),
-            kind: LIFECYCLE_ESCROW_SWEPT,
-            actor: tx_context::sender(ctx),
-            round: 0,
-            value0: amount,
-            value1: 0,
-            value2: 0,
-            value3: 0,
-            addr0: @0x0,
+            by: actor,
+            next_run_ms: task.next_run_ms,
         });
     }
 
-    public entry fun delete_task_with_owner_cap(
-        cap: TaskOwnerCap,
-        task: Task,
-        config: task_config::TaskConfig,
-        runtime: task_runtime::TaskRuntime
+    fun delete_task_internal(
+        registry: &mut TaskRegistry,
+        mut task: Task,
+        actor: address,
+        ctx: &mut TxContext
     ) {
         let task_id = object::id(&task);
-        assert!(cap.task_id == task_id, ETaskOwnerCapMismatch);
-        assert!(
-            task.state == STATE_FINALIZED || task.state == STATE_FAILED,
-            ETaskDeleteRequiresTerminalState
-        );
-        assert!(task.settled == 1, ETaskDeleteRequiresSettledFunds);
-        assert!(task.config_id == task_config::id(&config), EConfigMismatch);
-        assert!(task.runtime_id == task_runtime::id(&runtime), ERuntimeMismatch);
-        assert!(task_config::task_id(&config) == task_id, EConfigMismatch);
-        assert!(task_runtime::task_id(&runtime) == task_id, ERuntimeMismatch);
+        assert!(task.status == STATUS_SUSPENDED, EDeleteRequiresSuspendedState);
+        assert!(task.execution_state != EXEC_OPEN && task.execution_state != EXEC_MEDIATION_PENDING, ETaskHasLiveExecution);
+        remove_registry_id(&mut registry.live_task_ids, task_id);
 
-        destroy_task_owner_cap(cap);
-        task_config::destroy(config);
-        task_runtime::destroy(runtime);
-        destroy_task(task);
+        destroy_results(&mut task.id, &mut task.result_order);
+
+        let refund_available = balance::value(&task.available_balance_iota);
+        if (refund_available > 0) {
+            let out = balance::split(&mut task.available_balance_iota, refund_available);
+            transfer::public_transfer(coin::from_balance(out, ctx), task.creator);
+        };
+
+        let refund_escrow = balance::value(&task.run_escrow_iota);
+        if (refund_escrow > 0) {
+            let out = balance::split(&mut task.run_escrow_iota, refund_escrow);
+            transfer::public_transfer(coin::from_balance(out, ctx), task.creator);
+        };
+
+        let refunded_iota = refund_available + refund_escrow;
+        let Task {
+            id,
+            creator: _,
+            status: _,
+            execution_state: _,
+            template_id: _,
+            task_type: _,
+            payload: _,
+            retention_days: _,
+            declared_download_bytes: _,
+            mediation_mode: _,
+            variance_max: _,
+            requested_nodes: _,
+            quorum_k: _,
+            create_controller_cap: _,
+            start_schedule_ms: _,
+            end_schedule_ms: _,
+            interval_ms: _,
+            last_run_ms: _,
+            next_run_ms: _,
+            last_scheduler_node: _,
+            available_balance_iota,
+            run_escrow_iota,
+            active_run_index: _,
+            active_round: _,
+            assigned_nodes: _,
+            latest_result_seq: _,
+            result_order: _,
+        } = task;
+        balance::destroy_zero(available_balance_iota);
+        balance::destroy_zero(run_escrow_iota);
+        object::delete(id);
+
+        event::emit(TaskDeleted {
+            task_id,
+            by: actor,
+            refunded_iota,
+        });
     }
 
-    public fun state(t: &Task): u8 { t.state }
-    public fun creator(t: &Task): address { t.creator }
-    public fun template_id(t: &Task): u64 { t.template_id }
-    public fun task_type(t: &Task): &vector<u8> { &t.task_type }
-    public fun payload(t: &Task): &vector<u8> { &t.payload }
-    public fun payment_iota(t: &Task): u64 { t.payment_iota }
-    public fun escrow_iota_value(t: &Task): u64 { balance::value(&t.escrow_iota) }
-    public fun assigned_nodes(t: &Task): &vector<address> { &t.assigned_nodes }
-    public fun requested_nodes(t: &Task): u64 { t.requested_nodes }
-    public fun quorum_k(t: &Task): u64 { t.quorum_k }
-    public fun active_round(t: &Task): u64 { t.active_round }
-    public fun create_result_controller_cap(t: &Task): u8 { t.create_result_controller_cap }
-    public fun finalization_mode(t: &Task): u8 { t.finalization_mode }
-    public fun result(t: &Task): &vector<u8> { &t.result }
-    public fun result_hash(t: &Task): &vector<u8> { &t.result_hash }
-    public fun multisig_bytes(t: &Task): &vector<u8> { &t.multisig_bytes }
-    public fun multisig_addr(t: &Task): address { t.multisig_addr }
-    public fun certificate_signers(t: &Task): &vector<address> { &t.certificate_signers }
-    public fun certificate_blob(t: &Task): &vector<u8> { &t.certificate_blob }
-    public fun reason_code(t: &Task): u64 { t.reason_code }
-    public fun settled(t: &Task): u8 { t.settled }
-    public fun config_id(t: &Task): object::ID { t.config_id }
-    public fun runtime_id(t: &Task): object::ID { t.runtime_id }
+    fun append_result_record(
+        task: &mut Task,
+        run_index: u64,
+        produced_at_ms: u64,
+        result: vector<u8>,
+        result_hash: vector<u8>,
+        multisig_bytes: vector<u8>,
+        multisig_addr: address,
+        certificate_signers: vector<address>,
+        certificate_blob: vector<u8>,
+        reason_code: u64
+    ): u64 {
+        let seq = task.latest_result_seq + 1;
+        task.latest_result_seq = seq;
+        dynamic_field::add<TaskResultKey, TaskResult>(
+            &mut task.id,
+            TaskResultKey { seq },
+            TaskResult {
+                run_index,
+                produced_at_ms,
+                result,
+                result_hash,
+                multisig_bytes,
+                multisig_addr,
+                certificate_signers,
+                certificate_blob,
+                reason_code,
+            }
+        );
+        vector::push_back(&mut task.result_order, seq);
+        trim_results(task);
+        seq
+    }
 
-    public fun fail_acceptance_timeout(): u64 { FAIL_ACCEPTANCE_TIMEOUT }
-    public fun fail_commit_timeout(): u64 { FAIL_COMMIT_TIMEOUT }
-    public fun fail_reveal_no_quorum(): u64 { FAIL_REVEAL_NO_QUORUM }
-    public fun fail_reveal_invalid_signature(): u64 { FAIL_REVEAL_INVALID_SIGNATURE }
-    public fun fail_partial_sig_timeout(): u64 { FAIL_PARTIAL_SIG_TIMEOUT }
-    public fun fail_finalize_timeout(): u64 { FAIL_FINALIZE_TIMEOUT }
-    public fun fail_mediation_variance_too_high(): u64 { FAIL_MEDIATION_VARIANCE_TOO_HIGH }
-    public fun fail_aborted_by_quorum(): u64 { FAIL_ABORTED_BY_QUORUM }
+    fun trim_results(task: &mut Task) {
+        while (vector::length(&task.result_order) > MAX_RESULT_HISTORY) {
+            let oldest = *vector::borrow(&task.result_order, 0);
+            let _old: TaskResult = dynamic_field::remove<TaskResultKey, TaskResult>(
+                &mut task.id,
+                TaskResultKey { seq: oldest }
+            );
+            remove_result_order_head(&mut task.result_order);
+        };
+    }
+
+    fun destroy_results(task_id: &mut object::UID, result_order: &mut vector<u64>) {
+        while (!vector::is_empty(result_order)) {
+            let seq = vector::pop_back(result_order);
+            let _old: TaskResult = dynamic_field::remove<TaskResultKey, TaskResult>(
+                task_id,
+                TaskResultKey { seq }
+            );
+        };
+    }
+
+    fun remove_result_order_head(values: &mut vector<u64>) {
+        let len = vector::length(values);
+        if (len == 0) return;
+        let mut i = 1;
+        while (i < len) {
+            let v = *vector::borrow(values, i);
+            *vector::borrow_mut(values, i - 1) = v;
+            i = i + 1;
+        };
+        vector::pop_back(values);
+    }
+
+    fun sync_registry_membership(registry: &mut TaskRegistry, task: &Task) {
+        let task_id = object::id(task);
+        if (should_be_in_registry(task)) {
+            add_registry_id(&mut registry.live_task_ids, task_id);
+        } else {
+            remove_registry_id(&mut registry.live_task_ids, task_id);
+        };
+    }
+
+    fun should_be_in_registry(task: &Task): bool {
+        task.status == STATUS_ACTIVE && task.next_run_ms != 0
+    }
+
+    fun reconcile_task_status(task: &mut Task) {
+        if (task.status == STATUS_CANCELLED) return;
+        if (task.next_run_ms == 0) {
+            task.status = STATUS_ENDED;
+        } else if (task.status == STATUS_ENDED) {
+            task.status = STATUS_ACTIVE;
+        };
+    }
+
+    fun compute_following_run_ms(task: &Task, scheduled_for_ms: u64, now: u64): u64 {
+        if (task.interval_ms == 0) return 0;
+        let mut next = scheduled_for_ms + task.interval_ms;
+        while (next <= now) {
+            next = next + task.interval_ms;
+        };
+        if (task.end_schedule_ms != 0 && next > task.end_schedule_ms) {
+            0
+        } else {
+            next
+        }
+    }
+
+    fun initial_next_run_ms(start_schedule_ms: u64, end_schedule_ms: u64): u64 {
+        if (end_schedule_ms != 0 && start_schedule_ms > end_schedule_ms) {
+            0
+        } else {
+            start_schedule_ms
+        }
+    }
+
+    fun compute_next_run_ms(base_ms: u64, interval_ms: u64, end_schedule_ms: u64): u64 {
+        let next = base_ms + interval_ms;
+        if (end_schedule_ms != 0 && next > end_schedule_ms) {
+            0
+        } else {
+            next
+        }
+    }
+
+    fun validate_request_shape(
+        st: &State,
+        template_id: u64,
+        requested_nodes: u64,
+        quorum_k: u64,
+        payload: &vector<u8>,
+        retention_days: u64,
+        declared_download_bytes: u64
+    ) {
+        let (_, _, _) = systemState::validate_task_request_and_get_payment_split(
+            st,
+            template_id,
+            vector::length(payload),
+            retention_days,
+            declared_download_bytes
+        );
+
+        let nodes_ref = systemState::oracle_nodes(st);
+        let mut supported_nodes = 0;
+        let mut i = 0;
+        while (i < vector::length(nodes_ref)) {
+            let n = vector::borrow(nodes_ref, i);
+            if (systemState::oracle_node_accepts_template(n, template_id)) {
+                supported_nodes = supported_nodes + 1;
+            };
+            i = i + 1;
+        };
+
+        assert!(requested_nodes > 0 && requested_nodes <= supported_nodes, ENotEnoughOracleNodes);
+        assert!(quorum_k > 0 && quorum_k <= requested_nodes, EInvalidQuorum);
+    }
 
     fun assert_assigned_sender(task: &Task, sender: address) {
-        assert!(consensus::contains_addr(&task.assigned_nodes, sender), ENotAssigned);
+        assert!(consensus::contains_addr(&task.assigned_nodes, sender), ESignerNotAssigned);
     }
 
-    fun assert_openish(task: &Task) {
-        assert!(task.state == STATE_OPEN || task.state == STATE_MEDIATION_PENDING, EBadState);
-        assert!(task.state != STATE_FINALIZED && task.state != STATE_FAILED, EAlreadyTerminal);
+    public fun is_assigned_node(task: &Task, addr: address): bool {
+        consensus::contains_addr(&task.assigned_nodes, addr)
     }
 
     fun assert_valid_certificate(task: &Task, signer_addrs: &vector<address>, multisig_bytes: &vector<u8>) {
@@ -608,106 +1293,174 @@ module iota_oracle_tasks::oracle_tasks {
         assert!(vector::length(multisig_bytes) > 0, EInvalidCertificate);
     }
 
-    fun assert_config_match(task: &Task, config: &task_config::TaskConfig) {
-        assert!(task.config_id == task_config::id(config), EConfigMismatch);
-    }
-
-    fun assert_runtime_match(task: &Task, runtime: &task_runtime::TaskRuntime) {
-        assert!(task.runtime_id == task_runtime::id(runtime), ERuntimeMismatch);
-    }
-
-    fun settle_task_funds(task: &mut Task, ctx: &mut TxContext) {
-        if (task.settled == 1) return;
-        let before = balance::value(&task.escrow_iota);
-        pay_all_certificate_signers(task, ctx);
-        let after = balance::value(&task.escrow_iota);
-        task.settled = 1;
-        event::emit(TaskLifecycleEvent {
-            task_id: object::id(task),
-            kind: LIFECYCLE_SETTLED,
-            actor: tx_context::sender(ctx),
-            round: task.active_round,
-            value0: task.state as u64,
-            value1: vector::length(&task.certificate_signers),
-            value2: before - after,
-            value3: after,
-            addr0: @0x0,
-        });
-    }
-
-    public fun is_assigned_node(t: &Task, addr: address): bool {
-    let nodes = &t.assigned_nodes;
-    let len = vector::length(nodes);
-    let mut i = 0;
-    while (i < len) {
-        if (*vector::borrow(nodes, i) == addr) {
-            return true
-        };
-        i = i + 1;
-    };
-    false
-}
-
-    fun pay_all_certificate_signers(task: &mut Task, ctx: &mut TxContext) {
-        let total = balance::value(&task.escrow_iota);
-        let n = vector::length(&task.certificate_signers);
+    fun pay_all_certificate_signers(
+        task: &mut Task,
+        certificate_signers: &vector<address>,
+        ctx: &mut TxContext
+    ) {
+        let total = balance::value(&task.run_escrow_iota);
+        let n = vector::length(certificate_signers);
         if (n == 0 || total == 0) return;
 
         let base_share = total / n;
         let remainder = total % n;
-
         let mut i = 0;
         while (i < n) {
-            let addr = *vector::borrow(&task.certificate_signers, i);
+            let addr = *vector::borrow(certificate_signers, i);
             let mut amount = base_share;
             if (i < remainder) {
                 amount = amount + 1;
             };
             if (amount > 0) {
-                let payout_balance = balance::split(&mut task.escrow_iota, amount);
-                let payout = coin::from_balance(payout_balance, ctx);
-                transfer::public_transfer(payout, addr);
+                let payout_balance = balance::split(&mut task.run_escrow_iota, amount);
+                transfer::public_transfer(coin::from_balance(payout_balance, ctx), addr);
             };
             i = i + 1;
         };
     }
 
+    fun reconcile_queue_internal(queue: &mut SchedulerQueue, st: &State) {
+        let mut next_nodes = vector::empty<address>();
+        let mut i = 0;
+        while (i < vector::length(&queue.nodes)) {
+            let addr = *vector::borrow(&queue.nodes, i);
+            if (node_supports_scheduler(st, addr) && !contains_address(&next_nodes, addr)) {
+                vector::push_back(&mut next_nodes, addr);
+            };
+            i = i + 1;
+        };
+
+        let nodes_ref = systemState::oracle_nodes(st);
+        let mut j = 0;
+        while (j < vector::length(nodes_ref)) {
+            let node = vector::borrow(nodes_ref, j);
+            let addr = systemState::oracle_node_addr(node);
+            if (!contains_address(&next_nodes, addr)) {
+                vector::push_back(&mut next_nodes, addr);
+            };
+            j = j + 1;
+        };
+
+        queue.nodes = next_nodes;
+    }
+
+    fun node_supports_scheduler(st: &State, addr: address): bool {
+        let nodes_ref = systemState::oracle_nodes(st);
+        let mut i = 0;
+        while (i < vector::length(nodes_ref)) {
+            let node = vector::borrow(nodes_ref, i);
+            if (systemState::oracle_node_addr(node) == addr) {
+                return true
+            };
+            i = i + 1;
+        };
+        false
+    }
+
+    fun count_scheduler_nodes(st: &State): u64 {
+        let nodes_ref = systemState::oracle_nodes(st);
+        let mut count = 0;
+        let mut i = 0;
+        while (i < vector::length(nodes_ref)) {
+            let _node = vector::borrow(nodes_ref, i);
+            count = count + 1;
+            i = i + 1;
+        };
+        count
+    }
+
+    fun rotate_head_to_tail(nodes: &mut vector<address>) {
+        if (vector::length(nodes) <= 1) return;
+        let head = *vector::borrow(nodes, 0);
+        let last_idx = vector::length(nodes) - 1;
+        let mut i = 1;
+        while (i < vector::length(nodes)) {
+            let addr = *vector::borrow(nodes, i);
+            *vector::borrow_mut(nodes, i - 1) = addr;
+            i = i + 1;
+        };
+        *vector::borrow_mut(nodes, last_idx) = head;
+    }
+
+    fun find_address_index(nodes: &vector<address>, addr: address): u64 {
+        let mut i = 0;
+        while (i < vector::length(nodes)) {
+            if (*vector::borrow(nodes, i) == addr) return i;
+            i = i + 1;
+        };
+        vector::length(nodes)
+    }
+
+    fun add_registry_id(ids: &mut vector<object::ID>, target: object::ID) {
+        if (!contains_id(ids, target)) {
+            vector::push_back(ids, target);
+        };
+    }
+
+    fun remove_registry_id(ids: &mut vector<object::ID>, target: object::ID) {
+        let mut i = 0;
+        while (i < vector::length(ids)) {
+            if (*vector::borrow(ids, i) == target) {
+                let last_idx = vector::length(ids) - 1;
+                if (i != last_idx) {
+                    let last = *vector::borrow(ids, last_idx);
+                    *vector::borrow_mut(ids, i) = last;
+                };
+                vector::pop_back(ids);
+                return
+            };
+            i = i + 1;
+        };
+    }
+
+    fun contains_id(ids: &vector<object::ID>, target: object::ID): bool {
+        let mut i = 0;
+        while (i < vector::length(ids)) {
+            if (*vector::borrow(ids, i) == target) return true;
+            i = i + 1;
+        };
+        false
+    }
+
+    fun contains_address(addrs: &vector<address>, target: address): bool {
+        let mut i = 0;
+        while (i < vector::length(addrs)) {
+            if (*vector::borrow(addrs, i) == target) return true;
+            i = i + 1;
+        };
+        false
+    }
+
+    fun assert_task_owner(task: &Task, sender: address) {
+        assert!(task.creator == sender, ETaskOwnerMismatch);
+    }
+
+    fun assert_task_owner_ref(task: &Task, sender: address) {
+        assert!(task.creator == sender, ETaskOwnerMismatch);
+    }
+
     fun destroy_task_owner_cap(cap: TaskOwnerCap) {
-        let TaskOwnerCap {
-            id,
-            task_id: _,
-        } = cap;
+        let TaskOwnerCap { id, task_id: _ } = cap;
         object::delete(id);
     }
 
-    fun destroy_task(task: Task) {
-        let Task {
-            id,
-            creator: _,
-            state: _,
-            template_id: _,
-            task_type: _,
-            payload: _,
-            payment_iota: _,
-            escrow_iota,
-            requested_nodes: _,
-            quorum_k: _,
-            assigned_nodes: _,
-            active_round: _,
-            create_result_controller_cap: _,
-            finalization_mode: _,
-            result: _,
-            result_hash: _,
-            multisig_bytes: _,
-            multisig_addr: _,
-            certificate_signers: _,
-            certificate_blob: _,
-            reason_code: _,
-            settled: _,
-            config_id: _,
-            runtime_id: _,
-        } = task;
-        balance::destroy_zero(escrow_iota);
-        object::delete(id);
+    fun copy_bytes(v: &vector<u8>): vector<u8> {
+        let mut out = vector::empty<u8>();
+        let mut i = 0;
+        while (i < vector::length(v)) {
+            vector::push_back(&mut out, *vector::borrow(v, i));
+            i = i + 1;
+        };
+        out
+    }
+
+    fun copy_addrs(v: &vector<address>): vector<address> {
+        let mut out = vector::empty<address>();
+        let mut i = 0;
+        while (i < vector::length(v)) {
+            vector::push_back(&mut out, *vector::borrow(v, i));
+            i = i + 1;
+        };
+        out
     }
 }

@@ -22,7 +22,7 @@ import {
   listenTaskDataRequested,
   listenTaskMediationStarted,
 } from "./events";
-import { processAssigned } from "./handlers/assigned";
+import { processAssigned, replayRecentAssignments } from "./handlers/assigned";
 import { processDataRequested } from "./handlers/dataRequested";
 import { processMediationStarted } from "./handlers/mediationStarted";
 import { startMonitorServer, type MonitorRuntimeState } from "./monitor";
@@ -46,9 +46,9 @@ function buildContext(): NodeContext {
     acceptedTemplateIds,
     pollMs,
     startupMs,
-    taskAssignedType: defaultEventType("TASK_ASSIGNED_EVENT_TYPE", "oracle_tasks::TaskLifecycleEvent"),
+    taskAssignedType: defaultEventType("TASK_ASSIGNED_EVENT_TYPE", "oracle_tasks::TaskRunSubmitted"),
     dataReqType: defaultEventType("TASK_DATA_REQUESTED_EVENT_TYPE", "oracle_tasks::TaskLifecycleEvent"),
-    mediationType: defaultEventType("TASK_MEDIATION_STARTED_EVENT_TYPE", "oracle_tasks::TaskLifecycleEvent"),
+    mediationType: defaultEventType("TASK_MEDIATION_STARTED_EVENT_TYPE", "oracle_tasks::TaskRunMediationStarted"),
     msgType: defaultEventType("MESSAGE_EVENT_TYPE", "oracle_messages::OracleMessage"),
     cache: new TaskCache(),
     stats: new NodeStats(),
@@ -206,6 +206,7 @@ async function main() {
   }
 
   startListeners(ctx);
+  void replayRecentAssignments(ctx);
   startSchedulerWorker(ctx);
   runtimeState.listenersStarted = true;
   runtimeState.booting = false;

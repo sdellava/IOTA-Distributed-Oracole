@@ -8,9 +8,9 @@ import type {
   OracleNetwork,
   OracleStatus,
   PreparedWalletTaskResponse,
-  PreparedScheduledWalletTaskResponse,
+  PreparedTaskScheduleWalletResponse,
   IotaMarketPriceResponse,
-  ScheduledTasksResponse,
+  TaskSchedulesResponse,
 } from '../types';
 
 async function ensureOk<T>(response: Response): Promise<T> {
@@ -81,14 +81,14 @@ export async function prepareWalletTask(
   );
 }
 
-export async function prepareWalletScheduledTask(
+export async function prepareWalletTaskSchedule(
   task: unknown,
   schedule: unknown,
   sender: string,
   network: OracleNetwork,
-): Promise<PreparedScheduledWalletTaskResponse> {
-  return ensureOk<PreparedScheduledWalletTaskResponse>(
-    await fetch('/api/tasks/prepare-scheduled-wallet', {
+): Promise<PreparedTaskScheduleWalletResponse> {
+  return ensureOk<PreparedTaskScheduleWalletResponse>(
+    await fetch('/api/tasks/prepare-task-schedule-wallet', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -102,8 +102,8 @@ export async function fetchIotaMarketPrice(): Promise<IotaMarketPriceResponse> {
   return ensureOk<IotaMarketPriceResponse>(await fetch('/api/market/iota-price'));
 }
 
-export async function fetchScheduledTasks(network: OracleNetwork): Promise<ScheduledTasksResponse> {
-  return ensureOk<ScheduledTasksResponse>(
-    await fetch(`/api/scheduled-tasks?network=${encodeURIComponent(network)}`),
+export async function fetchTaskSchedules(network: OracleNetwork): Promise<TaskSchedulesResponse> {
+  return ensureOk<TaskSchedulesResponse>(
+    await fetch(`/api/task-schedules?network=${encodeURIComponent(network)}`),
   );
 }

@@ -7,31 +7,59 @@ import {
   completeSchedulerRoundTx,
   reconcileSchedulerQueueTx,
   startSchedulerRoundTx,
-  submitScheduledTaskTx,
+  submitTaskRunTx,
 } from "../oracleSchedulerTx";
 import { optInt } from "../nodeConfig";
-import { listDueScheduledTasks, readSchedulerQueue } from "../services/schedulerReader";
+import { listDueTasks, readTaskSchedulerQueue } from "../services/schedulerReader";
 
-function roundTimedOut(activeRoundStartedMs: number, nowMs: number): boolean {
-  if (activeRoundStartedMs <= 0) return false;
-  const timeoutMs = optInt("SCHEDULER_ROUND_TIMEOUT_MS", 60_000);
-  return nowMs >= activeRoundStartedMs + timeoutMs;
+function schedulerLeaseMs(): number {
+  return optInt("SCHEDULER_ROUND_TIMEOUT_MS", 30_000);
+}
+
+function queueIndexOf(nodes: string[], addr: string): number {
+  return nodes.findIndex((node) => node === addr);
+}
+
+function takeoverEligible(
+  activeRoundStartedMs: number,
+  lastRoundCompletedMs: number,
+  queueIndex: number,
+  nowMs: number,
+): boolean {
+  if (queueIndex <= 0) return false;
+  const baseMs = activeRoundStartedMs > 0 ? activeRoundStartedMs : lastRoundCompletedMs;
+  if (baseMs <= 0) return false;
+  return nowMs >= baseMs + queueIndex * schedulerLeaseMs();
 }
 
 export async function processSchedulerRound(ctx: NodeContext): Promise<void> {
   const nowMs = Date.now();
-  await reconcileSchedulerQueueTx(ctx).catch((e: any) => {
-    console.warn(`[scheduler ${ctx.nodeId}] reconcile failed: ${String(e?.message ?? e)}`);
-  });
+  let queue = await readTaskSchedulerQueue(ctx.client);
+  if (!queue.nodes.length) {
+    await reconcileSchedulerQueueTx(ctx).catch((e: any) => {
+      console.warn(`[scheduler ${ctx.nodeId}] reconcile failed: ${String(e?.message ?? e)}`);
+    });
+    queue = await readTaskSchedulerQueue(ctx.client);
+  }
 
-  let queue = await readSchedulerQueue(ctx.client);
   if (!queue.nodes.length) {
     console.warn(`[scheduler ${ctx.nodeId}] queue empty`);
     return;
   }
 
+  const myIndex = queueIndexOf(queue.nodes, ctx.myAddr);
+  if (myIndex < 0) {
+    await reconcileSchedulerQueueTx(ctx).catch((e: any) => {
+      console.warn(`[scheduler ${ctx.nodeId}] reconcile failed: ${String(e?.message ?? e)}`);
+    });
+    queue = await readTaskSchedulerQueue(ctx.client);
+  }
+
+  const refreshedIndex = queueIndexOf(queue.nodes, ctx.myAddr);
+  if (refreshedIndex < 0) return;
+
   if (queue.head !== ctx.myAddr) {
-    if (!roundTimedOut(queue.activeRoundStartedMs, nowMs)) return;
+    if (!takeoverEligible(queue.activeRoundStartedMs, queue.lastRoundCompletedMs, refreshedIndex, nowMs)) return;
     try {
       const digest = await advanceSchedulerQueueTx(ctx);
       console.log(`[scheduler ${ctx.nodeId}] advance queue tx=${digest}`);
@@ -39,7 +67,7 @@ export async function processSchedulerRound(ctx: NodeContext): Promise<void> {
       console.warn(`[scheduler ${ctx.nodeId}] advance failed: ${String(e?.message ?? e)}`);
       return;
     }
-    queue = await readSchedulerQueue(ctx.client);
+    queue = await readTaskSchedulerQueue(ctx.client);
     if (queue.head !== ctx.myAddr) return;
   }
 
@@ -49,15 +77,15 @@ export async function processSchedulerRound(ctx: NodeContext): Promise<void> {
   let processed = 0;
   try {
     const maxTasks = optInt("SCHEDULER_MAX_TASKS_PER_ROUND", 100);
-    const dueTasks = (await listDueScheduledTasks(ctx.client, nowMs)).slice(0, maxTasks);
+    const dueTasks = (await listDueTasks(ctx.client, nowMs)).slice(0, maxTasks);
     for (const task of dueTasks) {
       try {
-        const digest = await submitScheduledTaskTx(ctx, task.id);
+        const digest = await submitTaskRunTx(ctx, task.id);
         processed += 1;
-        console.log(`[scheduler ${ctx.nodeId}] submitted scheduled task id=${task.id} tx=${digest}`);
+        console.log(`[scheduler ${ctx.nodeId}] submitted task run id=${task.id} tx=${digest}`);
       } catch (e: any) {
         console.warn(
-          `[scheduler ${ctx.nodeId}] submit scheduled task failed id=${task.id}: ${String(e?.message ?? e)}`,
+          `[scheduler ${ctx.nodeId}] submit task run failed id=${task.id}: ${String(e?.message ?? e)}`,
         );
       }
     }

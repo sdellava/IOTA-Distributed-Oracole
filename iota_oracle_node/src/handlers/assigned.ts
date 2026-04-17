@@ -9,6 +9,7 @@ import type { NodeContext } from "../nodeContext";
 import { assertCommitteeMultisigAddress, buildMultiSigPublicKey } from "../multisig.js";
 import { loadPubkeysByAddrB64 } from "../services/pubkeys";
 import { loadTaskBundle, isTaskFreshForNode, taskCreatedAtMs } from "../services/taskObjects";
+import { moveToArray, moveToString } from "../utils/move";
 import {
   abortTaskWithCertificate,
   consensusMessage,
@@ -150,8 +151,6 @@ export async function runConsensusRound(
     normalized: string;
     assignedNodes: string[];
     quorumK: number;
-    runtimeId: string;
-    configId: string;
     mediationMode: number;
     varianceMax: number;
     numericValueU64: number | null;
@@ -164,8 +163,6 @@ export async function runConsensusRound(
     normalized,
     assignedNodes,
     quorumK,
-    runtimeId,
-    configId,
     mediationMode,
     varianceMax,
     numericValueU64,
@@ -190,7 +187,6 @@ export async function runConsensusRound(
         client,
         keypair: identity.keypair,
         taskId,
-        runtimeId,
         reasonCode,
         multisigBytes: cert,
         multisigAddr: myAddr,
@@ -240,10 +236,7 @@ export async function runConsensusRound(
           client,
           keypair: identity.keypair,
           taskId,
-          configId,
-          runtimeId,
           observedVariance: variance,
-          seedBytes: seed,
         }).catch(() => null);
 
         if (md) {
@@ -259,7 +252,6 @@ export async function runConsensusRound(
         client,
         keypair: identity.keypair,
         taskId,
-        runtimeId,
         reasonCode: 1003,
         multisigBytes: cert,
         multisigAddr: myAddr,
@@ -302,7 +294,6 @@ export async function runConsensusRound(
         client,
         keypair: identity.keypair,
         taskId,
-        runtimeId,
         reasonCode: 1005,
         multisigBytes: cert,
         multisigAddr: myAddr,
@@ -382,7 +373,6 @@ export async function runConsensusRound(
     client,
     keypair: identity.keypair,
     taskId,
-    runtimeId,
     resultBytes,
     multisigBytes: combinedSigBytes,
     multisigAddr,
@@ -401,9 +391,8 @@ async function maybeAbortCommitNoQuorum(opts: {
   round: number;
   assignedNodes: string[];
   quorumK: number;
-  runtimeId: string;
 }) {
-  const { ctx, taskId, round, assignedNodes, quorumK, runtimeId } = opts;
+  const { ctx, taskId, round, assignedNodes, quorumK } = opts;
   const { client, identity, nodeId, myAddr } = ctx;
   const leaders = leaderOrder(assignedNodes);
   const leaderAddr = leaders[0] ?? "";
@@ -420,7 +409,6 @@ async function maybeAbortCommitNoQuorum(opts: {
     client,
     keypair: identity.keypair,
     taskId,
-    runtimeId,
     reasonCode,
     multisigBytes: cert,
     multisigAddr: myAddr,
@@ -439,12 +427,17 @@ async function maybeAbortCommitNoQuorum(opts: {
   }
 }
 
-export async function processAssigned(ctx: NodeContext, taskId: string, creator: string): Promise<void> {
+export async function processAssigned(
+  ctx: NodeContext,
+  taskId: string,
+  creator: string,
+  opts?: { ignoreFreshness?: boolean },
+): Promise<void> {
   const { client, identity, nodeId, myAddr, acceptedTemplateIds, cache, stats } = ctx;
 
   const bundle = await loadTaskBundle(client, taskId);
-  const { taskFields, configFields, runtimeFields, configId, runtimeId } = bundle;
-  if (!isTaskFreshForNode(bundle, ctx.startupMs)) {
+  const { taskFields, configFields, runtimeFields } = bundle;
+  if (!opts?.ignoreFreshness && !isTaskFreshForNode(bundle, ctx.startupMs)) {
     const createdAt = taskCreatedAtMs(bundle);
     console.log(`[node ${nodeId}] ignore stale task=${taskId} created_at_ms=${createdAt} startup_ms=${ctx.startupMs}`);
     return;
@@ -452,15 +445,30 @@ export async function processAssigned(ctx: NodeContext, taskId: string, creator:
 
   const round = Number(taskFields.active_round ?? 0) || 0;
   const roundKey = `${taskId}:${round}:assigned:v2`;
-  if (!cache.markRoundSeen(roundKey)) return;
+  if (!cache.markRoundSeen(roundKey)) {
+    console.log(`[node ${nodeId}] ignore duplicate assignment task=${taskId} round=${round}`);
+    return;
+  }
 
-  const state = Number(taskFields.state ?? -1);
-  if (![1, 2].includes(state)) return;
+  const status = Number(taskFields.status ?? -1);
+  const executionState = Number(taskFields.execution_state ?? -1);
+  const statusAllowsLiveExecution = status === 1 || status === 10;
+  if (!statusAllowsLiveExecution || executionState !== 1) {
+    console.log(
+      `[node ${nodeId}] ignore task=${taskId} round=${round} reason=state_mismatch status=${status} execution_state=${executionState}`,
+    );
+    return;
+  }
 
-  const assignedNodes: string[] = Array.isArray(taskFields.assigned_nodes)
-    ? taskFields.assigned_nodes.map((x: any) => String(x).toLowerCase())
-    : [];
-  if (!assignedNodes.includes(myAddr)) return;
+  const assignedNodes: string[] = moveToArray(taskFields.assigned_nodes)
+    .map((x: any) => moveToString(x).toLowerCase())
+    .filter(Boolean);
+  if (!assignedNodes.includes(myAddr)) {
+    console.log(
+      `[node ${nodeId}] ignore task=${taskId} round=${round} reason=not_assigned assigned_nodes=${assignedNodes.join(",") || "<none>"} me=${myAddr}`,
+    );
+    return;
+  }
 
   const taskType = bytesToUtf8(decodeVecU8(taskFields.task_type));
   const payloadStr = bytesToUtf8(decodeVecU8(taskFields.payload));
@@ -470,10 +478,15 @@ export async function processAssigned(ctx: NodeContext, taskId: string, creator:
   const mediationMode = Number(configFields.mediation_mode ?? 0);
   const varianceMax = Number(configFields.variance_max ?? 0);
 
-  if (!acceptsTemplate(templateId, acceptedTemplateIds)) return;
+  if (!acceptsTemplate(templateId, acceptedTemplateIds)) {
+    console.log(
+      `[node ${nodeId}] ignore task=${taskId} round=${round} reason=template_not_accepted template=${templateId} accepted=${acceptedTemplateIds.join(",") || "<none>"}`,
+    );
+    return;
+  }
 
   console.log(
-    `[node ${nodeId}] assigned task id=${taskId} by=${creator} round=${round} state=${state} type=${taskType} template=${templateId} retention_days=${retentionDays} payment_iota=${paymentIota}`,
+    `[node ${nodeId}] assigned task id=${taskId} by=${creator || '-'} round=${round} status=${status} execution_state=${executionState} type=${taskType} template=${templateId} retention_days=${retentionDays} payment_iota=${paymentIota}`,
   );
 
   let payloadJson: any;
@@ -536,7 +549,6 @@ export async function processAssigned(ctx: NodeContext, taskId: string, creator:
         round,
         assignedNodes,
         quorumK: Number(taskFields.quorum_k ?? assignedNodes.length) || assignedNodes.length,
-        runtimeId,
       });
     } catch (txErr: any) {
       console.error(`[node ${nodeId}] no_commit publish failed: ${String(txErr?.message ?? txErr)}`);
@@ -557,8 +569,6 @@ export async function processAssigned(ctx: NodeContext, taskId: string, creator:
     normalized,
     assignedNodes,
     quorumK: Number(taskFields.quorum_k ?? assignedNodes.length) || assignedNodes.length,
-    runtimeId,
-    configId,
     mediationMode,
     varianceMax,
     numericValueU64,
@@ -574,7 +584,7 @@ export async function processAssigned(ctx: NodeContext, taskId: string, creator:
 }
 
 export async function replayRecentAssignments(ctx: NodeContext, limit = 50): Promise<void> {
-  const { client, myAddr, taskAssignedType, nodeId, startupMs } = ctx;
+  const { client, myAddr, taskAssignedType, nodeId } = ctx;
   try {
     const page: any = await client.queryEvents({
       query: { MoveEventType: taskAssignedType },
@@ -585,15 +595,11 @@ export async function replayRecentAssignments(ctx: NodeContext, limit = 50): Pro
 
     const items = Array.isArray(page?.data) ? [...page.data].reverse() : [];
     for (const ev of items) {
-      const evTs = Number((ev as any)?.timestampMs ?? 0);
-      if (evTs > 0 && evTs < startupMs) continue;
       const pj: any = ev?.parsedJson ?? {};
-      if (Number(pj.kind ?? -1) !== 2) continue;
-      const to = String(pj.addr0 ?? "").toLowerCase();
-      if (to !== myAddr) continue;
       const taskId = String(pj.task_id ?? "");
       const creator = String(pj.actor ?? "");
-      if (taskId) await processAssigned(ctx, taskId, creator);
+      if (!taskId) continue;
+      await processAssigned(ctx, taskId, creator, { ignoreFreshness: true });
     }
   } catch (e: any) {
     console.warn(`[node ${nodeId}] replay recent assignments failed (continue): ${e?.message ?? e}`);

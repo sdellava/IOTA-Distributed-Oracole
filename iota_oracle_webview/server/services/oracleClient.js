@@ -1,0 +1,361 @@
+// Copyright (c) 2026 Stefano Della Valle
+// SPDX-License-Identifier: LicenseRef-Proprietary
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import dotenv from "dotenv";
+import { config, getRuntimeConfig } from "../config.js";
+const activeChildren = new Set();
+let cleanupHooksInstalled = false;
+function npmCommand() {
+    return "npm";
+}
+async function buildClientEnv(network) {
+    const runtime = getRuntimeConfig(network);
+    const envPath = path.join(config.oracleClientDir, ".env");
+    let parsed = {};
+    try {
+        const raw = await fs.readFile(envPath, "utf8");
+        parsed = dotenv.parse(raw);
+    }
+    catch {
+        parsed = {};
+    }
+    const runtimeOverrides = {
+        IOTA_NETWORK: runtime.network,
+        IOTA_RPC_URL: runtime.rpcUrl,
+    };
+    if (runtime.oracleTasksPackageId) {
+        runtimeOverrides.ORACLE_TASKS_PACKAGE_ID = runtime.oracleTasksPackageId;
+        runtimeOverrides.ORACLE_PACKAGE_ID = runtime.oracleTasksPackageId;
+    }
+    if (runtime.oracleSystemPackageId) {
+        runtimeOverrides.ORACLE_SYSTEM_PACKAGE_ID = runtime.oracleSystemPackageId;
+    }
+    if (runtime.oracleStateId) {
+        runtimeOverrides.ORACLE_STATE_ID = runtime.oracleStateId;
+        runtimeOverrides.ORACLE_STATUS_ID = runtime.oracleStateId;
+        runtimeOverrides.ORACLE_SYSTEM_STATE_ID = runtime.oracleStateId;
+    }
+    if (runtime.oracleTreasuryId) {
+        runtimeOverrides.ORACLE_TREASURY_ID = runtime.oracleTreasuryId;
+        runtimeOverrides.ORACLE_TREASURY_OBJECT_ID = runtime.oracleTreasuryId;
+    }
+    if (runtime.oracleTaskRegistryId) {
+        runtimeOverrides.ORACLE_TASK_REGISTRY_ID = runtime.oracleTaskRegistryId;
+    }
+    if (runtime.oracleTaskSchedulerQueueId) {
+        runtimeOverrides.ORACLE_TASK_SCHEDULER_QUEUE_ID = runtime.oracleTaskSchedulerQueueId;
+    }
+    if (runtime.oracleTasksPackageId) {
+        runtimeOverrides.ORACLE_TASKS_PACKAGE_ID = runtime.oracleTasksPackageId;
+    }
+    if (runtime.iotaRandomObjectId) {
+        runtimeOverrides.IOTA_RANDOM_OBJECT_ID = runtime.iotaRandomObjectId;
+    }
+    if (runtime.iotaClockObjectId) {
+        runtimeOverrides.IOTA_CLOCK_OBJECT_ID = runtime.iotaClockObjectId;
+        runtimeOverrides.IOTA_CLOCK_ID = runtime.iotaClockObjectId;
+    }
+    return {
+        ...process.env,
+        ...parsed,
+        ...runtimeOverrides,
+    };
+}
+async function spawnClientCommand(args, network) {
+    const env = await buildClientEnv(network);
+    const effectiveArgs = ["--silent", ...args];
+    if (process.platform === "win32") {
+        return spawn("cmd.exe", ["/d", "/s", "/c", "npm", ...effectiveArgs], {
+            cwd: config.oracleClientDir,
+            shell: false,
+            env,
+        });
+    }
+    return spawn(npmCommand(), effectiveArgs, {
+        cwd: config.oracleClientDir,
+        shell: false,
+        env,
+    });
+}
+function childTimeoutMs() {
+    const raw = process.env.WEBVIEW_CLIENT_TIMEOUT_MS?.trim();
+    const parsed = raw ? Number(raw) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 120_000;
+}
+function terminateChild(child, reason) {
+    if (child.killed || child.exitCode != null)
+        return;
+    try {
+        if (process.platform === "win32") {
+            void spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
+                stdio: "ignore",
+                shell: false,
+            });
+            return;
+        }
+        child.kill("SIGTERM");
+        setTimeout(() => {
+            if (!child.killed && child.exitCode == null) {
+                child.kill("SIGKILL");
+            }
+        }, 5_000).unref();
+    }
+    catch {
+        console.warn(`[iota_oracle_webview] failed to terminate child (${reason}) pid=${String(child.pid ?? "?")}`);
+    }
+}
+function installCleanupHooks() {
+    if (cleanupHooksInstalled)
+        return;
+    cleanupHooksInstalled = true;
+    const cleanup = (reason) => {
+        for (const child of activeChildren) {
+            terminateChild(child, reason);
+        }
+    };
+    process.on("exit", () => cleanup("exit"));
+    process.on("SIGINT", () => cleanup("SIGINT"));
+    process.on("SIGTERM", () => cleanup("SIGTERM"));
+}
+async function runChildCommand(childPromise) {
+    installCleanupHooks();
+    const child = await childPromise;
+    activeChildren.add(child);
+    return new Promise((resolve, reject) => {
+        let stdout = "";
+        let stderr = "";
+        const timeout = setTimeout(() => {
+            terminateChild(child, "timeout");
+        }, childTimeoutMs());
+        child.stdout?.on("data", (chunk) => {
+            stdout += String(chunk);
+        });
+        child.stderr?.on("data", (chunk) => {
+            stderr += String(chunk);
+        });
+        child.on("error", (error) => {
+            clearTimeout(timeout);
+            activeChildren.delete(child);
+            reject(error);
+        });
+        child.on("close", (exitCode) => {
+            clearTimeout(timeout);
+            activeChildren.delete(child);
+            resolve({ stdout, stderr, exitCode });
+        });
+    });
+}
+function extractJsonFromStdout(stdout) {
+    const trimmed = stdout.trim();
+    if (!trimmed) {
+        throw new Error("Wallet preparation returned empty stdout.");
+    }
+    try {
+        return JSON.parse(trimmed);
+    }
+    catch { }
+    const lines = trimmed
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+        const line = lines[i];
+        if (!line.startsWith("{") && !line.startsWith("["))
+            continue;
+        try {
+            return JSON.parse(line);
+        }
+        catch { }
+    }
+    const firstBrace = trimmed.indexOf("{");
+    if (firstBrace >= 0) {
+        const candidate = trimmed.slice(firstBrace).trim();
+        try {
+            return JSON.parse(candidate);
+        }
+        catch { }
+    }
+    throw new Error(`Wallet preparation did not return valid JSON. Raw stdout:
+${stdout}`);
+}
+function normalizeTaskPayloadInput(input) {
+    let value = input;
+    if (typeof value === "string") {
+        value = JSON.parse(value);
+    }
+    if (!value || typeof value !== "object") {
+        throw new Error("Task payload must be a JSON object.");
+    }
+    const record = value;
+    const unwrapped = record.task ?? record.payload ?? record.taskJson ?? record.json ?? record;
+    let task = unwrapped;
+    if (typeof task === "string") {
+        task = JSON.parse(task);
+    }
+    if (!task || typeof task !== "object") {
+        throw new Error("Normalized task payload must be a JSON object.");
+    }
+    const normalized = { ...task };
+    if (typeof normalized.template_id === "string" && /^\d+$/.test(normalized.template_id)) {
+        normalized.template_id = Number(normalized.template_id);
+    }
+    if (typeof normalized.template_id !== "number" || !Number.isFinite(normalized.template_id)) {
+        throw new Error('Task JSON must contain numeric "template_id"');
+    }
+    return normalized;
+}
+async function spawnCreateTask(taskFilePath, network) {
+    return spawnClientCommand(["run", "create", "--", taskFilePath], network);
+}
+async function spawnPrepareWalletTask(taskFilePath, sender, network) {
+    return spawnClientCommand(["run", "create", "--", "prepare-webview", taskFilePath, sender], network);
+}
+async function spawnPrepareTaskScheduleWalletTask(taskFilePath, scheduleFilePath, sender, network) {
+    return spawnClientCommand(["run", "create", "--", "prepare-task-schedule-webview", taskFilePath, scheduleFilePath, sender], network);
+}
+export async function listExampleTasks() {
+    try {
+        const entries = await fs.readdir(config.oracleExamplesDir, { withFileTypes: true });
+        return entries
+            .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".json"))
+            .map((entry) => ({
+            name: entry.name,
+            path: path.join(config.oracleExamplesDir, entry.name),
+        }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }
+    catch {
+        return [];
+    }
+}
+export async function readExampleTask(exampleName) {
+    await fs.access(config.oracleExamplesDir).catch(() => {
+        throw new Error(`Oracle examples directory not found: ${config.oracleExamplesDir}`);
+    });
+    const fullPath = path.resolve(config.oracleExamplesDir, exampleName);
+    if (!fullPath.startsWith(config.oracleExamplesDir)) {
+        throw new Error("Invalid example path.");
+    }
+    const content = await fs.readFile(fullPath, "utf8");
+    return JSON.parse(content);
+}
+export async function prepareOracleTaskForWallet(task, sender, network) {
+    await fs.access(config.oracleClientDir).catch(() => {
+        throw new Error(`Oracle client directory not found: ${config.oracleClientDir}`);
+    });
+    const normalizedSender = String(sender ?? "").trim();
+    if (!normalizedSender) {
+        throw new Error("Wallet sender address is required.");
+    }
+    const normalizedTask = normalizeTaskPayloadInput(task);
+    await fs.mkdir(path.join(os.tmpdir(), "iota_oracle_webview"), { recursive: true });
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "iota_oracle_webview", "task-"));
+    const taskFilePath = path.join(tempDir, "task.json");
+    await fs.writeFile(taskFilePath, `${JSON.stringify(normalizedTask, null, 2)}\n`, "utf8");
+    const startedAt = new Date().toISOString();
+    try {
+        const result = await runChildCommand(spawnPrepareWalletTask(taskFilePath, normalizedSender, network));
+        if (result.exitCode !== 0) {
+            throw new Error(result.stderr.trim() ||
+                result.stdout.trim() ||
+                `Wallet preparation failed with exit code ${String(result.exitCode)}`);
+        }
+        const parsed = extractJsonFromStdout(result.stdout);
+        return {
+            ...parsed,
+            cwd: config.oracleClientDir,
+            command: process.platform === "win32"
+                ? `cmd.exe /d /s /c npm --silent run create -- prepare-webview ${taskFilePath} ${normalizedSender}`
+                : `${npmCommand()} --silent run create -- prepare-webview ${taskFilePath} ${normalizedSender}`,
+            taskFilePath,
+            stdout: result.stdout,
+            stderr: result.stderr,
+            exitCode: result.exitCode,
+            startedAt,
+            finishedAt: new Date().toISOString(),
+        };
+    }
+    finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+    }
+}
+export async function prepareOracleTaskScheduleForWallet(task, schedule, sender, network) {
+    await fs.access(config.oracleClientDir).catch(() => {
+        throw new Error(`Oracle client directory not found: ${config.oracleClientDir}`);
+    });
+    const normalizedSender = String(sender ?? "").trim();
+    if (!normalizedSender) {
+        throw new Error("Wallet sender address is required.");
+    }
+    const normalizedTask = normalizeTaskPayloadInput(task);
+    const normalizedSchedule = schedule && typeof schedule === "object" && !Array.isArray(schedule)
+        ? { ...schedule }
+        : (() => {
+            throw new Error("Schedule payload must be a JSON object.");
+        })();
+    await fs.mkdir(path.join(os.tmpdir(), "iota_oracle_webview"), { recursive: true });
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "iota_oracle_webview", "task-schedule-"));
+    const taskFilePath = path.join(tempDir, "task.json");
+    const scheduleFilePath = path.join(tempDir, "schedule.json");
+    await fs.writeFile(taskFilePath, `${JSON.stringify(normalizedTask, null, 2)}\n`, "utf8");
+    await fs.writeFile(scheduleFilePath, `${JSON.stringify(normalizedSchedule, null, 2)}\n`, "utf8");
+    const startedAt = new Date().toISOString();
+    try {
+        const result = await runChildCommand(spawnPrepareTaskScheduleWalletTask(taskFilePath, scheduleFilePath, normalizedSender, network));
+        if (result.exitCode !== 0) {
+            throw new Error(result.stderr.trim() ||
+                result.stdout.trim() ||
+                `Scheduled wallet preparation failed with exit code ${String(result.exitCode)}`);
+        }
+        const parsed = extractJsonFromStdout(result.stdout);
+        return {
+            ...parsed,
+            cwd: config.oracleClientDir,
+            command: process.platform === "win32"
+                ? `cmd.exe /d /s /c npm --silent run create -- prepare-task-schedule-webview ${taskFilePath} ${scheduleFilePath} ${normalizedSender}`
+                : `${npmCommand()} --silent run create -- prepare-task-schedule-webview ${taskFilePath} ${scheduleFilePath} ${normalizedSender}`,
+            taskFilePath,
+            stdout: result.stdout,
+            stderr: result.stderr,
+            exitCode: result.exitCode,
+            startedAt,
+            finishedAt: new Date().toISOString(),
+        };
+    }
+    finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+    }
+}
+export async function executeOracleTask(task, network) {
+    await fs.access(config.oracleClientDir).catch(() => {
+        throw new Error(`Oracle client directory not found: ${config.oracleClientDir}`);
+    });
+    const normalizedTask = normalizeTaskPayloadInput(task);
+    await fs.mkdir(path.join(os.tmpdir(), "iota_oracle_webview"), { recursive: true });
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "iota_oracle_webview", "task-"));
+    const taskFilePath = path.join(tempDir, "task.json");
+    await fs.writeFile(taskFilePath, `${JSON.stringify(normalizedTask, null, 2)}\n`, "utf8");
+    const startedAt = new Date().toISOString();
+    try {
+        const result = await runChildCommand(spawnCreateTask(taskFilePath, network));
+        return {
+            ok: result.exitCode === 0,
+            cwd: config.oracleClientDir,
+            command: process.platform === "win32"
+                ? `cmd.exe /d /s /c npm --silent run create -- ${taskFilePath}`
+                : `${npmCommand()} --silent run create -- ${taskFilePath}`,
+            taskFilePath,
+            stdout: result.stdout,
+            stderr: result.stderr,
+            exitCode: result.exitCode,
+            startedAt,
+            finishedAt: new Date().toISOString(),
+        };
+    }
+    finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+    }
+}

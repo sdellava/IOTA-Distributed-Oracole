@@ -14,7 +14,7 @@ dependencies = [
 
 [[move.package]]
 id = "Iota"
-source = { git = "https://github.com/iotaledger/iota.git", rev = "431ab686e6f1d4abd83b16dd7c671712002ecac8", subdir = "crates/iota-framework/packages/iota-framework" }
+source = { git = "https://github.com/iotaledger/iota.git", rev = "0daac7d867b5d4407be4533b4583d75464f50267", subdir = "crates/iota-framework/packages/iota-framework" }
 
 dependencies = [
   { id = "MoveStdlib", name = "MoveStdlib" },
@@ -22,7 +22,7 @@ dependencies = [
 
 [[move.package]]
 id = "IotaSystem"
-source = { git = "https://github.com/iotaledger/iota.git", rev = "431ab686e6f1d4abd83b16dd7c671712002ecac8", subdir = "crates/iota-framework/packages/iota-system" }
+source = { git = "https://github.com/iotaledger/iota.git", rev = "0daac7d867b5d4407be4533b4583d75464f50267", subdir = "crates/iota-framework/packages/iota-system" }
 
 dependencies = [
   { id = "Iota", name = "Iota" },
@@ -31,11 +31,11 @@ dependencies = [
 
 [[move.package]]
 id = "MoveStdlib"
-source = { git = "https://github.com/iotaledger/iota.git", rev = "431ab686e6f1d4abd83b16dd7c671712002ecac8", subdir = "crates/iota-framework/packages/move-stdlib" }
+source = { git = "https://github.com/iotaledger/iota.git", rev = "0daac7d867b5d4407be4533b4583d75464f50267", subdir = "crates/iota-framework/packages/move-stdlib" }
 
 [[move.package]]
 id = "Stardust"
-source = { git = "https://github.com/iotaledger/iota.git", rev = "431ab686e6f1d4abd83b16dd7c671712002ecac8", subdir = "crates/iota-framework/packages/stardust" }
+source = { git = "https://github.com/iotaledger/iota.git", rev = "0daac7d867b5d4407be4533b4583d75464f50267", subdir = "crates/iota-framework/packages/stardust" }
 
 dependencies = [
   { id = "Iota", name = "Iota" },
@@ -62,6 +62,6 @@ flavor = "iota"
 
 [env.devnet]
 chain-id = "daf90477"
-original-published-id = "0xc2178bfa54162fb5546e2e6e3082790a47980e4ffbd19b59c9eb4f5099120561"
-latest-published-id = "0xc2178bfa54162fb5546e2e6e3082790a47980e4ffbd19b59c9eb4f5099120561"
+original-published-id = "0x230051406993f20201a30402efc3083ec31a458812bee3c84e8af7e9b445b193"
+latest-published-id = "0x230051406993f20201a30402efc3083ec31a458812bee3c84e8af7e9b445b193"
 published-version = "1"

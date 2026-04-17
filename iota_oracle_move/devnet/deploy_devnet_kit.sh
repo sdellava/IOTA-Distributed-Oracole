@@ -6,11 +6,9 @@ trap 'echo "[error] line $LINENO: command failed: $BASH_COMMAND" >&2' ERR
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SYSTEM_STATE_DIR="${SCRIPT_DIR}/oracle_system_state_devnet"
 TASKS_DIR="${SCRIPT_DIR}/oracle_tasks_devnet"
-SCHEDULER_DIR="${SCRIPT_DIR}/iota_task_scheduler_devnet"
 
 SYSTEM_STATE_TXT="${SYSTEM_STATE_DIR}/devnet_system_state.txt"
 TASKS_TXT="${TASKS_DIR}/oracle_task_devnet.txt"
-SCHEDULER_TXT="${SCHEDULER_DIR}/devnet_scheduler.txt"
 
 TARGET_ENV="${TARGET_ENV:-devnet}"
 DEPLOY_ADDRESS="${DEPLOY_ADDRESS:-OID_Groundcontrol}"
@@ -74,6 +72,32 @@ move_toml.write_text(text, encoding="utf-8")
 PY
 }
 
+set_move_toml_unpublished() {
+  local move_toml="$1"
+  local address_name="$2"
+
+  python3 - "$move_toml" "$address_name" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+move_toml = Path(sys.argv[1])
+address_name = sys.argv[2]
+text = move_toml.read_text(encoding="utf-8", errors="ignore")
+
+text, count_pub = re.subn(r'(?m)^published-at = ".*"$', 'published-at = "0x0"', text, count=1)
+if count_pub != 1:
+    raise SystemExit(f"failed to reset published-at in {move_toml}")
+
+pattern = rf'(?m)^{re.escape(address_name)} = ".*"$'
+text, count_addr = re.subn(pattern, f'{address_name} = "0x0"', text, count=1)
+if count_addr != 1:
+    raise SystemExit(f"failed to reset address {address_name} in {move_toml}")
+
+move_toml.write_text(text, encoding="utf-8")
+PY
+}
+
 read_move_toml_identity() {
   local move_toml="$1"
   python3 - "$move_toml" <<'PY'
@@ -103,17 +127,23 @@ publish_package() {
   local label="$4"
   local result_var="$5"
   local package_id
+  local move_toml="${package_dir}/Move.toml"
 
   echo >&2
   echo "[publish] ${label}" >&2
   echo "[path] ${package_dir}" >&2
 
   local existing_id
-  existing_id="$(read_move_toml_identity "${package_dir}/Move.toml")"
+  existing_id="$(read_move_toml_identity "${move_toml}")"
   if [[ "${FORCE_REPUBLISH}" != "1" && -n "$existing_id" && "$existing_id" != "0x0" ]]; then
     printf -v "$result_var" '%s' "$existing_id"
     echo "[skip] ${label} already published at ${existing_id}" >&2
     return 0
+  fi
+
+  if [[ "${FORCE_REPUBLISH}" == "1" ]]; then
+    echo "[info] resetting ${label} package address to 0x0 for publish" >&2
+    set_move_toml_unpublished "${move_toml}" "${address_name}"
   fi
 
   if ! (
@@ -130,7 +160,7 @@ publish_package() {
     return 1
   }
 
-  update_move_toml_identity "${package_dir}/Move.toml" "$address_name" "$package_id"
+  update_move_toml_identity "${move_toml}" "$address_name" "$package_id"
   printf -v "$result_var" '%s' "$package_id"
 
   echo "[ok] ${label} package_id=${package_id}" >&2
@@ -140,24 +170,20 @@ publish_package() {
 print_summary() {
   local system_state_pkg="$1"
   local tasks_pkg="$2"
-  local scheduler_pkg="$3"
 
   cat <<EOF
 
 [summary]
   system_state package: ${system_state_pkg}
   tasks package:        ${tasks_pkg}
-  scheduler package:    ${scheduler_pkg}
 
 [reports]
   ${SYSTEM_STATE_TXT}
   ${TASKS_TXT}
-  ${SCHEDULER_TXT}
 
 [next env values]
   DEVNET_ORACLE_SYSTEM_PACKAGE_ID=${system_state_pkg}
   DEVNET_ORACLE_TASKS_PACKAGE_ID=${tasks_pkg}
-  DEVNET_ORACLE_SCHEDULER_PACKAGE_ID=${scheduler_pkg}
 EOF
 }
 
@@ -166,7 +192,6 @@ require_cmd python3
 
 [[ -d "$SYSTEM_STATE_DIR" ]] || { echo "[error] missing dir: $SYSTEM_STATE_DIR" >&2; exit 1; }
 [[ -d "$TASKS_DIR" ]] || { echo "[error] missing dir: $TASKS_DIR" >&2; exit 1; }
-[[ -d "$SCHEDULER_DIR" ]] || { echo "[error] missing dir: $SCHEDULER_DIR" >&2; exit 1; }
 
 switch_context
 
@@ -176,10 +201,8 @@ echo "[info] force republish: ${FORCE_REPUBLISH}"
 
 SYSTEM_STATE_PKG=""
 TASKS_PKG=""
-SCHEDULER_PKG=""
 
 publish_package "$SYSTEM_STATE_DIR" "$SYSTEM_STATE_TXT" "iota_oracle_system_state" "system state" SYSTEM_STATE_PKG
 publish_package "$TASKS_DIR" "$TASKS_TXT" "iota_oracle_tasks" "oracle tasks" TASKS_PKG
-publish_package "$SCHEDULER_DIR" "$SCHEDULER_TXT" "iota_oracle_scheduler" "oracle scheduler" SCHEDULER_PKG
 
-print_summary "$SYSTEM_STATE_PKG" "$TASKS_PKG" "$SCHEDULER_PKG"
+print_summary "$SYSTEM_STATE_PKG" "$TASKS_PKG"

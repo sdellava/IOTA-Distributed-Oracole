@@ -90,11 +90,10 @@ export function getRuntimeConfig(network = activeNetwork) {
     rpcUrl: pickNetworkValue(selected, "IOTA_RPC_URL", "https://api.mainnet.iota.cafe"),
     oracleTasksPackageId: pickNetworkValue(selected, "ORACLE_TASKS_PACKAGE_ID"),
     oracleSystemPackageId: pickNetworkValue(selected, "ORACLE_SYSTEM_PACKAGE_ID"),
-    oracleSchedulerPackageId: pickNetworkValue(selected, "ORACLE_SCHEDULER_PACKAGE_ID"),
     oracleStateId: pickNetworkValue(selected, "ORACLE_STATE_ID", pickNetworkValue(selected, "ORACLE_SYSTEM_STATE_ID", pickNetworkValue(selected, "ORACLE_STATUS_ID"))),
     oracleTreasuryId: pickNetworkValue(selected, "ORACLE_TREASURY_ID", pickNetworkValue(selected, "ORACLE_TREASURY_OBJECT_ID")),
-    oracleScheduledTaskRegistryId: pickNetworkValue(selected, "ORACLE_SCHEDULED_TASK_REGISTRY_ID"),
-    oracleSchedulerQueueId: pickNetworkValue(selected, "ORACLE_SCHEDULER_QUEUE_ID"),
+    oracleTaskRegistryId: pickNetworkValue(selected, "ORACLE_TASK_REGISTRY_ID"),
+    oracleTaskSchedulerQueueId: pickNetworkValue(selected, "ORACLE_TASK_SCHEDULER_QUEUE_ID"),
     iotaRandomObjectId: pickNetworkValue(selected, "IOTA_RANDOM_OBJECT_ID"),
     iotaClockObjectId: pickNetworkValue(selected, "IOTA_CLOCK_OBJECT_ID", pickNetworkValue(selected, "IOTA_CLOCK_ID")),
   };

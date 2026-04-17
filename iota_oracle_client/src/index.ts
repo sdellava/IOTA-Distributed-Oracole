@@ -50,13 +50,14 @@ type PreparedTask = {
 
 type CreateTaskContext = {
   tasksPkg: string;
+  registryId: string;
   stateId: string;
   iotaSystemStateId: string;
   treasuryId: string;
   randomId: string;
   clockId: string;
   prepared: PreparedTask;
-  requiredPayment: bigint;
+  requiredPerRun: bigint;
   gasBudget: bigint;
 };
 
@@ -75,7 +76,10 @@ type PreparedWalletTransaction = {
   serializedTransaction: string;
   gasBudget: string;
   requiredPayment: string;
+  requiredPerRun: string;
   rawPrice: string;
+  systemFee: string;
+  totalPrice: string;
   downloadPrice: string;
   extraDownloadBytes: string;
   balance: string;
@@ -99,9 +103,9 @@ type PreparedWalletTransaction = {
   };
 };
 
-type PreparedScheduledWalletTransaction = {
+type PreparedTaskScheduleWalletTransaction = {
   ok: true;
-  mode: "prepare-scheduled-webview";
+  mode: "prepare-task-schedule-webview";
   sender: string;
   serializedTransaction: string;
   gasBudget: string;
@@ -176,15 +180,9 @@ function getIotaSystemStateId(): string {
   return envAny("IOTA_SYSTEM_STATE_ID") ?? "0x5";
 }
 
-function getSchedulerPackageId(): string {
-  const v = envAny("ORACLE_SCHEDULER_PACKAGE_ID");
-  if (!v) throw new Error("Missing env ORACLE_SCHEDULER_PACKAGE_ID");
-  return v;
-}
-
-function getScheduledTaskRegistryId(): string {
-  const v = envAny("ORACLE_SCHEDULED_TASK_REGISTRY_ID");
-  if (!v) throw new Error("Missing env ORACLE_SCHEDULED_TASK_REGISTRY_ID");
+function getTaskRegistryId(): string {
+  const v = envAny("ORACLE_TASK_REGISTRY_ID");
+  if (!v) throw new Error("Missing env ORACLE_TASK_REGISTRY_ID");
   return v;
 }
 
@@ -630,6 +628,7 @@ async function getTaskTemplateById(
       taskType: bytesToUtf8(decodeVecU8(v.task_type)),
       isEnabled: asNumber(v.is_enabled),
       basePriceIota: asBigInt(v.base_price_iota),
+      schedulerFeeIota: asBigInt(v.scheduler_fee_iota),
       maxInputBytes: asBigInt(v.max_input_bytes),
       maxOutputBytes: asBigInt(v.max_output_bytes),
       includedDownloadBytes: asBigInt(v.included_download_bytes),
@@ -806,8 +805,7 @@ async function fetchTreasuryBalance(client: AnyClient, treasuryId: string, syste
 }
 
 function isTaskFinalizedObjectFields(f: Record<string, any>): boolean {
-  const resultBytes = decodeVecU8(f.result);
-  return resultBytes.length > 0 || Number(f.state ?? -1) === 9;
+  return asBigInt(f.latest_result_seq, 0n) > 0n || Number(f.execution_state ?? f.state ?? -1) === 9;
 }
 
 async function isTaskFinalized(client: AnyClient, taskId: string): Promise<boolean> {
@@ -815,33 +813,49 @@ async function isTaskFinalized(client: AnyClient, taskId: string): Promise<boole
   return isTaskFinalizedObjectFields(getMoveFields(obj));
 }
 
+type TaskResultState = {
+  seq: bigint;
+  fields: Record<string, any>;
+};
+
 type TaskCompositeState = {
   taskId: string;
   taskFields: Record<string, any>;
-  configId: string;
-  configFields: Record<string, any>;
-  runtimeId: string;
-  runtimeFields: Record<string, any>;
+  latestResult: TaskResultState | null;
 };
 
 async function readTaskCompositeState(client: AnyClient, taskId: string): Promise<TaskCompositeState> {
   const taskObj = await client.getObject({ id: taskId, options: { showContent: true, showType: true } });
   const taskFields = getMoveFields(taskObj);
-  const configId = moveObjectIdToString(taskFields.config_id);
-  const runtimeId = moveObjectIdToString(taskFields.runtime_id);
+  const latestResultSeq = asBigInt(taskFields.latest_result_seq, 0n);
+  let latestResult: TaskResultState | null = null;
 
-  const [configObj, runtimeObj] = await Promise.all([
-    configId ? client.getObject({ id: configId, options: { showContent: true, showType: true } }) : null,
-    runtimeId ? client.getObject({ id: runtimeId, options: { showContent: true, showType: true } }) : null,
-  ]);
+  if (latestResultSeq > 0n) {
+    try {
+      const tasksPkg = getTasksPackageId();
+      const resultObj = await client.getDynamicFieldObject({
+        parentId: taskId,
+        name: {
+          type: `${tasksPkg}::oracle_tasks::TaskResultKey`,
+          value: { seq: latestResultSeq.toString() },
+        },
+      } as any);
+      latestResult = {
+        seq: latestResultSeq,
+        fields: unwrapFieldValue(resultObj),
+      };
+    } catch {
+      latestResult = {
+        seq: latestResultSeq,
+        fields: {},
+      };
+    }
+  }
 
   return {
     taskId,
     taskFields,
-    configId,
-    configFields: configObj ? getMoveFields(configObj) : {},
-    runtimeId,
-    runtimeFields: runtimeObj ? getMoveFields(runtimeObj) : {},
+    latestResult,
   };
 }
 
@@ -852,14 +866,12 @@ function readTaskMediationMeta(snapshot: TaskCompositeState): {
   mediationVariance: number;
 } {
   const task = snapshot.taskFields;
-  const config = snapshot.configFields;
-  const runtime = snapshot.runtimeFields;
 
   return {
-    mediationMode: Number(task.mediation_mode ?? config.mediation_mode ?? runtime.mediation_mode ?? 0),
-    mediationAttempts: Number(task.mediation_attempts ?? runtime.mediation_attempts ?? 0),
-    mediationStatus: Number(task.mediation_status ?? runtime.mediation_status ?? 0),
-    mediationVariance: Number(task.mediation_variance ?? runtime.mediation_variance ?? 0),
+    mediationMode: Number(task.mediation_mode ?? 0),
+    mediationAttempts: Number(task.active_round ?? 0),
+    mediationStatus: Number(task.execution_state ?? 0),
+    mediationVariance: Number(task.variance_max ?? 0),
   };
 }
 
@@ -879,12 +891,12 @@ async function waitTaskCompletedOrResult(opts: {
   while (Date.now() - started < timeoutMs) {
     const snapshot = await readTaskCompositeState(client, taskId);
     const task = snapshot.taskFields;
-    const state = Number(task.state ?? -1);
+    const state = Number(task.execution_state ?? task.state ?? -1);
     const round = Number(task.active_round ?? 0);
     const { mediationMode, mediationAttempts, mediationStatus, mediationVariance } = readTaskMediationMeta(snapshot);
 
-    const resultBytes = decodeVecU8(task.result);
-    if (resultBytes.length > 0 || state === 9) return { kind: "finalized" as const, state };
+    const resultBytes = snapshot.latestResult ? decodeVecU8(snapshot.latestResult.fields.result) : new Uint8Array();
+    if (snapshot.latestResult || resultBytes.length > 0 || state === 9) return { kind: "finalized" as const, state };
 
     if (state === 10) {
       const mediationEnabled = mediationMode === 1;
@@ -898,28 +910,11 @@ async function waitTaskCompletedOrResult(opts: {
       return { kind: "failed" as const, state };
     }
 
-    if (state === 4) {
-      const mediationEnabled = mediationMode === 1;
-      if (!mediationEnabled) return { kind: "no_consensus" as const, state };
-
-      if (mediationStatus === 2) {
-        console.log(
-          `[client] mediation blocked -> terminal no_consensus (round=${round}, attempts=${mediationAttempts}, variance=${mediationVariance})`,
-        );
-        return { kind: "no_consensus" as const, state };
-      }
-
-      if (mediationAttempts > 0) {
-        console.log(
-          `[client] mediation already attempted -> terminal no_consensus (round=${round}, attempts=${mediationAttempts}, status=${mediationStatus})`,
-        );
-        return { kind: "no_consensus" as const, state };
-      }
-
+    if (state === 2 && mediationMode === 1) {
       const now = Date.now();
       if (now - lastLog > 10_000) {
         console.log(
-          `[client] state=4 (no_consensus) but mediation pending -> keep waiting (round=${round}, attempts=${mediationAttempts}, status=${mediationStatus})`,
+          `[client] mediation pending -> keep waiting (round=${round}, attempts=${mediationAttempts}, status=${mediationStatus}, variance_limit=${mediationVariance})`,
         );
         lastLog = now;
       }
@@ -1026,168 +1021,56 @@ function extractTaskIdFromTx(res: any): string {
   return "";
 }
 
-function makeLegacyCreateTaskTx(ctx: CreateTaskContext): Transaction {
-  const { tasksPkg, stateId, randomId, clockId, prepared, gasBudget } = ctx;
+function makeCreateTaskTx(ctx: CreateTaskContext): Transaction {
+  const { tasksPkg, registryId, stateId, prepared, requiredPerRun, gasBudget } = ctx;
   const tx = new Transaction();
   tx.setGasBudget(Number(gasBudget));
+  const [paymentCoin] = tx.splitCoins(tx.gas, [tx.pure(bcsU64(requiredPerRun))]);
+  const startScheduleMs = BigInt(Date.now());
+
   tx.moveCall({
     target: `${tasksPkg}::oracle_tasks::create_task`,
     arguments: [
+      tx.object(registryId),
       tx.object(stateId),
-      tx.object(randomId),
-      tx.object(clockId),
+      paymentCoin,
+      tx.pure(bcsU64(prepared.templateId)),
       tx.pure(bcsU64(prepared.requestedNodes)),
       tx.pure(bcsU64(prepared.quorumK)),
-      tx.pure(bcsVecU8(utf8ToBytes(prepared.taskType))),
       tx.pure(bcsVecU8(utf8ToBytes(prepared.payloadText))),
+      tx.pure(bcsU64(prepared.retentionDays)),
+      tx.pure(bcsU64(prepared.declaredDownloadBytes)),
       tx.pure(bcsU8(prepared.mediationMode)),
       tx.pure(bcsU64(prepared.varianceMax)),
+      tx.pure(bcsU8(prepared.createResultControllerCap)),
+      tx.pure(bcsU64(startScheduleMs)),
+      tx.pure(bcsU64(0)),
+      tx.pure(bcsU64(0)),
     ],
   });
   return tx;
 }
 
-function makeTemplateCreateTaskTx(ctx: CreateTaskContext, variant: string): Transaction {
-  const { tasksPkg, stateId, iotaSystemStateId, treasuryId, randomId, clockId, prepared, requiredPayment, gasBudget } =
-    ctx;
-  const tx = new Transaction();
-  tx.setGasBudget(Number(gasBudget));
-  const [paymentCoin] = tx.splitCoins(tx.gas, [tx.pure(bcsU64(requiredPayment))]);
-
-  const common = {
-    target: `${tasksPkg}::oracle_tasks::create_task`,
-  };
-
-  if (variant === "state_treasury_payment_v1") {
-    tx.moveCall({
-      ...common,
-      arguments: [
-        tx.object(stateId),
-        tx.object(iotaSystemStateId),
-        tx.object(treasuryId),
-        paymentCoin,
-        tx.object(randomId),
-        tx.object(clockId),
-        tx.pure(bcsU64(prepared.templateId)),
-        tx.pure(bcsU64(prepared.requestedNodes)),
-        tx.pure(bcsU64(prepared.quorumK)),
-        tx.pure(bcsVecU8(utf8ToBytes(prepared.payloadText))),
-        tx.pure(bcsU64(prepared.retentionDays)),
-        tx.pure(bcsU64(prepared.declaredDownloadBytes)),
-        tx.pure(bcsU8(prepared.mediationMode)),
-        tx.pure(bcsU64(prepared.varianceMax)),
-        tx.pure(bcsU8(prepared.createResultControllerCap)),
-      ],
-    });
-    return tx;
-  }
-
-  if (variant === "template_payment_v1") {
-    tx.moveCall({
-      ...common,
-      arguments: [
-        tx.object(stateId),
-        tx.object(randomId),
-        tx.object(clockId),
-        paymentCoin,
-        tx.pure(bcsU64(prepared.templateId)),
-        tx.pure(bcsU64(prepared.retentionDays)),
-        tx.pure(bcsU64(prepared.requestedNodes)),
-        tx.pure(bcsU64(prepared.quorumK)),
-        tx.pure(bcsVecU8(utf8ToBytes(prepared.taskType))),
-        tx.pure(bcsVecU8(utf8ToBytes(prepared.payloadText))),
-        tx.pure(bcsU8(prepared.mediationMode)),
-        tx.pure(bcsU64(prepared.varianceMax)),
-      ],
-    });
-    return tx;
-  }
-
-  if (variant === "template_payment_v2") {
-    tx.moveCall({
-      ...common,
-      arguments: [
-        tx.object(stateId),
-        tx.object(randomId),
-        tx.object(clockId),
-        paymentCoin,
-        tx.pure(bcsU64(prepared.templateId)),
-        tx.pure(bcsU64(prepared.requestedNodes)),
-        tx.pure(bcsU64(prepared.quorumK)),
-        tx.pure(bcsVecU8(utf8ToBytes(prepared.taskType))),
-        tx.pure(bcsVecU8(utf8ToBytes(prepared.payloadText))),
-        tx.pure(bcsU8(prepared.mediationMode)),
-        tx.pure(bcsU64(prepared.varianceMax)),
-        tx.pure(bcsU64(prepared.retentionDays)),
-      ],
-    });
-    return tx;
-  }
-
-  if (variant === "template_payment_v3") {
-    tx.moveCall({
-      ...common,
-      arguments: [
-        tx.object(stateId),
-        tx.object(randomId),
-        tx.object(clockId),
-        paymentCoin,
-        tx.pure(bcsU64(prepared.templateId)),
-        tx.pure(bcsU64(prepared.retentionDays)),
-        tx.pure(bcsU64(prepared.requestedNodes)),
-        tx.pure(bcsU64(prepared.quorumK)),
-        tx.pure(bcsVecU8(utf8ToBytes(prepared.payloadText))),
-        tx.pure(bcsU8(prepared.mediationMode)),
-        tx.pure(bcsU64(prepared.varianceMax)),
-      ],
-    });
-    return tx;
-  }
-
-  if (variant === "template_payment_v4") {
-    tx.moveCall({
-      ...common,
-      arguments: [
-        tx.object(stateId),
-        tx.object(randomId),
-        tx.object(clockId),
-        paymentCoin,
-        tx.pure(bcsU64(prepared.templateId)),
-        tx.pure(bcsU64(prepared.requestedNodes)),
-        tx.pure(bcsU64(prepared.quorumK)),
-        tx.pure(bcsVecU8(utf8ToBytes(prepared.payloadText))),
-        tx.pure(bcsU8(prepared.mediationMode)),
-        tx.pure(bcsU64(prepared.varianceMax)),
-        tx.pure(bcsU64(prepared.retentionDays)),
-      ],
-    });
-    return tx;
-  }
-
-  throw new Error(`Unknown create_task variant: ${variant}`);
-}
-
 function buildCreateTaskVariants(ctx: CreateTaskContext): Record<string, () => Transaction> {
   return {
-    state_treasury_payment_v1: () => makeTemplateCreateTaskTx(ctx, "state_treasury_payment_v1"),
-    legacy_v0: () => makeLegacyCreateTaskTx(ctx),
+    merged_single_run_v2: () => makeCreateTaskTx(ctx),
   };
 }
 
-function makeCreateScheduledTaskTx(args: {
-  schedulerPkg: string;
+function makeCreateTaskWithScheduleTx(args: {
+  tasksPkg: string;
   registryId: string;
   stateId: string;
   prepared: PreparedTask;
   schedule: ScheduleInput;
   gasBudget: bigint;
 }): Transaction {
-  const { schedulerPkg, registryId, stateId, prepared, schedule, gasBudget } = args;
+  const { tasksPkg, registryId, stateId, prepared, schedule, gasBudget } = args;
   const tx = new Transaction();
   tx.setGasBudget(Number(gasBudget));
   const [fundingCoin] = tx.splitCoins(tx.gas, [tx.pure(bcsU64(schedule.initialFunds))]);
   tx.moveCall({
-    target: `${schedulerPkg}::oracle_scheduled_tasks::create_scheduled_task`,
+    target: `${tasksPkg}::oracle_tasks::create_task`,
     arguments: [
       tx.object(registryId),
       tx.object(stateId),
@@ -1312,6 +1195,7 @@ function serializeTransactionForWallet(tx: Transaction): string {
 async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?: string) {
   const tasksPkg = getTasksPackageId();
   const systemPkg = getSystemPackageId();
+  const registryId = getTaskRegistryId();
   const stateId = getStateId();
   const iotaSystemStateId = getIotaSystemStateId();
   const treasuryId = getTreasuryId();
@@ -1342,27 +1226,29 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
   );
   const balance = await fetchIotaBalance(client, sender);
   const treasuryBalanceBefore = await fetchTreasuryBalance(client, treasuryId, systemPkg);
-  const needed = requiredPayment + gasBudget;
+  const needed = requiredPerRun + gasBudget;
   if (balance < needed) {
     throw new Error(
-      `Insufficient IOTA for address ${sender}: balance=${balance.toString()} required_payment=${requiredPayment.toString()} gas_budget=${gasBudget.toString()} total_needed=${needed.toString()}`,
+      `Insufficient IOTA for address ${sender}: balance=${balance.toString()} required_per_run=${requiredPerRun.toString()} gas_budget=${gasBudget.toString()} total_needed=${needed.toString()}`,
     );
   }
 
   const builders = buildCreateTaskVariants({
     tasksPkg,
+    registryId,
     stateId,
     iotaSystemStateId,
     treasuryId,
     randomId,
     clockId,
     prepared,
-    requiredPayment,
+    requiredPerRun,
     gasBudget,
   });
 
   return {
     tasksPkg,
+    registryId,
     systemPkg,
     stateId,
     iotaSystemStateId,
@@ -1386,7 +1272,7 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
   };
 }
 
-async function runPrepareScheduledWebview(
+async function runPrepareTaskScheduleWebview(
   taskArg: string | undefined,
   scheduleArg: string | undefined,
   sender: string | undefined,
@@ -1394,7 +1280,7 @@ async function runPrepareScheduledWebview(
   const normalizedSender = String(sender ?? "").trim();
   if (!normalizedSender) {
     throw new Error(
-      "Usage: npm run create -- prepare-scheduled-webview <task.json | inline-json> <schedule.json | inline-json> <sender-address>",
+      "Usage: npm run create -- prepare-task-schedule-webview <task.json | inline-json> <schedule.json | inline-json> <sender-address>",
     );
   }
 
@@ -1403,14 +1289,14 @@ async function runPrepareScheduledWebview(
   const schedule = normalizeScheduleInput(
     loadJsonArg(
       scheduleArg,
-      "Usage: npm run create -- prepare-scheduled-webview <task.json | inline-json> <schedule.json | inline-json> <sender-address>",
+      "Usage: npm run create -- prepare-task-schedule-webview <task.json | inline-json> <schedule.json | inline-json> <sender-address>",
     ),
   );
 
-  const schedulerPkg = getSchedulerPackageId();
-  const registryId = getScheduledTaskRegistryId();
-  const tx = makeCreateScheduledTaskTx({
-    schedulerPkg,
+  const tasksPkg = getTasksPackageId();
+  const registryId = getTaskRegistryId();
+  const tx = makeCreateTaskWithScheduleTx({
+    tasksPkg,
     registryId,
     stateId: plan.stateId,
     prepared: plan.prepared,
@@ -1424,9 +1310,9 @@ async function runPrepareScheduledWebview(
       ? ((schedule.endScheduleMs - schedule.startScheduleMs) / schedule.intervalMs + 1n).toString()
       : null;
 
-  const payload: PreparedScheduledWalletTransaction = {
+  const payload: PreparedTaskScheduleWalletTransaction = {
     ok: true,
-    mode: "prepare-scheduled-webview",
+    mode: "prepare-task-schedule-webview",
     sender: normalizedSender,
     serializedTransaction: serializeTransactionForWallet(tx),
     gasBudget: plan.gasBudget.toString(),
@@ -1483,6 +1369,7 @@ async function runPrepareWebview(taskArg: string | undefined, sender: string | u
     serializedTransaction: serializeTransactionForWallet(tx),
     gasBudget: plan.gasBudget.toString(),
     requiredPayment: plan.requiredPayment.toString(),
+    requiredPerRun: plan.requiredPerRun.toString(),
     rawPrice: plan.rawPrice.toString(),
     systemFee: plan.systemFee.toString(),
     totalPrice: plan.totalPrice.toString(),
@@ -1565,28 +1452,26 @@ async function runCliCreate(taskArg?: string) {
 
   const snapshot = await readTaskCompositeState(client, taskId);
   const taskFields = snapshot.taskFields;
-  const configFields = snapshot.configFields;
-  const runtimeFields = snapshot.runtimeFields;
+  const latestResultFields = snapshot.latestResult?.fields ?? {};
   const mediationMeta = readTaskMediationMeta(snapshot);
 
-  console.log(`task_payment_iota: ${String(taskFields.payment_iota ?? "0")}`);
+  console.log(`task_available_balance_iota: ${String(taskFields.available_balance_iota?.value ?? taskFields.available_balance_iota ?? "0")}`);
   console.log(`task_template_id: ${String(taskFields.template_id ?? "0")}`);
-  console.log(`task_config_id: ${snapshot.configId || "<missing>"}`);
-  console.log(`task_runtime_id: ${snapshot.runtimeId || "<missing>"}`);
-  console.log(`task_retention_days: ${String(configFields.retention_days ?? "0")}`);
-  console.log(`task_declared_download_bytes: ${String(configFields.declared_download_bytes ?? "0")}`);
+  console.log(`task_retention_days: ${String(taskFields.retention_days ?? "0")}`);
+  console.log(`task_declared_download_bytes: ${String(taskFields.declared_download_bytes ?? "0")}`);
   console.log(`task_mediation_mode: ${String(mediationMeta.mediationMode)}`);
-  console.log(
-    `task_variance_max: ${String(configFields.variance_max ?? runtimeFields.variance_max ?? taskFields.variance_max ?? "0")}`,
-  );
+  console.log(`task_variance_max: ${String(taskFields.variance_max ?? "0")}`);
   console.log(`task_mediation_attempts: ${String(mediationMeta.mediationAttempts)}`);
   console.log(`task_mediation_status: ${String(mediationMeta.mediationStatus)}`);
   console.log(`task_mediation_variance: ${String(mediationMeta.mediationVariance)}`);
-  const resultBytes = decodeVecU8(taskFields.result);
-  const multisigBytes = decodeVecU8(taskFields.multisig_bytes);
-  const multisigAddr = String(taskFields.multisig_addr ?? "");
+  const resultBytes = decodeVecU8(latestResultFields.result);
+  const multisigBytes = decodeVecU8(latestResultFields.multisig_bytes);
+  const multisigAddr = String(latestResultFields.multisig_addr ?? "");
+  const latestResultSeq = snapshot.latestResult?.seq?.toString() ?? "0";
 
   console.log("--- TASK RESULT ---");
+  console.log("latest_result_seq:", latestResultSeq);
+  console.log("result_reason_code:", String(latestResultFields.reason_code ?? "0"));
   console.log("multisig_addr:", multisigAddr);
   console.log("multisig_bytes_b64:", Buffer.from(multisigBytes).toString("base64"));
   console.log("result_utf8 (first 4000 chars):\n", new TextDecoder().decode(resultBytes).slice(0, 4000));
@@ -1599,8 +1484,8 @@ async function main() {
     return;
   }
 
-  if (mode === "prepare-scheduled-webview") {
-    await runPrepareScheduledWebview(process.argv[3], process.argv[4], process.argv[5]);
+  if (mode === "prepare-task-schedule-webview") {
+    await runPrepareTaskScheduleWebview(process.argv[3], process.argv[4], process.argv[5]);
     return;
   }
 

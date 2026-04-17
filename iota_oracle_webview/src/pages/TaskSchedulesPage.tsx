@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
 import { useEffect, useState } from "react";
-import { fetchScheduledTasks } from "../lib/api";
-import type { OracleNetwork, ScheduledTaskItem, ScheduledTasksResponse } from "../types";
+import { fetchTaskSchedules } from "../lib/api";
+import type { OracleNetwork, TaskScheduleItem, TaskSchedulesResponse } from "../types";
 
 type Props = {
   activeNetwork: OracleNetwork;
@@ -46,15 +46,15 @@ function formatIotaAtomic(value: string | null | undefined): string {
   });
 }
 
-function statusClass(item: ScheduledTaskItem): string {
+function statusClass(item: TaskScheduleItem): string {
   const label = item.statusLabel.toLowerCase();
   if (label === "active") return "is-on";
   if (label === "ended") return "is-off";
   return "is-warn";
 }
 
-export default function ScheduledTasksPage({ activeNetwork }: Props) {
-  const [data, setData] = useState<ScheduledTasksResponse | null>(null);
+export default function TaskSchedulesPage({ activeNetwork }: Props) {
+  const [data, setData] = useState<TaskSchedulesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,7 +63,7 @@ export default function ScheduledTasksPage({ activeNetwork }: Props) {
     const load = async (withLoading = false) => {
       if (withLoading) setLoading(true);
       try {
-        const response = await fetchScheduledTasks(activeNetwork);
+        const response = await fetchTaskSchedules(activeNetwork);
         if (!cancelled) {
           setData(response);
           setError(null);
@@ -132,11 +132,11 @@ export default function ScheduledTasksPage({ activeNetwork }: Props) {
       </section>
 
       <section className="card card-spaced">
-        <div className="section-title">Scheduled tasks</div>
+        <div className="section-title">Task schedules</div>
         {loading ? (
-          <div className="empty">Loading scheduled tasks...</div>
+          <div className="empty">Loading task schedules...</div>
         ) : !data?.items?.length ? (
-          <div className="empty">No scheduled tasks found.</div>
+          <div className="empty">No task schedules found.</div>
         ) : (
           <div className="table-wrap">
             <table className="responsive-table">

@@ -4,8 +4,8 @@
 import type { IotaClient } from "@iota/iota-sdk/client";
 
 import {
-  getScheduledTaskRegistryId,
-  getSchedulerQueueId,
+  getTaskRegistryId,
+  getTaskSchedulerQueueId,
 } from "../config/env";
 import { getMoveFields } from "../utils/move";
 
@@ -18,15 +18,16 @@ export type SchedulerQueueSnapshot = {
   roundCounter: number;
 };
 
-export type ScheduledTaskSnapshot = {
+export type TaskSnapshot = {
   id: string;
   creator: string;
   status: number;
+  executionState: number;
   templateId: number;
   nextRunMs: number;
   endScheduleMs: number;
   lastRunMs: number;
-  balanceIota: string;
+  availableBalanceIota: string;
 };
 
 function toArray(value: any): any[] {
@@ -68,7 +69,10 @@ function toBalanceString(value: any): string {
   return "0";
 }
 
-export async function readSchedulerQueue(client: IotaClient, queueId = getSchedulerQueueId()): Promise<SchedulerQueueSnapshot> {
+export async function readTaskSchedulerQueue(
+  client: IotaClient,
+  queueId = getTaskSchedulerQueueId(),
+): Promise<SchedulerQueueSnapshot> {
   const obj = await client.getObject({ id: queueId, options: { showContent: true } } as any);
   const f = getMoveFields(obj);
   const nodes = toArray(f.nodes).map(toStr).filter(Boolean).map((x) => x.toLowerCase());
@@ -82,37 +86,38 @@ export async function readSchedulerQueue(client: IotaClient, queueId = getSchedu
   };
 }
 
-export async function readScheduledTaskRegistry(client: IotaClient, registryId = getScheduledTaskRegistryId()): Promise<string[]> {
+export async function readTaskRegistry(client: IotaClient, registryId = getTaskRegistryId()): Promise<string[]> {
   const obj = await client.getObject({ id: registryId, options: { showContent: true } } as any);
   const f = getMoveFields(obj);
-  return toArray(f.scheduled_task_ids).map(toStr).filter(Boolean);
+  return toArray(f.live_task_ids).map(toStr).filter(Boolean);
 }
 
-export async function readScheduledTask(client: IotaClient, taskId: string): Promise<ScheduledTaskSnapshot> {
+export async function readTask(client: IotaClient, taskId: string): Promise<TaskSnapshot> {
   const obj = await client.getObject({ id: taskId, options: { showContent: true } } as any);
   const f = getMoveFields(obj);
   return {
     id: taskId,
     creator: toStr(f.creator).toLowerCase(),
     status: toNum(f.status),
+    executionState: toNum(f.execution_state),
     templateId: toNum(f.template_id),
     nextRunMs: toNum(f.next_run_ms),
     endScheduleMs: toNum(f.end_schedule_ms),
     lastRunMs: toNum(f.last_run_ms),
-    balanceIota: toBalanceString(f.balance_iota),
+    availableBalanceIota: toBalanceString(f.available_balance_iota),
   };
 }
 
-export async function listDueScheduledTasks(
+export async function listDueTasks(
   client: IotaClient,
   nowMs: number,
-  registryId = getScheduledTaskRegistryId(),
-): Promise<ScheduledTaskSnapshot[]> {
-  const ids = await readScheduledTaskRegistry(client, registryId);
-  const out: ScheduledTaskSnapshot[] = [];
+  registryId = getTaskRegistryId(),
+): Promise<TaskSnapshot[]> {
+  const ids = await readTaskRegistry(client, registryId);
+  const out: TaskSnapshot[] = [];
   for (const id of ids) {
     try {
-      const task = await readScheduledTask(client, id);
+      const task = await readTask(client, id);
       if (task.status !== 1) continue;
       if (task.nextRunMs <= 0 || task.nextRunMs > nowMs) continue;
       out.push(task);

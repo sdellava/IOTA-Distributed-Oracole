@@ -148,7 +148,6 @@ const data = JSON.parse(fs.readFileSync(0, "utf8"));
 const approved = Array.isArray(data?.approvedTemplates) ? data.approvedTemplates : [];
 const pending = Array.isArray(data?.pendingProposals) ? data.pendingProposals : [];
 const map = new Map();
-map.set(0, { id: 0, type: "SCHEDULER", src: "implicit" });
 for (const t of approved) {
   const id = Number(t?.templateId);
   if (!Number.isFinite(id) || id < 0) continue;
@@ -201,7 +200,7 @@ else
   done
   echo ""
   echo "Select templates that this node should support:"
-  echo "  - one/more template ids (example: 0 4 5 or 0,4,5)"
+  echo "  - one/more template ids (example: 4 5 6 or 4,5,6)"
   echo "  - or 'all'"
   read -r -p "> " SEL
   SEL="$(echo "$SEL" | tr '[:upper:]' '[:lower:]' | xargs)"

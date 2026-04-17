@@ -3,7 +3,7 @@
 
 import type { NodeContext } from "../nodeContext";
 import { processSchedulerRound } from "../handlers/scheduler";
-import { acceptsTemplate, optBool, optInt } from "../nodeConfig";
+import { optBool, optInt } from "../nodeConfig";
 import { sleep } from "../utils/sleep";
 
 function jitterMs(maxMs: number): number {
@@ -13,9 +13,8 @@ function jitterMs(maxMs: number): number {
 
 export function startSchedulerWorker(ctx: NodeContext): void {
   if (!optBool("SCHEDULER_ENABLED", true)) return;
-  if (!acceptsTemplate(0, ctx.acceptedTemplateIds)) return;
 
-  const checkMs = optInt("SCHEDULER_CHECK_MS", 60_000);
+  const checkMs = optInt("SCHEDULER_CHECK_MS", 30_000);
   const startupJitter = jitterMs(optInt("SCHEDULER_STARTUP_JITTER_MS", 8_000));
   let inFlight = false;
 

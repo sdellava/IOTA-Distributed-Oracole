@@ -12,17 +12,18 @@ import {
   getRuntimeConfig,
   getSupportedNetworks,
   setActiveNetwork,
+  type OracleNetwork,
 } from "./config.js";
 import {
   executeOracleTask,
   listExampleTasks,
-  prepareOracleScheduledTaskForWallet,
+  prepareOracleTaskScheduleForWallet,
   prepareOracleTaskForWallet,
   readExampleTask,
 } from "./services/oracleClient.js";
 import { getIotaMarketPrice } from "./services/marketData.js";
 import { getOracleStatus } from "./services/oracleStatus.js";
-import { getScheduledTasks } from "./services/scheduledTasks.js";
+import { getTaskSchedules } from "./services/taskSchedules.js";
 
 const app = express();
 
@@ -46,6 +47,34 @@ function asRecord(value: unknown): Record<string, any> | null {
     : null;
 }
 
+function extractFields(value: unknown): Record<string, any> | null {
+  const record = asRecord(value);
+  if (!record) return null;
+
+  const fields = asRecord(record.fields);
+  if (fields) return fields;
+
+  const data = asRecord(record.data);
+  if (data) {
+    const nested = extractFields(data);
+    if (nested) return nested;
+  }
+
+  const content = asRecord(record.content);
+  if (content) {
+    const nested = extractFields(content);
+    if (nested) return nested;
+  }
+
+  const nestedValue = asRecord(record.value);
+  if (nestedValue) {
+    const nested = extractFields(nestedValue);
+    if (nested) return nested;
+  }
+
+  return null;
+}
+
 function normalizeAddress(value: unknown): string {
   const s = String(value ?? "").trim().toLowerCase();
   if (!s) return "";
@@ -63,6 +92,72 @@ function moveObjectIdToString(value: unknown): string {
   }
 
   return "";
+}
+
+function extractEventTaskId(value: unknown): string {
+  const direct = normalizeAddress(
+    moveObjectIdToString(
+      asRecord(value)?.task_id ??
+        asRecord(value)?.taskId ??
+        asRecord(value)?.task ??
+        asRecord(asRecord(value)?.task)?.id,
+    ),
+  );
+  if (direct) return direct;
+
+  const record = extractFields(value) ?? asRecord(value);
+  if (!record) return "";
+
+  for (const key of ["task_id", "taskId", "task"]) {
+    if (!(key in record)) continue;
+    const nested = normalizeAddress(moveObjectIdToString(record[key]));
+    if (nested) return nested;
+    const nestedFields = extractFields(record[key]) ?? asRecord(record[key]);
+    if (!nestedFields) continue;
+    const nestedId = normalizeAddress(
+      moveObjectIdToString(nestedFields.id ?? nestedFields.objectId ?? nestedFields.value),
+    );
+    if (nestedId) return nestedId;
+  }
+
+  return "";
+}
+
+function numberFromUnknown(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.floor(value);
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return Math.floor(parsed);
+  }
+  const record = asRecord(value);
+  if (!record) return null;
+  return numberFromUnknown(record.value);
+}
+
+function taskCompatState(fields: Record<string, any>): number {
+  const directState = numberFromUnknown(fields.state);
+  if (directState != null) return directState;
+  const executionState = numberFromUnknown(fields.execution_state) ?? -1;
+  if (executionState === 1) return 1;
+  if (executionState === 2) return 2;
+  if (executionState === 9) return 9;
+  if (executionState === 10) return 10;
+  return 0;
+}
+
+function unwrapFieldValue(obj: any): Record<string, any> {
+  const direct = asRecord(obj?.data?.content?.fields);
+  if (direct) return direct;
+  const value = asRecord(obj?.data?.content?.fields?.value);
+  if (value) return value;
+  const nestedValue = asRecord(obj?.data?.content?.fields?.value?.fields);
+  if (nestedValue) return nestedValue;
+  const content = asRecord(obj?.data?.content);
+  if (content) {
+    const nested = asRecord(content.fields);
+    if (nested) return nested;
+  }
+  return {};
 }
 
 async function queryTaskEventsByModule(
@@ -101,9 +196,7 @@ async function queryTaskEventsByModule(
 
     for (const evt of page?.data ?? []) {
       const parsed = (evt?.parsedJson ?? evt?.parsed_json ?? null) as Record<string, unknown> | null;
-      const eventTaskId = normalizeAddress(
-        moveObjectIdToString(parsed?.task_id ?? parsed?.taskId),
-      );
+      const eventTaskId = extractEventTaskId(parsed);
 
       if (eventTaskId !== wantedTaskId) continue;
 
@@ -131,17 +224,17 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/status", async (req, res) => {
   try {
     const network = typeof req.query.network === "string" ? req.query.network : undefined;
-    const status = await getOracleStatus(network);
+    const status = await getOracleStatus(network as OracleNetwork | undefined);
     res.json(status);
   } catch (error) {
     sendApiError(res, 500, error);
   }
 });
 
-app.get("/api/scheduled-tasks", async (req, res) => {
+app.get("/api/task-schedules", async (req, res) => {
   try {
     const network = typeof req.query.network === "string" ? req.query.network : undefined;
-    const data = await getScheduledTasks(network);
+    const data = await getTaskSchedules(network as OracleNetwork | undefined);
     res.json(data);
   } catch (error) {
     sendApiError(res, 500, error);
@@ -150,7 +243,7 @@ app.get("/api/scheduled-tasks", async (req, res) => {
 
 app.get("/api/network", (req, res) => {
   const requested = typeof req.query.network === "string" ? req.query.network : undefined;
-  const runtime = getRuntimeConfig(requested);
+  const runtime = getRuntimeConfig(requested as OracleNetwork | undefined);
   res.json({
     activeNetwork: requested ? runtime.network : getActiveNetwork(),
     supportedNetworks: getSupportedNetworks(),
@@ -238,9 +331,24 @@ app.get("/api/task/:taskId", async (req, res) => {
       return;
     }
 
-    const content = data.content;
-    const fields =
-      content && typeof content === "object" && "fields" in content ? content.fields : {};
+    const fields = extractFields(data.content) ?? {};
+    const latestResultSeq = numberFromUnknown(fields.latest_result_seq) ?? 0;
+    let latestResultFields: Record<string, any> = {};
+
+    if (latestResultSeq > 0 && runtime.oracleTasksPackageId) {
+      try {
+        const latestResultObj = await client.getDynamicFieldObject({
+          parentId: taskId,
+          name: {
+            type: `${runtime.oracleTasksPackageId}::oracle_tasks::TaskResultKey`,
+            value: { seq: String(latestResultSeq) },
+          },
+        } as any);
+        latestResultFields = unwrapFieldValue(latestResultObj);
+      } catch {
+        latestResultFields = {};
+      }
+    }
 
     function pick(...values: unknown[]) {
       for (const v of values) {
@@ -249,14 +357,39 @@ app.get("/api/task/:taskId", async (req, res) => {
       return null;
     }
 
+    function collectArrayItems(value: any, out: any[]): void {
+      if (value == null) return;
+      if (Array.isArray(value)) {
+        for (const item of value) collectArrayItems(item, out);
+        return;
+      }
+      if (typeof value !== "object") {
+        out.push(value);
+        return;
+      }
+
+      const record = value as Record<string, any>;
+      const nestedFields = asRecord(record.fields);
+      if (nestedFields && nestedFields !== record) collectArrayItems(nestedFields, out);
+
+      for (const key of ["items", "contents", "vec", "value", "fields", "data"]) {
+        if (key in record) collectArrayItems(record[key], out);
+      }
+    }
+
     function asArray(value: any): any[] {
-      if (Array.isArray(value)) return value;
-      if (value && Array.isArray(value.items)) return value.items;
-      if (value && Array.isArray(value.vec)) return value.vec;
-      if (value && Array.isArray(value.fields?.items)) return value.fields.items;
-      if (value && Array.isArray(value.fields?.contents)) return value.fields.contents;
-      if (value && Array.isArray(value.contents)) return value.contents;
-      return [];
+      const out: any[] = [];
+      collectArrayItems(value, out);
+      return out;
+    }
+
+    function asTextArray(value: any): string[] {
+      const out: string[] = [];
+      for (const item of asArray(value)) {
+        const normalized = normalizeAddress(moveObjectIdToString(item) || String(item ?? ""));
+        if (normalized) out.push(normalized);
+      }
+      return out.filter((item, index) => out.indexOf(item) === index);
     }
 
     const normalized = {
@@ -267,22 +400,29 @@ app.get("/api/task/:taskId", async (req, res) => {
       owner: data.owner ?? null,
       task_id: data.objectId,
       template_id: pick(fields.template_id, fields.config?.fields?.template_id),
-      assigned_nodes: asArray(
+      assigned_nodes: asTextArray(
         pick(fields.assigned_nodes, fields.runtime?.fields?.assigned_nodes, fields.consensus?.fields?.assigned_nodes),
       ),
-      state: pick(fields.state, fields.runtime?.fields?.state),
+      status: pick(fields.status, fields.runtime?.fields?.status),
+      execution_state: pick(fields.execution_state, fields.runtime?.fields?.execution_state),
+      active_round: pick(fields.active_round, fields.runtime?.fields?.active_round),
+      state: taskCompatState(fields),
       quorum_k: Number(
         pick(fields.quorum_k, fields.config?.fields?.quorum_k, fields.consensus?.fields?.quorum_k, 0),
       ),
-      multisig_addr: pick(fields.multisig_addr, fields.certificate?.fields?.multisig_addr),
-      multisig_bytes: pick(fields.multisig_bytes, fields.certificate?.fields?.multisig_bytes),
-      certificate_blob: pick(fields.certificate_blob, fields.certificate?.fields?.certificate_blob),
-      certificate_signers: asArray(
-        pick(fields.certificate_signers, fields.certificate?.fields?.certificate_signers),
+      multisig_addr: pick(latestResultFields.multisig_addr, fields.multisig_addr, fields.certificate?.fields?.multisig_addr),
+      multisig_bytes: pick(latestResultFields.multisig_bytes, fields.multisig_bytes, fields.certificate?.fields?.multisig_bytes),
+      certificate_blob: pick(latestResultFields.certificate_blob, fields.certificate_blob, fields.certificate?.fields?.certificate_blob),
+      certificate_signers: asTextArray(
+        pick(latestResultFields.certificate_signers, fields.certificate_signers, fields.certificate?.fields?.certificate_signers),
       ),
-      result: pick(fields.result, fields.runtime?.fields?.result),
-      result_hash: pick(fields.result_hash, fields.runtime?.fields?.result_hash),
-      result_bytes: pick(fields.result_bytes, fields.runtime?.fields?.result_bytes),
+      result: pick(latestResultFields.result, fields.result, fields.runtime?.fields?.result),
+      result_hash: pick(latestResultFields.result_hash, fields.result_hash, fields.runtime?.fields?.result_hash),
+      result_bytes: pick(latestResultFields.result, latestResultFields.result_bytes, fields.result_bytes, fields.runtime?.fields?.result_bytes),
+      reason_code: pick(latestResultFields.reason_code, 0),
+      latest_result_seq: pick(fields.latest_result_seq, fields.runtime?.fields?.latest_result_seq),
+      result_order: asArray(pick(fields.result_order, fields.runtime?.fields?.result_order)),
+      latest_result: latestResultFields,
       raw: fields,
     };
 
@@ -355,7 +495,7 @@ app.post("/api/tasks/prepare-wallet", async (req, res) => {
   }
 });
 
-app.post("/api/tasks/prepare-scheduled-wallet", async (req, res) => {
+app.post("/api/tasks/prepare-task-schedule-wallet", async (req, res) => {
   try {
     const task = (req.body as any)?.task;
     const schedule = (req.body as any)?.schedule;
@@ -369,7 +509,7 @@ app.post("/api/tasks/prepare-scheduled-wallet", async (req, res) => {
       res.status(400).json({ error: "Body must include schedule object." });
       return;
     }
-    const prepared = await prepareOracleScheduledTaskForWallet(task, schedule, sender, network);
+    const prepared = await prepareOracleTaskScheduleForWallet(task, schedule, sender, network);
     res.json(prepared);
   } catch (error) {
     sendApiError(res, 400, error);

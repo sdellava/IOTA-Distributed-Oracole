@@ -11,7 +11,7 @@ import TaskRunner from "./components/TaskRunner";
 import { fetchExamples, fetchIotaMarketPrice, fetchNetworkConfig, fetchStatusForNetwork, updateActiveNetwork } from "./lib/api";
 import type { ExampleTask, IotaMarketPriceResponse, OracleNetwork, OracleStatus, OracleTemplateCost } from "./types";
 import ValidateTaskPage from "./pages/ValidateTaskPage";
-import ScheduledTasksPage from "./pages/ScheduledTasksPage";
+import TaskSchedulesPage from "./pages/TaskSchedulesPage";
 
 const REFRESH_MS = 10_000;
 
@@ -400,7 +400,7 @@ export default function App() {
                       >
                         <RcMenuItem key="run">Run task</RcMenuItem>
                         <Divider />
-                        <RcMenuItem key="scheduled">Scheduled tasks</RcMenuItem>
+                        <RcMenuItem key="scheduled">Task schedules</RcMenuItem>
                         <Divider />
                         <RcMenuItem key="validate">Validate task</RcMenuItem>
                       </Menu>
@@ -522,7 +522,10 @@ export default function App() {
               Task templates
             </div>
             {!availableTemplates.length ? (
-              <div className="empty">No task template costs found.</div>
+              <div className="empty">
+                No approved task templates found on-chain for this network. Nodes can still advertise supported template IDs, but
+                task creation and scheduling require the corresponding templates to be proposed and approved first.
+              </div>
             ) : !selectedTemplateId ? (
               <div className="template-empty-state">Select or load a task template to view its pricing details.</div>
             ) : !selectedTemplate ? (
@@ -626,7 +629,7 @@ export default function App() {
           />
         </>
       ) : pageMode === "scheduled" ? (
-        <ScheduledTasksPage activeNetwork={activeNetwork} />
+        <TaskSchedulesPage activeNetwork={activeNetwork} />
       ) : (
         <ValidateTaskPage />
       )}

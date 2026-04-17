@@ -6,9 +6,8 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 SYSTEM_STATE_REPORT="${SCRIPT_DIR}/oracle_system_state_devnet/devnet_system_state.txt"
 TASKS_REPORT="${SCRIPT_DIR}/oracle_tasks_devnet/oracle_task_devnet.txt"
-SCHEDULER_REPORT="${SCRIPT_DIR}/iota_task_scheduler_devnet/devnet_scheduler.txt"
 
-python3 - "$REPO_ROOT" "$SYSTEM_STATE_REPORT" "$TASKS_REPORT" "$SCHEDULER_REPORT" <<'PY'
+python3 - "$REPO_ROOT" "$SYSTEM_STATE_REPORT" "$TASKS_REPORT" <<'PY'
 from pathlib import Path
 import re
 import sys
@@ -16,7 +15,6 @@ import sys
 repo_root = Path(sys.argv[1])
 system_report = Path(sys.argv[2])
 tasks_report = Path(sys.argv[3])
-scheduler_report = Path(sys.argv[4])
 
 
 def read(path: Path) -> str:
@@ -37,12 +35,16 @@ def package_id_from_report(text: str) -> str | None:
 
 
 def object_id_for_type(text: str, suffix: str) -> str | None:
-    pattern = re.compile(
-        r'ObjectID:\s*(0x[a-fA-F0-9]+).*?ObjectType:\s*(0x[a-fA-F0-9]+::' + re.escape(suffix) + r')',
-        re.S,
-    )
-    match = pattern.search(text)
-    return match.group(1) if match else None
+    blocks = re.findall(r"│  ┌──[\s\S]*?│  └──", text)
+    type_pattern = re.compile(r"ObjectType:\s*(0x[a-fA-F0-9]+::" + re.escape(suffix) + r")")
+    id_pattern = re.compile(r"ObjectID:\s*(0x[a-fA-F0-9]+)")
+    for block in blocks:
+        if not type_pattern.search(block):
+            continue
+        match = id_pattern.search(block)
+        if match:
+            return match.group(1)
+    return None
 
 
 def first_env_value(key: str) -> str | None:
@@ -75,7 +77,6 @@ def pick(label: str, *candidates: str | None) -> str:
 
 system_text = read(system_report)
 tasks_text = read(tasks_report)
-scheduler_text = read(scheduler_report)
 
 values = {
     "ORACLE_SYSTEM_PACKAGE_ID": pick(
@@ -89,12 +90,6 @@ values = {
         package_id_from_report(tasks_text),
         read_move_toml_published_at(repo_root / "iota_oracle_move" / "devnet" / "oracle_tasks_devnet" / "Move.toml"),
         first_env_value("ORACLE_TASKS_PACKAGE_ID"),
-    ),
-    "ORACLE_SCHEDULER_PACKAGE_ID": pick(
-        "ORACLE_SCHEDULER_PACKAGE_ID",
-        package_id_from_report(scheduler_text),
-        read_move_toml_published_at(repo_root / "iota_oracle_move" / "devnet" / "iota_task_scheduler_devnet" / "Move.toml"),
-        first_env_value("ORACLE_SCHEDULER_PACKAGE_ID"),
     ),
     "ORACLE_STATE_ID": pick(
         "ORACLE_STATE_ID",
@@ -111,17 +106,35 @@ values = {
         object_id_for_type(system_text, "systemState::ControllerCap"),
         first_env_value("CONTROLLER_CAP_ID"),
     ),
-    "ORACLE_SCHEDULED_TASK_REGISTRY_ID": pick(
-        "ORACLE_SCHEDULED_TASK_REGISTRY_ID",
-        object_id_for_type(scheduler_text, "oracle_scheduled_tasks::ScheduledTaskRegistry"),
-        first_env_value("ORACLE_SCHEDULED_TASK_REGISTRY_ID"),
+    "ORACLE_TASK_REGISTRY_ID": pick(
+        "ORACLE_TASK_REGISTRY_ID",
+        object_id_for_type(tasks_text, "oracle_tasks::TaskRegistry"),
+        first_env_value("ORACLE_TASK_REGISTRY_ID"),
     ),
-    "ORACLE_SCHEDULER_QUEUE_ID": pick(
-        "ORACLE_SCHEDULER_QUEUE_ID",
-        object_id_for_type(scheduler_text, "oracle_scheduled_tasks::SchedulerQueue"),
-        first_env_value("ORACLE_SCHEDULER_QUEUE_ID"),
+    "ORACLE_TASK_SCHEDULER_QUEUE_ID": pick(
+        "ORACLE_TASK_SCHEDULER_QUEUE_ID",
+        object_id_for_type(tasks_text, "oracle_tasks::SchedulerQueue"),
+        first_env_value("ORACLE_TASK_SCHEDULER_QUEUE_ID"),
     ),
 }
+
+if values["CONTROLLER_CAP_ID"] == values["ORACLE_STATE_ID"]:
+    raise SystemExit(
+        "Invalid sync data: CONTROLLER_CAP_ID matches ORACLE_STATE_ID. "
+        "Check the devnet system-state report before updating env files."
+    )
+
+if values["CONTROLLER_CAP_ID"] == values["ORACLE_TREASURY_ID"]:
+    raise SystemExit(
+        "Invalid sync data: CONTROLLER_CAP_ID matches ORACLE_TREASURY_ID. "
+        "Check the devnet system-state report before updating env files."
+    )
+
+if values["ORACLE_STATE_ID"] == values["ORACLE_TREASURY_ID"]:
+    raise SystemExit(
+        "Invalid sync data: ORACLE_STATE_ID matches ORACLE_TREASURY_ID. "
+        "Check the devnet system-state report before updating env files."
+    )
 
 
 def upsert_lines(path: Path, pairs: list[tuple[str, str]], append_after: str | None = None) -> None:
@@ -156,6 +169,17 @@ def upsert_lines(path: Path, pairs: list[tuple[str, str]], append_after: str | N
         print(f"[unchanged] {path}")
 
 
+def remove_keys(path: Path, keys: list[str]) -> None:
+    if not path.exists():
+        return
+    text = read(path)
+    lines = text.splitlines()
+    filtered = [line for line in lines if not any(line.startswith(f"{key}=") for key in keys)]
+    if filtered != lines:
+        path.write_text("\n".join(filtered) + "\n", encoding="utf-8")
+        print(f"[cleaned] {path}")
+
+
 client_files = [
     repo_root / "iota_oracle_client" / ".env",
     repo_root / "iota_oracle_client" / ".env.example_devnet",
@@ -177,9 +201,8 @@ node_pairs = [
     ("ORACLE_STATE_ID", values["ORACLE_STATE_ID"]),
     ("ORACLE_TREASURY_ID", values["ORACLE_TREASURY_ID"]),
     ("CONTROLLER_CAP_ID", values["CONTROLLER_CAP_ID"]),
-    ("ORACLE_SCHEDULER_PACKAGE_ID", values["ORACLE_SCHEDULER_PACKAGE_ID"]),
-    ("ORACLE_SCHEDULER_QUEUE_ID", values["ORACLE_SCHEDULER_QUEUE_ID"]),
-    ("ORACLE_SCHEDULED_TASK_REGISTRY_ID", values["ORACLE_SCHEDULED_TASK_REGISTRY_ID"]),
+    ("ORACLE_TASK_REGISTRY_ID", values["ORACLE_TASK_REGISTRY_ID"]),
+    ("ORACLE_TASK_SCHEDULER_QUEUE_ID", values["ORACLE_TASK_SCHEDULER_QUEUE_ID"]),
 ]
 
 webview_direct_files = [
@@ -190,16 +213,14 @@ webview_direct_pairs = [
     ("ORACLE_SYSTEM_PACKAGE_ID", values["ORACLE_SYSTEM_PACKAGE_ID"]),
     ("ORACLE_STATE_ID", values["ORACLE_STATE_ID"]),
     ("ORACLE_TREASURY_ID", values["ORACLE_TREASURY_ID"]),
-    ("ORACLE_SCHEDULER_PACKAGE_ID", values["ORACLE_SCHEDULER_PACKAGE_ID"]),
-    ("ORACLE_SCHEDULER_QUEUE_ID", values["ORACLE_SCHEDULER_QUEUE_ID"]),
-    ("ORACLE_SCHEDULED_TASK_REGISTRY_ID", values["ORACLE_SCHEDULED_TASK_REGISTRY_ID"]),
+    ("ORACLE_TASK_REGISTRY_ID", values["ORACLE_TASK_REGISTRY_ID"]),
+    ("ORACLE_TASK_SCHEDULER_QUEUE_ID", values["ORACLE_TASK_SCHEDULER_QUEUE_ID"]),
     ("DEVNET_ORACLE_TASKS_PACKAGE_ID", values["ORACLE_TASKS_PACKAGE_ID"]),
     ("DEVNET_ORACLE_SYSTEM_PACKAGE_ID", values["ORACLE_SYSTEM_PACKAGE_ID"]),
     ("DEVNET_ORACLE_STATE_ID", values["ORACLE_STATE_ID"]),
     ("DEVNET_ORACLE_TREASURY_ID", values["ORACLE_TREASURY_ID"]),
-    ("DEVNET_ORACLE_SCHEDULER_PACKAGE_ID", values["ORACLE_SCHEDULER_PACKAGE_ID"]),
-    ("DEVNET_ORACLE_SCHEDULER_QUEUE_ID", values["ORACLE_SCHEDULER_QUEUE_ID"]),
-    ("DEVNET_ORACLE_SCHEDULED_TASK_REGISTRY_ID", values["ORACLE_SCHEDULED_TASK_REGISTRY_ID"]),
+    ("DEVNET_ORACLE_TASK_REGISTRY_ID", values["ORACLE_TASK_REGISTRY_ID"]),
+    ("DEVNET_ORACLE_TASK_SCHEDULER_QUEUE_ID", values["ORACLE_TASK_SCHEDULER_QUEUE_ID"]),
 ]
 
 webview_example_files = [
@@ -210,9 +231,17 @@ webview_example_pairs = [
     ("DEVNET_ORACLE_SYSTEM_PACKAGE_ID", values["ORACLE_SYSTEM_PACKAGE_ID"]),
     ("DEVNET_ORACLE_STATE_ID", values["ORACLE_STATE_ID"]),
     ("DEVNET_ORACLE_TREASURY_ID", values["ORACLE_TREASURY_ID"]),
-    ("DEVNET_ORACLE_SCHEDULER_PACKAGE_ID", values["ORACLE_SCHEDULER_PACKAGE_ID"]),
-    ("DEVNET_ORACLE_SCHEDULER_QUEUE_ID", values["ORACLE_SCHEDULER_QUEUE_ID"]),
-    ("DEVNET_ORACLE_SCHEDULED_TASK_REGISTRY_ID", values["ORACLE_SCHEDULED_TASK_REGISTRY_ID"]),
+    ("DEVNET_ORACLE_TASK_REGISTRY_ID", values["ORACLE_TASK_REGISTRY_ID"]),
+    ("DEVNET_ORACLE_TASK_SCHEDULER_QUEUE_ID", values["ORACLE_TASK_SCHEDULER_QUEUE_ID"]),
+]
+
+legacy_scheduler_keys = [
+    "ORACLE_SCHEDULER_PACKAGE_ID",
+    "ORACLE_SCHEDULER_QUEUE_ID",
+    "ORACLE_SCHEDULED_TASK_REGISTRY_ID",
+    "DEVNET_ORACLE_SCHEDULER_PACKAGE_ID",
+    "DEVNET_ORACLE_SCHEDULER_QUEUE_ID",
+    "DEVNET_ORACLE_SCHEDULED_TASK_REGISTRY_ID",
 ]
 
 for file in client_files:
@@ -226,6 +255,9 @@ for file in webview_direct_files:
 
 for file in webview_example_files:
     upsert_lines(file, webview_example_pairs, append_after="DEVNET_ORACLE_TREASURY_ID")
+
+for file in [*client_files, *node_files, *webview_direct_files, *webview_example_files]:
+    remove_keys(file, legacy_scheduler_keys)
 
 print("")
 print("[values]")

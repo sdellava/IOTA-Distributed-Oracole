@@ -34,7 +34,7 @@ function printHelp() {
   console.log(`Usage:
   npm run cli -- show-node-address --node 1
   npm run cli -- accept-template-proposal --node 1 [--proposal-id 12] [--template-id 4]
-  npm run cli -- set-accepted-templates --node 1 --templates 0,4,5,6,7,8,9,10,11`);
+  npm run cli -- set-accepted-templates --node 1 --templates 4,5,6,7,8,9,10,11`);
 }
 
 async function cmdAcceptTemplateProposal(argv: string[]) {

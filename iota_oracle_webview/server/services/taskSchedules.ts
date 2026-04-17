@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
 import { IotaClient } from "@iota/iota-sdk/client";
-import { getRuntimeConfig } from "../config.js";
-import type { ScheduledTaskItem, ScheduledTasksResponse } from "../types.js";
+import { getRuntimeConfig, type OracleNetwork } from "../config.js";
+import type { TaskScheduleItem, TaskSchedulesResponse } from "../types.js";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -45,7 +45,7 @@ function statusLabel(status: number): string {
     case 1:
       return "ACTIVE";
     case 2:
-      return "FROZEN";
+      return "SUSPENDED";
     case 9:
       return "CANCELLED";
     case 10:
@@ -65,7 +65,7 @@ function balanceToString(value: any): string {
   return "0";
 }
 
-async function readScheduledTask(client: IotaClient, id: string): Promise<ScheduledTaskItem | null> {
+async function readTaskSchedule(client: IotaClient, id: string): Promise<TaskScheduleItem | null> {
   const obj = await client.getObject({ id, options: { showContent: true } } as any);
   const f = getMoveFields(obj);
   if (!Object.keys(f).length) return null;
@@ -80,23 +80,23 @@ async function readScheduledTask(client: IotaClient, id: string): Promise<Schedu
     startScheduleMs: toText(f.start_schedule_ms),
     endScheduleMs: toText(f.end_schedule_ms),
     intervalMs: toText(f.interval_ms),
-    balanceIota: balanceToString(f.balance_iota),
+    balanceIota: balanceToString(f.available_balance_iota),
     lastSchedulerNode: toText(f.last_scheduler_node).toLowerCase() || null,
   };
 }
 
-export async function getScheduledTasks(network?: string): Promise<ScheduledTasksResponse> {
-  const runtime = getRuntimeConfig(network);
+export async function getTaskSchedules(network?: string): Promise<TaskSchedulesResponse> {
+  const runtime = getRuntimeConfig(network as OracleNetwork | undefined);
   const warnings: string[] = [];
-  const registryId = runtime.oracleScheduledTaskRegistryId || null;
-  const schedulerQueueId = runtime.oracleSchedulerQueueId || null;
+  const registryId = runtime.oracleTaskRegistryId || null;
+  const schedulerQueueId = runtime.oracleTaskSchedulerQueueId || null;
 
-  if (!registryId) warnings.push("Missing ORACLE_SCHEDULED_TASK_REGISTRY_ID for active network.");
-  if (!schedulerQueueId) warnings.push("Missing ORACLE_SCHEDULER_QUEUE_ID for active network.");
+  if (!registryId) warnings.push("Missing ORACLE_TASK_REGISTRY_ID for active network.");
+  if (!schedulerQueueId) warnings.push("Missing ORACLE_TASK_SCHEDULER_QUEUE_ID for active network.");
 
   const client = new IotaClient({ url: runtime.rpcUrl });
 
-  let queue: ScheduledTasksResponse["queue"] = null;
+  let queue: TaskSchedulesResponse["queue"] = null;
   if (schedulerQueueId) {
     try {
       const queueObj = await client.getObject({ id: schedulerQueueId, options: { showContent: true } } as any);
@@ -114,22 +114,22 @@ export async function getScheduledTasks(network?: string): Promise<ScheduledTask
     }
   }
 
-  const items: ScheduledTaskItem[] = [];
+  const items: TaskScheduleItem[] = [];
   if (registryId) {
     try {
       const registryObj = await client.getObject({ id: registryId, options: { showContent: true } } as any);
       const fields = getMoveFields(registryObj);
-      const ids = toArray(fields.scheduled_task_ids).map(toText).filter(Boolean);
+      const ids = toArray(fields.live_task_ids).map(toText).filter(Boolean);
       for (const id of ids) {
         try {
-          const item = await readScheduledTask(client, id);
+          const item = await readTaskSchedule(client, id);
           if (item) items.push(item);
         } catch (e: any) {
-          warnings.push(`Failed to read scheduled task ${id}: ${String(e?.message ?? e)}`);
+          warnings.push(`Failed to read task schedule ${id}: ${String(e?.message ?? e)}`);
         }
       }
     } catch (e: any) {
-      warnings.push(`Failed to read scheduled task registry: ${String(e?.message ?? e)}`);
+      warnings.push(`Failed to read task registry: ${String(e?.message ?? e)}`);
     }
   }
 
