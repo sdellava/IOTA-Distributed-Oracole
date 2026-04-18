@@ -160,12 +160,27 @@ function unwrapFieldValue(obj: any): Record<string, any> {
   return {};
 }
 
-async function fetchLatestTaskResult(
+type TaskResultSummary = {
+  objectId: string;
+  seq: number;
+  produced_at_ms: number;
+  run_index: number;
+  multisig_addr: unknown;
+  multisig_bytes: unknown;
+  certificate_blob: unknown;
+  certificate_signers: unknown;
+  result: unknown;
+  result_hash: unknown;
+  reason_code: unknown;
+  raw: Record<string, any>;
+};
+
+async function fetchTaskResults(
   client: IotaClient,
   taskId: string,
   tasksPackageId: string,
-): Promise<Record<string, any>> {
-  if (!taskId || !tasksPackageId) return {};
+): Promise<TaskResultSummary[]> {
+  if (!taskId || !tasksPackageId) return [];
 
   try {
     const page: any = await client.getDynamicFields({
@@ -182,7 +197,7 @@ async function fetchLatestTaskResult(
       );
     });
 
-    if (!candidates.length) return {};
+    if (!candidates.length) return [];
 
     const objects = await Promise.all(
       candidates.map(async (item: any) => {
@@ -207,17 +222,29 @@ async function fetchLatestTaskResult(
       }),
     );
 
-    const latest = objects
+    return objects
       .filter((item): item is NonNullable<typeof item> => Boolean(item))
       .sort((a, b) => {
         if (b.producedAtMs !== a.producedAtMs) return b.producedAtMs - a.producedAtMs;
         if (b.seq !== a.seq) return b.seq - a.seq;
         return b.runIndex - a.runIndex;
-      })[0];
-
-    return latest?.fields ?? {};
+      })
+      .map((item) => ({
+        objectId: item.objectId,
+        seq: item.seq,
+        produced_at_ms: item.producedAtMs,
+        run_index: item.runIndex,
+        multisig_addr: item.fields.multisig_addr ?? null,
+        multisig_bytes: item.fields.multisig_bytes ?? null,
+        certificate_blob: item.fields.certificate_blob ?? null,
+        certificate_signers: item.fields.certificate_signers ?? [],
+        result: item.fields.result ?? null,
+        result_hash: item.fields.result_hash ?? null,
+        reason_code: item.fields.reason_code ?? 0,
+        raw: item.fields,
+      }));
   } catch {
-    return {};
+    return [];
   }
 }
 
@@ -368,12 +395,13 @@ app.get("/api/market/iota-price", async (_req, res) => {
 app.get("/api/task/:taskId", async (req, res) => {
   try {
     const taskId = String(req.params.taskId ?? "").trim();
+    const network = typeof req.query.network === "string" ? req.query.network : undefined;
     if (!taskId) {
       res.status(400).json({ error: "Missing taskId" });
       return;
     }
 
-    const runtime = getRuntimeConfig();
+    const runtime = getRuntimeConfig(network as OracleNetwork | undefined);
     const client = new IotaClient({ url: runtime.rpcUrl });
 
     const response = await client.getObject({
@@ -394,10 +422,11 @@ app.get("/api/task/:taskId", async (req, res) => {
 
     const fields = extractFields(data.content) ?? {};
     const latestResultSeq = numberFromUnknown(fields.latest_result_seq) ?? 0;
-    const latestResultFields =
+    const results =
       latestResultSeq > 0 && runtime.oracleTasksPackageId
-        ? await fetchLatestTaskResult(client, taskId, runtime.oracleTasksPackageId)
-        : {};
+        ? await fetchTaskResults(client, taskId, runtime.oracleTasksPackageId)
+        : [];
+    const latestResultFields = results[0]?.raw ?? {};
 
     function pick(...values: unknown[]) {
       for (const v of values) {
@@ -472,6 +501,7 @@ app.get("/api/task/:taskId", async (req, res) => {
       latest_result_seq: pick(fields.latest_result_seq, fields.runtime?.fields?.latest_result_seq),
       result_order: asArray(pick(fields.result_order, fields.runtime?.fields?.result_order)),
       latest_result: latestResultFields,
+      results,
       raw: fields,
     };
 
@@ -484,12 +514,13 @@ app.get("/api/task/:taskId", async (req, res) => {
 app.get("/api/task/:taskId/events", async (req, res) => {
   try {
     const taskId = String(req.params.taskId ?? "").trim();
+    const network = typeof req.query.network === "string" ? req.query.network : undefined;
     if (!taskId) {
       res.status(400).json({ error: "Missing taskId" });
       return;
     }
 
-    const runtime = getRuntimeConfig();
+    const runtime = getRuntimeConfig(network as OracleNetwork | undefined);
     const client = new IotaClient({ url: runtime.rpcUrl });
 
     const taskObj: any = await client.getObject({

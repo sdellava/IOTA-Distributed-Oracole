@@ -142,9 +142,9 @@ function unwrapFieldValue(obj) {
     }
     return {};
 }
-async function fetchLatestTaskResult(client, taskId, tasksPackageId) {
+async function fetchTaskResults(client, taskId, tasksPackageId) {
     if (!taskId || !tasksPackageId)
-        return {};
+        return [];
     try {
         const page = await client.getDynamicFields({
             parentId: taskId,
@@ -157,7 +157,7 @@ async function fetchLatestTaskResult(client, taskId, tasksPackageId) {
                 nameType === `${tasksPackageId}::oracle_tasks::TaskResultKey`);
         });
         if (!candidates.length)
-            return {};
+            return [];
         const objects = await Promise.all(candidates.map(async (item) => {
             const objectId = String(item?.objectId ?? "").trim();
             if (!objectId)
@@ -180,7 +180,7 @@ async function fetchLatestTaskResult(client, taskId, tasksPackageId) {
                 return null;
             }
         }));
-        const latest = objects
+        return objects
             .filter((item) => Boolean(item))
             .sort((a, b) => {
             if (b.producedAtMs !== a.producedAtMs)
@@ -188,11 +188,24 @@ async function fetchLatestTaskResult(client, taskId, tasksPackageId) {
             if (b.seq !== a.seq)
                 return b.seq - a.seq;
             return b.runIndex - a.runIndex;
-        })[0];
-        return latest?.fields ?? {};
+        })
+            .map((item) => ({
+            objectId: item.objectId,
+            seq: item.seq,
+            produced_at_ms: item.producedAtMs,
+            run_index: item.runIndex,
+            multisig_addr: item.fields.multisig_addr ?? null,
+            multisig_bytes: item.fields.multisig_bytes ?? null,
+            certificate_blob: item.fields.certificate_blob ?? null,
+            certificate_signers: item.fields.certificate_signers ?? [],
+            result: item.fields.result ?? null,
+            result_hash: item.fields.result_hash ?? null,
+            reason_code: item.fields.reason_code ?? 0,
+            raw: item.fields,
+        }));
     }
     catch {
-        return {};
+        return [];
     }
 }
 async function queryTaskEventsByModule(client, packageId, moduleName, taskId) {
@@ -322,11 +335,12 @@ app.get("/api/market/iota-price", async (_req, res) => {
 app.get("/api/task/:taskId", async (req, res) => {
     try {
         const taskId = String(req.params.taskId ?? "").trim();
+        const network = typeof req.query.network === "string" ? req.query.network : undefined;
         if (!taskId) {
             res.status(400).json({ error: "Missing taskId" });
             return;
         }
-        const runtime = getRuntimeConfig();
+        const runtime = getRuntimeConfig(network);
         const client = new IotaClient({ url: runtime.rpcUrl });
         const response = await client.getObject({
             id: taskId,
@@ -344,9 +358,10 @@ app.get("/api/task/:taskId", async (req, res) => {
         }
         const fields = extractFields(data.content) ?? {};
         const latestResultSeq = numberFromUnknown(fields.latest_result_seq) ?? 0;
-        const latestResultFields = latestResultSeq > 0 && runtime.oracleTasksPackageId
-            ? await fetchLatestTaskResult(client, taskId, runtime.oracleTasksPackageId)
-            : {};
+        const results = latestResultSeq > 0 && runtime.oracleTasksPackageId
+            ? await fetchTaskResults(client, taskId, runtime.oracleTasksPackageId)
+            : [];
+        const latestResultFields = results[0]?.raw ?? {};
         function pick(...values) {
             for (const v of values) {
                 if (v !== undefined && v !== null)
@@ -414,6 +429,7 @@ app.get("/api/task/:taskId", async (req, res) => {
             latest_result_seq: pick(fields.latest_result_seq, fields.runtime?.fields?.latest_result_seq),
             result_order: asArray(pick(fields.result_order, fields.runtime?.fields?.result_order)),
             latest_result: latestResultFields,
+            results,
             raw: fields,
         };
         res.json(normalized);
@@ -425,11 +441,12 @@ app.get("/api/task/:taskId", async (req, res) => {
 app.get("/api/task/:taskId/events", async (req, res) => {
     try {
         const taskId = String(req.params.taskId ?? "").trim();
+        const network = typeof req.query.network === "string" ? req.query.network : undefined;
         if (!taskId) {
             res.status(400).json({ error: "Missing taskId" });
             return;
         }
-        const runtime = getRuntimeConfig();
+        const runtime = getRuntimeConfig(network);
         const client = new IotaClient({ url: runtime.rpcUrl });
         const taskObj = await client.getObject({
             id: taskId,

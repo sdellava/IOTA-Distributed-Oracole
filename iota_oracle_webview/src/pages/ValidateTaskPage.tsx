@@ -1,9 +1,10 @@
 // Copyright (c) 2026 Stefano Della Valle
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import TaskValidator from "../components/TaskValidator";
 import { resolveApiBaseUrl } from "../lib/apiBase";
+import type { OracleNetwork } from "../types";
 
 type RegisteredNode = {
   nodeId?: string | number;
@@ -22,21 +23,35 @@ type TaskEvent = {
 
 const API_BASE = resolveApiBaseUrl();
 
-export default function ValidateTaskPage() {
+type Props = {
+  initialTaskId?: string;
+  activeNetwork: OracleNetwork;
+};
+
+export default function ValidateTaskPage({ initialTaskId = "", activeNetwork }: Props) {
   const [taskId, setTaskId] = useState("");
   const [task, setTask] = useState<any | null>(null);
   const [registeredNodes, setRegisteredNodes] = useState<RegisteredNode[]>([]);
   const [taskEvents, setTaskEvents] = useState<TaskEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const lastAutoValidatedIdRef = useRef("");
 
   useEffect(() => {
     void loadRegisteredNodes();
-  }, []);
+  }, [activeNetwork]);
+
+  useEffect(() => {
+    if (!initialTaskId) return;
+    setTaskId(initialTaskId);
+    if (lastAutoValidatedIdRef.current && lastAutoValidatedIdRef.current !== initialTaskId.trim().toLowerCase()) {
+      lastAutoValidatedIdRef.current = "";
+    }
+  }, [initialTaskId]);
 
   async function loadRegisteredNodes() {
     try {
-      const res = await fetch(`${API_BASE}/api/status`);
+      const res = await fetch(`${API_BASE}/api/status?network=${encodeURIComponent(activeNetwork)}`);
       const data = await res.json();
       setRegisteredNodes(Array.isArray(data?.registeredNodes) ? data.registeredNodes : []);
     } catch (e) {
@@ -59,7 +74,9 @@ export default function ValidateTaskPage() {
     setTaskEvents([]);
 
     try {
-      const taskRes = await fetch(`${API_BASE}/api/task/${encodeURIComponent(normalizedTaskId)}`);
+      const taskRes = await fetch(
+        `${API_BASE}/api/task/${encodeURIComponent(normalizedTaskId)}?network=${encodeURIComponent(activeNetwork)}`,
+      );
       const taskContentType = taskRes.headers.get("content-type") || "";
       const taskText = await taskRes.text();
 
@@ -72,7 +89,9 @@ export default function ValidateTaskPage() {
         throw new Error(taskData?.error || `HTTP ${taskRes.status}`);
       }
 
-      const eventsRes = await fetch(`${API_BASE}/api/task/${encodeURIComponent(normalizedTaskId)}/events`);
+      const eventsRes = await fetch(
+        `${API_BASE}/api/task/${encodeURIComponent(normalizedTaskId)}/events?network=${encodeURIComponent(activeNetwork)}`,
+      );
       const eventsContentType = eventsRes.headers.get("content-type") || "";
       const eventsText = await eventsRes.text();
 
@@ -93,6 +112,16 @@ export default function ValidateTaskPage() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (!initialTaskId) return;
+    const normalizedInitialTaskId = initialTaskId.trim().toLowerCase();
+    if (!normalizedInitialTaskId) return;
+    if (taskId.trim().toLowerCase() !== normalizedInitialTaskId) return;
+    if (loading || lastAutoValidatedIdRef.current === normalizedInitialTaskId) return;
+    lastAutoValidatedIdRef.current = normalizedInitialTaskId;
+    void handleValidate();
+  }, [initialTaskId, taskId, loading]);
 
   return (
     <section className="card">

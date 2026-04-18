@@ -7,6 +7,7 @@ import type { OracleNetwork, TaskScheduleItem, TaskSchedulesResponse } from "../
 
 type Props = {
   activeNetwork: OracleNetwork;
+  onSelectTask?: (taskId: string) => void;
 };
 
 const REFRESH_MS = 10000;
@@ -53,7 +54,7 @@ function statusClass(item: TaskScheduleItem): string {
   return "is-warn";
 }
 
-export default function TaskSchedulesPage({ activeNetwork }: Props) {
+export default function TaskSchedulesPage({ activeNetwork, onSelectTask }: Props) {
   const [data, setData] = useState<TaskSchedulesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -145,6 +146,7 @@ export default function TaskSchedulesPage({ activeNetwork }: Props) {
                   <th>Task</th>
                   <th>Status</th>
                   <th>Template</th>
+                  <th>Runs</th>
                   <th>Next run</th>
                   <th>Interval</th>
                   <th>Balance</th>
@@ -154,9 +156,29 @@ export default function TaskSchedulesPage({ activeNetwork }: Props) {
               </thead>
               <tbody>
                 {data.items.map((item) => (
-                  <tr key={item.id}>
+                  <tr
+                    key={item.id}
+                    className={onSelectTask ? "clickable-row" : undefined}
+                    onClick={onSelectTask ? () => onSelectTask(item.id) : undefined}
+                    style={onSelectTask ? { cursor: "pointer" } : undefined}
+                  >
                     <td data-label="Task">
-                      <div className="mono">{shortAddress(item.id, 8, 6)}</div>
+                      <div className="mono">
+                        {onSelectTask ? (
+                          <button
+                            type="button"
+                            className="link-button mono"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onSelectTask(item.id);
+                            }}
+                          >
+                            {shortAddress(item.id, 8, 6)}
+                          </button>
+                        ) : (
+                          shortAddress(item.id, 8, 6)
+                        )}
+                      </div>
                       <div className="summary-hint">Start {formatMs(item.startScheduleMs)}</div>
                     </td>
                     <td data-label="Status">
@@ -164,6 +186,9 @@ export default function TaskSchedulesPage({ activeNetwork }: Props) {
                     </td>
                     <td data-label="Template" className="mono">
                       {item.templateId || "-"}
+                    </td>
+                    <td data-label="Runs" className="mono">
+                      {item.runCount || "0"}
                     </td>
                     <td data-label="Next run">
                       <div>{formatMs(item.nextRunMs)}</div>

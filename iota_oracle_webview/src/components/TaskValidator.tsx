@@ -24,6 +24,19 @@ type TaskLike = {
   result?: unknown;
   result_bytes?: number[] | Uint8Array | string | null;
   result_hash?: number[] | Uint8Array | string | null;
+  results?: Array<{
+    objectId?: string;
+    seq?: number | string;
+    produced_at_ms?: number | string;
+    run_index?: number | string;
+    multisig_addr?: string | null;
+    multisig_bytes?: unknown;
+    certificate_signers?: Array<string | number>;
+    result?: unknown;
+    result_hash?: number[] | Uint8Array | string | null;
+    reason_code?: number | string | null;
+    raw?: Record<string, unknown>;
+  }>;
 };
 
 type TaskEvent = {
@@ -160,6 +173,53 @@ function decodeUtf8(value: unknown): string {
   } catch {
     return "";
   }
+}
+
+function decodeResultBytes(value: unknown): Uint8Array | null {
+  const bytes = toUint8Array(value);
+  return bytes && bytes.length > 0 ? bytes : null;
+}
+
+function prettyResultText(value: unknown): string | null {
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (!text) return null;
+    try {
+      return JSON.stringify(JSON.parse(text), null, 2);
+    } catch {
+      return text;
+    }
+  }
+
+  const bytes = decodeResultBytes(value);
+  if (bytes) {
+    try {
+      const text = new TextDecoder().decode(bytes).trim();
+      if (!text) return null;
+      try {
+        return JSON.stringify(JSON.parse(text), null, 2);
+      } catch {
+        return text;
+      }
+    } catch {
+      return bytesToHex(bytes);
+    }
+  }
+
+  const record = asRecord(value);
+  if (!record) return null;
+  for (const key of ["result", "result_bytes", "bytes", "value", "contents", "data", "raw"]) {
+    if (!(key in record)) continue;
+    const nested = prettyResultText(record[key]);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+function formatProducedAt(value: unknown): string {
+  const num = fieldNumber({ value }, "value");
+  if (num == null || num <= 0) return "-";
+  return new Date(num).toLocaleString();
 }
 
 function isMostlyPrintable(text: string): boolean {
@@ -737,6 +797,27 @@ function explainEvent(
 
 export default function TaskValidator({ task, registeredNodes, events = [] }: Props) {
   const validation = useMemo(() => validateTaskMultisig(task, registeredNodes), [task, registeredNodes]);
+  const results = useMemo(
+    () =>
+      (Array.isArray(task?.results) ? task.results : [])
+        .slice()
+        .sort((a, b) => {
+          const producedA = fieldNumber({ value: a?.produced_at_ms }, "value") ?? -1;
+          const producedB = fieldNumber({ value: b?.produced_at_ms }, "value") ?? -1;
+          if (producedB !== producedA) return producedB - producedA;
+          const seqA = fieldNumber({ value: a?.seq }, "value") ?? -1;
+          const seqB = fieldNumber({ value: b?.seq }, "value") ?? -1;
+          return seqB - seqA;
+        }),
+    [task?.results],
+  );
+  const latestResultText = useMemo(
+    () =>
+      prettyResultText(results[0]?.result) ??
+      prettyResultText(task?.result) ??
+      prettyResultText(task?.result_bytes),
+    [results, task?.result, task?.result_bytes],
+  );
 
   const explainedEvents = useMemo(
     () => (events ?? []).map((evt) => explainEvent(evt, task, registeredNodes)),
@@ -813,6 +894,65 @@ export default function TaskValidator({ task, registeredNodes, events = [] }: Pr
         <div className="alert alert-warn" style={{ marginTop: 12 }}>
           {validation.derivedError}
         </div>
+      ) : null}
+
+      {latestResultText ? (
+        <>
+          <div className="subsection-title" style={{ marginTop: 18 }}>
+            Latest result
+          </div>
+          {results[0] ? (
+            <div className="summary-hint" style={{ marginBottom: 8 }}>
+              Produced at: {formatProducedAt(results[0].produced_at_ms)}{results[0].seq != null ? ` | seq=${results[0].seq}` : ""}{results[0].run_index != null ? ` | run=${results[0].run_index}` : ""}
+            </div>
+          ) : null}
+          <pre>{latestResultText}</pre>
+        </>
+      ) : null}
+
+      {results.length > 0 ? (
+        <>
+          <div className="subsection-title" style={{ marginTop: 18 }}>
+            Result history
+          </div>
+
+          <div className="table-wrap table-wrap-wide">
+            <table className="responsive-table">
+              <thead>
+                <tr>
+                  <th>Seq</th>
+                  <th>Produced at</th>
+                  <th>Run</th>
+                  <th>Hash</th>
+                  <th>Signers</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((item, index) => {
+                  const signers = Array.isArray(item.certificate_signers) ? item.certificate_signers.length : 0;
+                  const hash = bytesToHex(toUint8Array(item.result_hash) ?? undefined) || "-";
+                  const preview = prettyResultText(item.result);
+                  return (
+                    <tr key={item.objectId || `${item.seq ?? "-"}-${index}`}>
+                      <td>{item.seq ?? "-"}</td>
+                      <td>{formatProducedAt(item.produced_at_ms)}</td>
+                      <td>{item.run_index ?? "-"}</td>
+                      <td className="mono" title={hash}>
+                        {hash === "-" ? "-" : hash.length > 20 ? `${hash.slice(0, 20)}...` : hash}
+                      </td>
+                      <td>{signers}</td>
+                      <td>
+                        <div>{item.reason_code ?? 0}</div>
+                        {preview ? <div className="summary-hint">{preview.length > 120 ? `${preview.slice(0, 120)}...` : preview}</div> : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       ) : null}
 
       <div className="subsection-title" style={{ marginTop: 18 }}>

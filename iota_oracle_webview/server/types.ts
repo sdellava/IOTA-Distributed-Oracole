@@ -85,6 +85,7 @@ export type TaskScheduleItem = {
   status: number;
   statusLabel: string;
   templateId: string;
+  runCount: string;
   nextRunMs: string;
   lastRunMs: string;
   startScheduleMs: string;

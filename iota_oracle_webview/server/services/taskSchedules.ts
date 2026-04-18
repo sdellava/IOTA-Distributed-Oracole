@@ -75,6 +75,7 @@ async function readTaskSchedule(client: IotaClient, id: string): Promise<TaskSch
     status: Number(toText(f.status) || 0),
     statusLabel: statusLabel(Number(toText(f.status) || 0)),
     templateId: toText(f.template_id),
+    runCount: toText(f.latest_result_seq),
     nextRunMs: toText(f.next_run_ms),
     lastRunMs: toText(f.last_run_ms),
     startScheduleMs: toText(f.start_schedule_ms),
@@ -101,7 +102,10 @@ export async function getTaskSchedules(network?: string): Promise<TaskSchedulesR
     try {
       const queueObj = await client.getObject({ id: schedulerQueueId, options: { showContent: true } } as any);
       const q = getMoveFields(queueObj);
-      const nodes = toArray(q.nodes).map(toText).filter(Boolean).map((x) => x.toLowerCase());
+      const nodes = toArray(q.node_ids ?? q.nodes)
+        .map(toText)
+        .filter(Boolean)
+        .map((x) => x.toLowerCase());
       queue = {
         head: nodes[0] ?? null,
         nodes,

@@ -204,6 +204,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const currentAccount = useCurrentAccount();
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [selectedValidateTaskId, setSelectedValidateTaskId] = useState<string>("");
   const [pageMode, setPageMode] = useState<PageMode>("run");
   const [menuOpen, setMenuOpen] = useState(false);
   const [supportedNetworks, setSupportedNetworks] = useState<OracleNetwork[]>(FALLBACK_NETWORKS);
@@ -629,9 +630,15 @@ export default function App() {
           />
         </>
       ) : pageMode === "scheduled" ? (
-        <TaskSchedulesPage activeNetwork={activeNetwork} />
+        <TaskSchedulesPage
+          activeNetwork={activeNetwork}
+          onSelectTask={(taskId) => {
+            setSelectedValidateTaskId(taskId);
+            setPageMode("validate");
+          }}
+        />
       ) : (
-        <ValidateTaskPage />
+        <ValidateTaskPage initialTaskId={selectedValidateTaskId} activeNetwork={activeNetwork} />
       )}
     </div>
   );
