@@ -138,10 +138,10 @@ type PreparedTaskScheduleWalletTransaction = {
 };
 
 type ScheduledTaskActionInput = {
-  action: "freeze" | "unfreeze" | "cancel" | "fund";
+  action: "suspend" | "reactivate" | "delete" | "fund";
   taskId: string;
+  useSupervisor?: boolean;
   controllerCapId?: string;
-  ownerCapId?: string;
   amount?: bigint;
 };
 
@@ -154,8 +154,8 @@ type PreparedScheduledTaskActionWalletTransaction = {
   serializedTransaction: string;
   gasBudget: string;
   amount: string | null;
+  useSupervisor: boolean;
   controllerCapId: string | null;
-  ownerCapId: string | null;
   target: string;
 };
 
@@ -1161,19 +1161,20 @@ function normalizeScheduledTaskActionInput(input: any): ScheduledTaskActionInput
   const action = String(input.action ?? "").trim().toLowerCase();
   const taskId = normalizeObjectId(input.taskId ?? input.task_id, "taskId");
 
-  if (action === "freeze" || action === "unfreeze") {
-    return {
-      action,
-      taskId,
-      controllerCapId: normalizeObjectId(input.controllerCapId ?? input.controller_cap_id, "controllerCapId"),
-    };
-  }
+  const useSupervisor =
+    input.useSupervisor === true ||
+    input.use_supervisor === true ||
+    input.actor === "supervisor" ||
+    input.mode === "supervisor";
 
-  if (action === "cancel") {
+  if (action === "suspend" || action === "reactivate" || action === "delete") {
     return {
       action,
       taskId,
-      ownerCapId: normalizeObjectId(input.ownerCapId ?? input.owner_cap_id, "ownerCapId"),
+      useSupervisor,
+      controllerCapId: useSupervisor
+        ? normalizeObjectId(input.controllerCapId ?? input.controller_cap_id, "controllerCapId")
+        : undefined,
     };
   }
 
@@ -1204,42 +1205,52 @@ function normalizeScheduledTaskActionInput(input: any): ScheduledTaskActionInput
 
 function makeScheduledTaskActionTx(args: {
   tasksPkg: string;
+  registryId: string;
+  clockId: string;
   gasBudget: bigint;
   input: ScheduledTaskActionInput;
 }): { tx: Transaction; target: string } {
-  const { tasksPkg, gasBudget, input } = args;
+  const { tasksPkg, registryId, clockId, gasBudget, input } = args;
   const tx = new Transaction();
   tx.setGasBudget(Number(gasBudget));
 
-  if (input.action === "freeze") {
-    const target = `${tasksPkg}::oracle_scheduled_tasks::freeze_scheduled_task_by_controller`;
+  if (input.action === "suspend") {
+    const target = input.useSupervisor
+      ? `${tasksPkg}::oracle_tasks::supervisor_suspend_task`
+      : `${tasksPkg}::oracle_tasks::suspend_task_by_owner`;
     tx.moveCall({
       target,
-      arguments: [tx.object(input.controllerCapId!), tx.object(input.taskId)],
+      arguments: input.useSupervisor
+        ? [tx.object(registryId), tx.object(input.controllerCapId!), tx.object(input.taskId)]
+        : [tx.object(registryId), tx.object(input.taskId)],
     });
     return { tx, target };
   }
 
-  if (input.action === "unfreeze") {
-    const target = `${tasksPkg}::oracle_scheduled_tasks::unfreeze_scheduled_task_by_controller`;
+  if (input.action === "reactivate") {
+    const target = `${tasksPkg}::oracle_tasks::reactivate_task_by_owner`;
     tx.moveCall({
       target,
-      arguments: [tx.object(input.controllerCapId!), tx.object(input.taskId)],
+      arguments: [tx.object(registryId), tx.object(input.taskId), tx.object(clockId)],
     });
     return { tx, target };
   }
 
-  if (input.action === "cancel") {
-    const target = `${tasksPkg}::oracle_scheduled_tasks::cancel_scheduled_task`;
+  if (input.action === "delete") {
+    const target = input.useSupervisor
+      ? `${tasksPkg}::oracle_tasks::delete_task_by_supervisor`
+      : `${tasksPkg}::oracle_tasks::delete_task_by_owner`;
     tx.moveCall({
       target,
-      arguments: [tx.object(input.ownerCapId!), tx.object(input.taskId)],
+      arguments: input.useSupervisor
+        ? [tx.object(registryId), tx.object(input.controllerCapId!), tx.object(input.taskId)]
+        : [tx.object(registryId), tx.object(input.taskId)],
     });
     return { tx, target };
   }
 
   if (input.action === "fund") {
-    const target = `${tasksPkg}::oracle_scheduled_tasks::top_up_scheduled_task`;
+    const target = `${tasksPkg}::oracle_tasks::top_up_task`;
     const [fundingCoin] = tx.splitCoins(tx.gas, [tx.pure(bcsU64(input.amount!))]);
     tx.moveCall({
       target,
@@ -1529,6 +1540,8 @@ async function runPrepareScheduledTaskActionWebview(
 
   const txPlan = makeScheduledTaskActionTx({
     tasksPkg: getTasksPackageId(),
+    registryId: getTaskRegistryId(),
+    clockId: envAny("IOTA_CLOCK_OBJECT_ID", "IOTA_CLOCK_ID") ?? "0x6",
     gasBudget: asBigInt(process.env.GAS_BUDGET ?? "50000000", 50_000_000n),
     input: actionInput,
   });
@@ -1543,8 +1556,8 @@ async function runPrepareScheduledTaskActionWebview(
     serializedTransaction: serializeTransactionForWallet(txPlan.tx),
     gasBudget: String(asBigInt(process.env.GAS_BUDGET ?? "50000000", 50_000_000n)),
     amount: actionInput.amount == null ? null : actionInput.amount.toString(),
+    useSupervisor: actionInput.useSupervisor === true,
     controllerCapId: actionInput.controllerCapId ?? null,
-    ownerCapId: actionInput.ownerCapId ?? null,
     target: txPlan.target,
   };
 

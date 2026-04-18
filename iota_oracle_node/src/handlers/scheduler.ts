@@ -28,6 +28,17 @@ function queueIndexOf(nodeIds: number[], nodeId: number): number {
   return nodeIds.findIndex((item) => item === nodeId);
 }
 
+function queueNeedsReconcile(queueNodeIds: number[], registeredNodeIds: number[], myNodeId: number): boolean {
+  if (!queueNodeIds.length) return true;
+  if (!queueNodeIds.includes(myNodeId)) return true;
+
+  const registered = new Set(registeredNodeIds);
+  if (queueNodeIds.some((nodeId) => !registered.has(nodeId))) return true;
+  if (registeredNodeIds.some((nodeId) => !queueNodeIds.includes(nodeId))) return true;
+
+  return false;
+}
+
 function leaderOrder(assigned: string[]): string[] {
   return [...assigned].map((x) => x.toLowerCase()).sort();
 }
@@ -108,16 +119,15 @@ export async function processSchedulerRound(ctx: NodeContext): Promise<void> {
   const registeredNodes = await readRegisteredOracleNodes(ctx.client);
   const myNode = registeredNodes.find((node) => node.addr === ctx.myAddr);
   if (!myNode) return;
+  const registeredNodeIds = registeredNodes.map((node) => node.nodeId);
 
   let queue = await readTaskSchedulerQueue(ctx.client);
-  if (!queue.nodeIds.length) {
-    const lowestNodeId = registeredNodes
-      .map((node) => node.nodeId)
-      .sort((a, b) => a - b)[0];
-    if (myNode.nodeId !== lowestNodeId) return;
+  if (queueNeedsReconcile(queue.nodeIds, registeredNodeIds, myNode.nodeId)) {
     try {
       const digest = await reconcileSchedulerQueueTx(ctx);
-      console.log(`[scheduler ${ctx.nodeId}] reconcile queue tx=${digest}`);
+      console.log(
+        `[scheduler ${ctx.nodeId}] reconcile queue tx=${digest} queue=[${queue.nodeIds.join(",") || "-"}] registered=[${registeredNodeIds.join(",") || "-"}]`,
+      );
     } catch (e: any) {
       console.warn(`[scheduler ${ctx.nodeId}] reconcile queue failed: ${String(e?.message ?? e)}`);
       return;
@@ -131,7 +141,12 @@ export async function processSchedulerRound(ctx: NodeContext): Promise<void> {
   }
 
   const refreshedIndex = queueIndexOf(queue.nodeIds, myNode.nodeId);
-  if (refreshedIndex < 0) return;
+  if (refreshedIndex < 0) {
+    console.warn(
+      `[scheduler ${ctx.nodeId}] current node missing from queue after reconcile node_id=${myNode.nodeId} queue=[${queue.nodeIds.join(",") || "-"}]`,
+    );
+    return;
+  }
 
   if (queue.headNodeId !== myNode.nodeId) {
     if (!takeoverEligible(queue.activeRoundStartedMs, queue.lastRoundCompletedMs, refreshedIndex, nowMs)) return;

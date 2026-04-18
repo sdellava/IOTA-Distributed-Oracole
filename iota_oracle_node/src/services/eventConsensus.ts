@@ -25,12 +25,12 @@ export function sha256Hex(bytes: Uint8Array): string {
 
 
 export async function waitForCommitQuorum(opts: {
-  client: IotaClient; taskId: string; round: number; assignedNodes: string[]; quorumK: number; waitMs: number; pollMs: number;
+  client: IotaClient; taskId: string; round: number; assignedNodes: string[]; quorumK: number; waitMs: number; pollMs: number; minTimestampMs?: number;
 }) {
   const until = Date.now() + opts.waitMs;
   const assigned = new Set(opts.assignedNodes.map((x) => x.toLowerCase()));
   while (Date.now() < until) {
-    const msgs = await readOracleMessages(opts.client, opts.taskId, opts.round);
+    const msgs = await readOracleMessages(opts.client, opts.taskId, opts.round, { minTimestampMs: opts.minTimestampMs });
     const commits = msgs.filter((m) => m.kind === MSG_COMMIT && assigned.has(m.sender));
     const bySender = new Map<string, OracleMessage>();
     for (const m of commits) if (!bySender.has(m.sender)) bySender.set(m.sender, m);
@@ -59,12 +59,12 @@ export async function waitForCommitQuorum(opts: {
 }
 
 export async function waitForRevealResolution(opts: {
-  client: IotaClient; taskId: string; round: number; assignedNodes: string[]; quorumK: number; waitMs: number; pollMs: number;
+  client: IotaClient; taskId: string; round: number; assignedNodes: string[]; quorumK: number; waitMs: number; pollMs: number; minTimestampMs?: number;
 }) {
   const until = Date.now() + opts.waitMs;
   const assigned = new Set(opts.assignedNodes.map((x) => x.toLowerCase()));
   while (Date.now() < until) {
-    const msgs = await readOracleMessages(opts.client, opts.taskId, opts.round);
+    const msgs = await readOracleMessages(opts.client, opts.taskId, opts.round, { minTimestampMs: opts.minTimestampMs });
     const reveals = msgs.filter((m) => m.kind === MSG_REVEAL && assigned.has(m.sender));
     const bySender = new Map<string, OracleMessage>();
     for (const m of reveals) if (!bySender.has(m.sender)) bySender.set(m.sender, m);
@@ -92,12 +92,12 @@ export async function waitForRevealResolution(opts: {
 }
 
 export async function waitForPartialQuorum(opts: {
-  client: IotaClient; taskId: string; round: number; signerAddrs: string[]; quorumK: number; messageDigestHex: string; waitMs: number; pollMs: number;
+  client: IotaClient; taskId: string; round: number; signerAddrs: string[]; quorumK: number; messageDigestHex: string; waitMs: number; pollMs: number; minTimestampMs?: number;
 }) {
   const until = Date.now() + opts.waitMs;
   const allowed = new Set(opts.signerAddrs.map((x) => x.toLowerCase()));
   while (Date.now() < until) {
-    const msgs = await readOracleMessages(opts.client, opts.taskId, opts.round);
+    const msgs = await readOracleMessages(opts.client, opts.taskId, opts.round, { minTimestampMs: opts.minTimestampMs });
     const partials = msgs.filter((m) => m.kind === MSG_PARTIAL && allowed.has(m.sender));
     const bySender = new Map<string, OracleMessage>();
     for (const m of partials) {

@@ -148,6 +148,7 @@ export async function runConsensusRound(
   params: {
     taskId: string;
     round: number;
+    runStartedAtMs: number;
     normalized: string;
     assignedNodes: string[];
     quorumK: number;
@@ -160,6 +161,7 @@ export async function runConsensusRound(
   const {
     taskId,
     round,
+    runStartedAtMs,
     normalized,
     assignedNodes,
     quorumK,
@@ -178,7 +180,7 @@ export async function runConsensusRound(
   const tx2 = await publishCommit({ client, keypair: identity.keypair, taskId, round, resultHashHex });
   console.log(`[node ${nodeId}] commit published tx=${tx2}`);
 
-  const commits = await waitForCommitQuorum({ client, taskId, round, assignedNodes, quorumK, waitMs, pollMs });
+  const commits = await waitForCommitQuorum({ client, taskId, round, assignedNodes, quorumK, waitMs, pollMs, minTimestampMs: runStartedAtMs });
   if (!commits.ok) {
     if (myAddr === leaderAddr) {
       const reasonCode = commits.reason === "no_quorum" ? 1004 : 1002;
@@ -218,7 +220,7 @@ export async function runConsensusRound(
   });
   console.log(`[node ${nodeId}] reveal published tx=${tx3}`);
 
-  const reveal = await waitForRevealResolution({ client, taskId, round, assignedNodes, quorumK, waitMs, pollMs });
+  const reveal = await waitForRevealResolution({ client, taskId, round, assignedNodes, quorumK, waitMs, pollMs, minTimestampMs: runStartedAtMs });
   if (!reveal.ok) {
     console.log(`[node ${nodeId}] no winning reveal: ${reveal.reason}`);
     let mediationStarted = false;
@@ -296,6 +298,7 @@ export async function runConsensusRound(
     messageDigestHex: msgDigestHex,
     waitMs,
     pollMs,
+    minTimestampMs: runStartedAtMs,
   });
 
   if (!partials.ok) {
@@ -411,7 +414,8 @@ async function maybeAbortCommitNoQuorum(opts: {
 
   const waitMs = optInt("ROUND_WAIT_MS", 45_000);
   const pollMs = optInt("ROUND_POLL_MS", 1_200);
-  const commits = await waitForCommitQuorum({ client, taskId, round, assignedNodes, quorumK, waitMs, pollMs });
+  const runStartedAtMs = Number((await loadTaskBundle(client, taskId)).taskFields?.last_run_ms ?? 0) || 0;
+  const commits = await waitForCommitQuorum({ client, taskId, round, assignedNodes, quorumK, waitMs, pollMs, minTimestampMs: runStartedAtMs });
   if (commits.ok) return;
 
   const reasonCode = commits.reason === "no_quorum" ? 1004 : 1002;
@@ -442,7 +446,7 @@ export async function processAssigned(
   ctx: NodeContext,
   taskId: string,
   creator: string,
-  opts?: { ignoreFreshness?: boolean },
+  opts?: { ignoreFreshness?: boolean; runIndex?: number },
 ): Promise<void> {
   const { client, identity, nodeId, myAddr, acceptedTemplateIds, cache, stats } = ctx;
 
@@ -455,9 +459,19 @@ export async function processAssigned(
   }
 
   const round = Number(taskFields.active_round ?? 0) || 0;
-  const roundKey = `${taskId}:${round}:assigned:v2`;
+  const chainRunIndex = Number(taskFields.active_run_index ?? 0) || 0;
+  const eventRunIndex = opts?.runIndex != null ? Number(opts.runIndex ?? 0) || 0 : undefined;
+  if (eventRunIndex != null && eventRunIndex !== chainRunIndex) {
+    console.log(
+      `[node ${nodeId}] ignore assignment task=${taskId} run=${eventRunIndex} reason=stale_event current_run=${chainRunIndex} round=${round}`,
+    );
+    return;
+  }
+
+  const activeRunIndex = eventRunIndex ?? chainRunIndex;
+  const roundKey = `${taskId}:${activeRunIndex}:${round}:assigned:v3`;
   if (!cache.markRoundSeen(roundKey)) {
-    console.log(`[node ${nodeId}] ignore duplicate assignment task=${taskId} round=${round}`);
+    console.log(`[node ${nodeId}] ignore duplicate assignment task=${taskId} run=${activeRunIndex} round=${round}`);
     return;
   }
 
@@ -497,7 +511,7 @@ export async function processAssigned(
   }
 
   console.log(
-    `[node ${nodeId}] assigned task id=${taskId} by=${creator || '-'} round=${round} status=${status} execution_state=${executionState} type=${taskType} template=${templateId} retention_days=${retentionDays} payment_iota=${paymentIota}`,
+    `[node ${nodeId}] assigned task id=${taskId} by=${creator || '-'} run=${activeRunIndex} round=${round} status=${status} execution_state=${executionState} type=${taskType} template=${templateId} retention_days=${retentionDays} payment_iota=${paymentIota}`,
   );
 
   let payloadJson: any;
@@ -577,6 +591,7 @@ export async function processAssigned(
   const ok = await runConsensusRound(ctx, {
     taskId,
     round,
+    runStartedAtMs: Number(taskFields.last_run_ms ?? runtimeFields.last_run_ms ?? 0) || Date.now(),
     normalized,
     assignedNodes,
     quorumK: Number(taskFields.quorum_k ?? assignedNodes.length) || assignedNodes.length,
@@ -595,7 +610,7 @@ export async function processAssigned(
 }
 
 export async function replayRecentAssignments(ctx: NodeContext, limit = 50): Promise<void> {
-  const { client, myAddr, taskAssignedType, nodeId } = ctx;
+  const { client, taskAssignedType, nodeId } = ctx;
   try {
     const page: any = await client.queryEvents({
       query: { MoveEventType: taskAssignedType },
@@ -609,8 +624,9 @@ export async function replayRecentAssignments(ctx: NodeContext, limit = 50): Pro
       const pj: any = ev?.parsedJson ?? {};
       const taskId = String(pj.task_id ?? "");
       const creator = String(pj.actor ?? "");
+      const runIndex = pj.run_index != null ? Number(pj.run_index ?? 0) : undefined;
       if (!taskId) continue;
-      await processAssigned(ctx, taskId, creator, { ignoreFreshness: true });
+      await processAssigned(ctx, taskId, creator, { ignoreFreshness: true, runIndex });
     }
   } catch (e: any) {
     console.warn(`[node ${nodeId}] replay recent assignments failed (continue): ${e?.message ?? e}`);

@@ -11,7 +11,7 @@ import { runConsensusRound } from './assigned';
 
 export async function processMediationStarted(
   ctx: NodeContext,
-  params: { taskId: string; toRound?: number },
+  params: { taskId: string; toRound?: number; runIndex?: number },
 ): Promise<void> {
   const { client, nodeId, myAddr, acceptedTemplateIds, cache } = ctx;
   const { taskId } = params;
@@ -23,9 +23,10 @@ export async function processMediationStarted(
   }
   const { taskFields, configFields, runtimeFields } = bundle;
   const toRound = Number(params.toRound ?? taskFields.active_round ?? 0) || 0;
-  const roundKey = `${taskId}:${toRound}:mediation:v2`;
+  const activeRunIndex = Number(params.runIndex ?? taskFields.active_run_index ?? 0) || 0;
+  const roundKey = `${taskId}:${activeRunIndex}:${toRound}:mediation:v3`;
   if (!cache.markRoundSeen(roundKey)) {
-    console.log(`[node ${nodeId}] ignore duplicate mediation task=${taskId} round=${toRound}`);
+    console.log(`[node ${nodeId}] ignore duplicate mediation task=${taskId} run=${activeRunIndex} round=${toRound}`);
     return;
   }
 
@@ -51,11 +52,12 @@ export async function processMediationStarted(
   const normalized = bytesToUtf8(seedBytes);
   const numeric = extractNumericValue(normalized, {} as any);
   const numericValueU64 = numeric.value != null ? toConsensusU64(numeric.value, 1) : null;
-  console.log(`[node ${nodeId}] mediation round start task=${taskId} round=${toRound} seed=${normalized}`);
+  console.log(`[node ${nodeId}] mediation round start task=${taskId} run=${activeRunIndex} round=${toRound} seed=${normalized}`);
 
   await runConsensusRound(ctx, {
     taskId,
     round: toRound,
+    runStartedAtMs: Number(taskFields.last_run_ms ?? runtimeFields.last_run_ms ?? 0) || Date.now(),
     normalized,
     assignedNodes,
     quorumK: Number(taskFields.quorum_k ?? assignedNodes.length) || assignedNodes.length,

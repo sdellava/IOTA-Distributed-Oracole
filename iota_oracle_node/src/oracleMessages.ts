@@ -290,7 +290,12 @@ function decodeVecU8(v: any): Uint8Array {
   return new Uint8Array();
 }
 
-export async function readOracleMessages(client: IotaClient, taskId: string, round: number): Promise<OracleMessage[]> {
+export async function readOracleMessages(
+  client: IotaClient,
+  taskId: string,
+  round: number,
+  opts?: { minTimestampMs?: number },
+): Promise<OracleMessage[]> {
   const moveEventType = `${tasksPkg()}::oracle_messages::OracleMessage`;
   const page: any = await client.queryEvents({
     query: { MoveEventType: moveEventType },
@@ -304,10 +309,12 @@ export async function readOracleMessages(client: IotaClient, taskId: string, rou
     const pj: any = ev?.parsedJson ?? {};
     const tid = String(pj.task_id ?? '');
     const r = Number(pj.round ?? -1);
+    const timestampMs = Number(ev?.timestampMs ?? 0);
     const sender = String(pj.sender ?? '').toLowerCase();
     const kind = Number(pj.kind ?? 0);
     const key = `${tid}:${r}:${kind}:${sender}:${Buffer.from(decodeVecU8(pj.payload)).toString('hex')}`;
     if (tid !== taskId || r !== round || seen.has(key)) continue;
+    if ((opts?.minTimestampMs ?? 0) > 0 && timestampMs > 0 && timestampMs < (opts?.minTimestampMs ?? 0)) continue;
     seen.add(key);
     out.push({
       taskId: tid,
@@ -319,7 +326,7 @@ export async function readOracleMessages(client: IotaClient, taskId: string, rou
       value0: Number(pj.value0 ?? 0),
       value1: Number(pj.value1 ?? 0),
       value2: Number(pj.value2 ?? 0),
-      timestampMs: Number(ev?.timestampMs ?? 0),
+      timestampMs,
     });
   }
   return out.reverse();

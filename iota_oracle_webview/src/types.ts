@@ -232,10 +232,10 @@ export type TaskSchedulesResponse = {
 };
 
 export type ScheduledTaskActionRequest = {
-  action: "freeze" | "unfreeze" | "cancel" | "fund";
+  action: "suspend" | "reactivate" | "delete" | "fund";
   taskId: string;
+  useSupervisor?: boolean;
   controllerCapId?: string;
-  ownerCapId?: string;
   amountIota?: string;
   amountNanoIota?: string;
 };
@@ -249,8 +249,8 @@ export type PreparedScheduledTaskActionWalletResponse = {
   serializedTransaction: string;
   gasBudget: string;
   amount: string | null;
+  useSupervisor: boolean;
   controllerCapId: string | null;
-  ownerCapId: string | null;
   target: string;
   cwd: string;
   command: string;

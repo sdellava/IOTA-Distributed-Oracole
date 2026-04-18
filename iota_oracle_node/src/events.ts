@@ -144,7 +144,7 @@ export async function listenTaskAssigned(opts: {
   moveEventType: string;
   pollMs: number;
   minTimestampMs?: number;
-  onAssigned: (a: { taskId: string; creator: string }) => Promise<void> | void;
+  onAssigned: (a: { taskId: string; creator: string; runIndex?: number }) => Promise<void> | void;
 }) {
   const { client, myAddress, moveEventType, pollMs, minTimestampMs, onAssigned } = opts;
 
@@ -158,9 +158,11 @@ export async function listenTaskAssigned(opts: {
       const pj: any = ev.parsedJson ?? {};
       let taskId = "";
       let creator = "";
+      let runIndex: number | undefined;
 
       if (type.endsWith("::oracle_tasks::TaskRunSubmitted")) {
         taskId = String(pj.task_id ?? "");
+        if (pj.run_index != null) runIndex = Number(pj.run_index ?? 0);
       } else {
         if (Number(pj.kind ?? -1) !== 2) return;
         const to = String(pj.addr0 ?? "").toLowerCase();
@@ -169,7 +171,7 @@ export async function listenTaskAssigned(opts: {
         creator = String(pj.actor ?? "");
       }
 
-      if (taskId) await onAssigned({ taskId, creator });
+      if (taskId) await onAssigned({ taskId, creator, runIndex });
     },
   });
 }
@@ -207,6 +209,7 @@ export async function listenTaskMediationStarted(opts: {
   onStarted: (a: {
     taskId: string;
     toRound?: number;
+    runIndex?: number;
   }) => Promise<void> | void;
 }) {
   const { client, moveEventType, pollMs, minTimestampMs, onStarted } = opts;
@@ -221,7 +224,10 @@ export async function listenTaskMediationStarted(opts: {
       if (type.endsWith("::oracle_tasks::TaskRunMediationStarted")) {
         const taskId = String(pj.task_id ?? "");
         if (!taskId) return;
-        await onStarted({ taskId });
+        await onStarted({
+          taskId,
+          runIndex: pj.run_index != null ? Number(pj.run_index ?? 0) : undefined,
+        });
         return;
       }
 

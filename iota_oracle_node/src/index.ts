@@ -133,8 +133,8 @@ function startListeners(ctx: NodeContext): void {
     moveEventType: ctx.taskAssignedType,
     pollMs: ctx.pollMs,
     minTimestampMs: ctx.startupMs,
-    onAssigned: async ({ taskId, creator }) => {
-      await processAssigned(ctx, taskId, creator);
+    onAssigned: async ({ taskId, creator, runIndex }) => {
+      await processAssigned(ctx, taskId, creator, { runIndex });
     },
   });
 
@@ -153,8 +153,8 @@ function startListeners(ctx: NodeContext): void {
     moveEventType: ctx.mediationType,
     pollMs: ctx.pollMs,
     minTimestampMs: ctx.startupMs,
-    onStarted: async ({ taskId, toRound }) => {
-      await processMediationStarted(ctx, { taskId, toRound });
+    onStarted: async ({ taskId, toRound, runIndex }) => {
+      await processMediationStarted(ctx, { taskId, toRound, runIndex });
     },
   });
 

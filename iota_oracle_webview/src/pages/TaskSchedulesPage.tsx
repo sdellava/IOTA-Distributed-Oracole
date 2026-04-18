@@ -22,7 +22,7 @@ type Props = {
 
 type WalletTaskControls = {
   controllerCapId: string | null;
-  ownerCapIdsByTask: Record<string, string>;
+  ownedTaskIds: string[];
   loading: boolean;
   error: string | null;
 };
@@ -89,6 +89,21 @@ function statusClass(item: TaskScheduleItem): string {
   return "is-warn";
 }
 
+function taskStatusLabel(status: number): string {
+  switch (status) {
+    case 1:
+      return "ACTIVE";
+    case 2:
+      return "SUSPENDED";
+    case 9:
+      return "CANCELLED";
+    case 10:
+      return "ENDED";
+    default:
+      return String(status || "-");
+  }
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
@@ -121,29 +136,6 @@ function extractFields(value: unknown): Record<string, unknown> | null {
   return null;
 }
 
-function moveObjectIdToString(value: unknown): string {
-  if (typeof value === "string") return value.trim();
-  if (typeof value === "number" || typeof value === "bigint") return String(value);
-
-  const record = asRecord(value);
-  if (!record) return "";
-
-  for (const key of ["id", "objectId", "bytes", "value", "task_id", "taskId"]) {
-    const nested = record[key];
-    if (nested == null) continue;
-    const resolved = moveObjectIdToString(nested);
-    if (resolved) return resolved;
-  }
-
-  const fields = extractFields(record);
-  if (fields) {
-    const resolved = moveObjectIdToString(fields);
-    if (resolved) return resolved;
-  }
-
-  return "";
-}
-
 function extractOwnedObjectId(entry: unknown): string {
   const record = asRecord(entry);
   if (!record) return "";
@@ -155,7 +147,55 @@ function extractOwnerCapTaskId(entry: unknown): string {
   const record = asRecord(entry);
   const data = asRecord(record?.data) ?? record;
   const fields = extractFields(data) ?? data;
-  return normalizeAddress(moveObjectIdToString(fields?.task_id ?? fields?.taskId));
+  const raw = fields?.task_id ?? fields?.taskId;
+  if (typeof raw === "string") return normalizeAddress(raw);
+  const nested = asRecord(raw);
+  return normalizeAddress(String(nested?.id ?? nested?.objectId ?? nested?.value ?? ""));
+}
+
+function toText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "bigint") return String(value);
+  const record = asRecord(value);
+  if (!record) return "";
+  for (const key of ["value", "id", "objectId", "bytes", "balance"]) {
+    const nested = record[key];
+    if (typeof nested === "string" || typeof nested === "number" || typeof nested === "bigint") {
+      return String(nested);
+    }
+  }
+  return "";
+}
+
+function balanceToString(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") return String(value);
+  const record = asRecord(value);
+  if (!record) return "0";
+  for (const key of ["value", "balance", "total"]) {
+    if (record[key] != null) return balanceToString(record[key]);
+  }
+  return "0";
+}
+
+function taskItemFromObject(taskId: string, object: any): TaskScheduleItem | null {
+  const fields = extractFields(object?.data?.content) ?? extractFields(object?.data) ?? null;
+  if (!fields) return null;
+  const status = Number(toText(fields.status) || 0);
+  return {
+    id: normalizeAddress(taskId),
+    creator: normalizeAddress(toText(fields.creator)),
+    status,
+    statusLabel: taskStatusLabel(status),
+    templateId: toText(fields.template_id),
+    runCount: toText(fields.latest_result_seq),
+    nextRunMs: toText(fields.next_run_ms),
+    lastRunMs: toText(fields.last_run_ms),
+    startScheduleMs: toText(fields.start_schedule_ms),
+    endScheduleMs: toText(fields.end_schedule_ms),
+    intervalMs: toText(fields.interval_ms),
+    balanceIota: balanceToString(fields.available_balance_iota),
+    lastSchedulerNode: normalizeAddress(toText(fields.last_scheduler_node)) || null,
+  };
 }
 
 async function fetchOwnedObjectsByFilter(
@@ -198,9 +238,10 @@ export default function TaskSchedulesPage({
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [busyActionKey, setBusyActionKey] = useState<string | null>(null);
+  const [ownedTaskItems, setOwnedTaskItems] = useState<TaskScheduleItem[]>([]);
   const [controls, setControls] = useState<WalletTaskControls>({
     controllerCapId: null,
-    ownerCapIdsByTask: {},
+    ownedTaskIds: [],
     loading: false,
     error: null,
   });
@@ -262,14 +303,14 @@ export default function TaskSchedulesPage({
     let cancelled = false;
 
     async function loadControls() {
-      if (!currentAccount?.address || !tasksPackageId || !systemPackageId) {
-        if (!cancelled) {
-          setControls({
-            controllerCapId: null,
-            ownerCapIdsByTask: {},
-            loading: false,
-            error: null,
-          });
+        if (!currentAccount?.address || !tasksPackageId || !systemPackageId) {
+          if (!cancelled) {
+            setControls({
+              controllerCapId: null,
+              ownedTaskIds: [],
+              loading: false,
+              error: null,
+            });
         }
         return;
       }
@@ -277,7 +318,7 @@ export default function TaskSchedulesPage({
       setControls((prev) => ({ ...prev, loading: true, error: null }));
       try {
         const controllerCapType = `${systemPackageId}::systemState::ControllerCap`;
-        const ownerCapType = `${tasksPackageId}::oracle_scheduled_tasks::ScheduledTaskOwnerCap`;
+        const ownerCapType = `${tasksPackageId}::oracle_tasks::TaskOwnerCap`;
         const owner = currentAccount.address;
 
         const [controllerCaps, ownerCaps] = await Promise.all([
@@ -287,18 +328,13 @@ export default function TaskSchedulesPage({
 
         if (cancelled) return;
 
-        const ownerCapIdsByTask: Record<string, string> = {};
-        for (const entry of ownerCaps) {
-          const taskId = extractOwnerCapTaskId(entry);
-          const objectId = extractOwnedObjectId(entry);
-          if (taskId && objectId && !ownerCapIdsByTask[taskId]) {
-            ownerCapIdsByTask[taskId] = objectId;
-          }
-        }
+        const ownedTaskIds = Array.from(
+          new Set(ownerCaps.map((entry) => extractOwnerCapTaskId(entry)).filter(Boolean)),
+        );
 
         setControls({
           controllerCapId: extractOwnedObjectId(controllerCaps[0]) || null,
-          ownerCapIdsByTask,
+          ownedTaskIds,
           loading: false,
           error: null,
         });
@@ -306,7 +342,7 @@ export default function TaskSchedulesPage({
         if (!cancelled) {
           setControls({
             controllerCapId: null,
-            ownerCapIdsByTask: {},
+            ownedTaskIds: [],
             loading: false,
             error: err instanceof Error ? err.message : String(err),
           });
@@ -321,9 +357,59 @@ export default function TaskSchedulesPage({
     };
   }, [activeNetwork, currentAccount?.address, networkClient, systemPackageId, tasksPackageId]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOwnedTasks() {
+      if (!controls.ownedTaskIds.length) {
+        if (!cancelled) setOwnedTaskItems([]);
+        return;
+      }
+
+      try {
+        const items = await Promise.all(
+          controls.ownedTaskIds.map(async (taskId) => {
+            try {
+              const obj = await networkClient.getObject({
+                id: taskId,
+                options: { showContent: true, showType: true },
+              } as any);
+              return taskItemFromObject(taskId, obj);
+            } catch {
+              return null;
+            }
+          }),
+        );
+
+        if (!cancelled) {
+          setOwnedTaskItems(items.filter((item): item is TaskScheduleItem => Boolean(item)));
+        }
+      } catch {
+        if (!cancelled) setOwnedTaskItems([]);
+      }
+    }
+
+    void loadOwnedTasks();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [controls.ownedTaskIds, networkClient, refreshNonce]);
+
   const connectedAddress = normalizeAddress(currentAccount?.address);
   const hasControllerCap = Boolean(controls.controllerCapId);
-  const canManageAnyTask = Boolean(hasControllerCap || Object.keys(controls.ownerCapIdsByTask).length > 0);
+  const items = useMemo(() => {
+    const merged = new Map<string, TaskScheduleItem>();
+    for (const item of data?.items ?? []) merged.set(normalizeAddress(item.id), item);
+    for (const item of ownedTaskItems) {
+      const key = normalizeAddress(item.id);
+      if (!merged.has(key)) merged.set(key, item);
+    }
+    return Array.from(merged.values()).sort(
+      (a, b) => Number(a.nextRunMs || "0") - Number(b.nextRunMs || "0") || a.id.localeCompare(b.id),
+    );
+  }, [data?.items, ownedTaskItems]);
+  const canManageAnyTask = Boolean(currentAccount && (hasControllerCap || items.some((item) => normalizeAddress(item.creator) === connectedAddress)));
 
   async function handleAction(
     item: TaskScheduleItem,
@@ -438,12 +524,12 @@ export default function TaskSchedulesPage({
         <div className="section-title">Task schedules</div>
         {currentAccount && canManageAnyTask ? (
           <div className="summary-hint scheduled-actions-hint">
-            Controls are shown for wallets that own a task owner cap or a controller cap.
+            Controls are shown when the connected wallet is the task owner or holds the oracle controller cap.
           </div>
         ) : null}
         {loading ? (
           <div className="empty">Loading task schedules...</div>
-        ) : !data?.items?.length ? (
+        ) : !items.length ? (
           <div className="empty">No task schedules found.</div>
         ) : (
           <div className="table-wrap">
@@ -463,10 +549,9 @@ export default function TaskSchedulesPage({
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((item) => {
-                  const normalizedTaskId = normalizeAddress(item.id);
-                  const ownerCapId = controls.ownerCapIdsByTask[normalizedTaskId] ?? null;
-                  const canShowActions = Boolean(currentAccount && (hasControllerCap || ownerCapId));
+                {items.map((item) => {
+                  const isOwner = connectedAddress && normalizeAddress(item.creator) === connectedAddress;
+                  const canShowActions = Boolean(currentAccount && (hasControllerCap || isOwner));
                   const isActive = item.statusLabel.toUpperCase() === "ACTIVE";
                   const isSuspended = item.statusLabel.toUpperCase() === "SUSPENDED";
                   const busyPrefix = `${item.id}:`;
@@ -535,14 +620,15 @@ export default function TaskSchedulesPage({
                             <button
                               type="button"
                               className="scheduled-action-button"
-                              disabled={!hasControllerCap || !isActive || busyActionKey?.startsWith(busyPrefix)}
-                              title={hasControllerCap ? "Suspend this scheduled task" : "Controller cap required"}
+                              disabled={(!isOwner && !hasControllerCap) || !isActive || busyActionKey?.startsWith(busyPrefix)}
+                              title={isOwner || hasControllerCap ? "Suspend this scheduled task" : "Owner or controller cap required"}
                               onClick={() =>
                                 void handleAction(
                                   item,
                                   {
-                                    action: "freeze",
-                                    controllerCapId: controls.controllerCapId ?? undefined,
+                                    action: "suspend",
+                                    useSupervisor: !isOwner,
+                                    controllerCapId: !isOwner ? controls.controllerCapId ?? undefined : undefined,
                                   },
                                   "Suspend",
                                 )
@@ -553,32 +639,32 @@ export default function TaskSchedulesPage({
                             <button
                               type="button"
                               className="scheduled-action-button"
-                              disabled={!ownerCapId || !isSuspended || busyActionKey?.startsWith(busyPrefix)}
-                              title={ownerCapId ? "Cancel this scheduled task" : "Task owner cap required"}
+                              disabled={(!isOwner && !hasControllerCap) || !isSuspended || busyActionKey?.startsWith(busyPrefix)}
+                              title={isOwner || hasControllerCap ? "Delete this scheduled task" : "Owner or controller cap required"}
                               onClick={() =>
                                 void handleAction(
                                   item,
                                   {
-                                    action: "cancel",
-                                    ownerCapId: ownerCapId ?? undefined,
+                                    action: "delete",
+                                    useSupervisor: !isOwner,
+                                    controllerCapId: !isOwner ? controls.controllerCapId ?? undefined : undefined,
                                   },
-                                  "Cancel",
+                                  "Delete",
                                 )
                               }
                             >
-                              Cancel
+                              Delete
                             </button>
                             <button
                               type="button"
                               className="scheduled-action-button"
-                              disabled={!hasControllerCap || !isSuspended || busyActionKey?.startsWith(busyPrefix)}
-                              title={hasControllerCap ? "Restart this scheduled task" : "Controller cap required"}
+                              disabled={!isOwner || !isSuspended || busyActionKey?.startsWith(busyPrefix)}
+                              title={isOwner ? "Restart this scheduled task" : "Only the owner can restart this task"}
                               onClick={() =>
                                 void handleAction(
                                   item,
                                   {
-                                    action: "unfreeze",
-                                    controllerCapId: controls.controllerCapId ?? undefined,
+                                    action: "reactivate",
                                   },
                                   "Restart",
                                 )
@@ -589,7 +675,7 @@ export default function TaskSchedulesPage({
                             <button
                               type="button"
                               className="scheduled-action-button"
-                              disabled={busyActionKey?.startsWith(busyPrefix) || controls.loading}
+                              disabled={(!isOwner && !hasControllerCap) || busyActionKey?.startsWith(busyPrefix) || controls.loading}
                               title="Add more funds to this scheduled task"
                               onClick={() =>
                                 void handleAction(
