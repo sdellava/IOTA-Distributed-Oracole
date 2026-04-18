@@ -37,6 +37,17 @@ type TaskLike = {
     reason_code?: number | string | null;
     raw?: Record<string, unknown>;
   }>;
+  run_history?: Array<{
+    run_index?: number | string;
+    status?: "OPEN" | "MEDIATION" | "FINALIZED" | "ABORTED" | string;
+    submitted_at_ms?: number | string | null;
+    completed_at_ms?: number | string | null;
+    produced_at_ms?: number | string | null;
+    result_seq?: number | string | null;
+    reason_code?: number | string | null;
+    signer_count?: number | string | null;
+    next_run_ms?: number | string | null;
+  }>;
 };
 
 type TaskEvent = {
@@ -810,6 +821,17 @@ export default function TaskValidator({ task, registeredNodes, events = [] }: Pr
         }),
     [task?.results],
   );
+  const runHistory = useMemo(
+    () =>
+      (Array.isArray(task?.run_history) ? task.run_history : [])
+        .slice()
+        .sort((a, b) => {
+          const runA = fieldNumber({ value: a?.run_index }, "value") ?? -1;
+          const runB = fieldNumber({ value: b?.run_index }, "value") ?? -1;
+          return runB - runA;
+        }),
+    [task?.run_history],
+  );
   const [selectedResultKey, setSelectedResultKey] = useState("");
 
   useEffect(() => {
@@ -931,6 +953,63 @@ export default function TaskValidator({ task, registeredNodes, events = [] }: Pr
         <div className="alert alert-warn" style={{ marginTop: 12 }}>
           {validation.derivedError}
         </div>
+      ) : null}
+
+      {runHistory.length > 0 ? (
+        <>
+          <div className="subsection-title" style={{ marginTop: 18 }}>
+            Run history
+          </div>
+
+          <div className="table-wrap table-wrap-wide">
+            <table className="responsive-table">
+              <thead>
+                <tr>
+                  <th>Run</th>
+                  <th>Status</th>
+                  <th>Submitted</th>
+                  <th>Completed</th>
+                  <th>Produced</th>
+                  <th>Result seq</th>
+                  <th>Signers</th>
+                  <th>Reason</th>
+                  <th>Next run</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runHistory.map((entry, index) => {
+                  const status = String(entry.status ?? "UNKNOWN").toUpperCase();
+                  const reasonCode = fieldNumber({ value: entry.reason_code }, "value");
+                  const reason =
+                    reasonCode != null && reasonCode > 0 ? describeReasonCode(reasonCode).label : "-";
+                  const tone: EventTone =
+                    status === "FINALIZED"
+                      ? "ok"
+                      : status === "ABORTED"
+                        ? "err"
+                        : status === "MEDIATION"
+                          ? "warn"
+                          : "muted";
+                  return (
+                    <tr key={`${entry.run_index ?? "run"}:${index}`}>
+                      <td>{entry.run_index ?? "-"}</td>
+                      <td>
+                        <span className={badgeClass(tone)}>{status}</span>
+                      </td>
+                      <td>{formatProducedAt(entry.submitted_at_ms)}</td>
+                      <td>{formatProducedAt(entry.completed_at_ms)}</td>
+                      <td>{formatProducedAt(entry.produced_at_ms)}</td>
+                      <td>{entry.result_seq ?? "-"}</td>
+                      <td>{entry.signer_count ?? "-"}</td>
+                      <td>{reason}</td>
+                      <td>{formatProducedAt(entry.next_run_ms)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       ) : null}
 
       {latestResultText ? (

@@ -598,6 +598,34 @@ th {
   color: #7b879a;
 }
 
+.scheduled-actions-hint {
+  margin-bottom: 12px;
+}
+
+.scheduled-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scheduled-actions button {
+  width: auto;
+  min-width: 0;
+}
+
+.scheduled-action-button {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--theme-primary-bg, #121e3d);
+  color: var(--theme-primary-contrast-text, #d8e2f7);
+  border: 1px solid var(--theme-input-border, rgba(143, 162, 208, 0.18));
+  white-space: nowrap;
+}
+
+.scheduled-action-button:hover:not(:disabled) {
+  background: var(--theme-primary-hover-bg, var(--theme-primary-bg, #121e3d));
+}
+
 .badge {
   display: inline-flex;
   align-items: center;

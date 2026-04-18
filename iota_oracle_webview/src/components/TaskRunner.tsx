@@ -810,11 +810,6 @@ function formatUserFacingError(error: unknown): string {
 }
 
 export default function TaskRunner({ examples, activeNetwork, registeredNodes, onExecuted, onTemplateIdChange }: Props) {
-  const defaultStart = useMemo(() => {
-    const date = new Date();
-    date.setMinutes(date.getMinutes() + 5, 0, 0);
-    return formatDateTimeLocalInput(date);
-  }, []);
   const [taskText, setTaskText] = useState<string>('{}');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<WalletRunResult | null>(null);
@@ -824,7 +819,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
   const [error, setError] = useState<string | null>(null);
   const [selectedExample, setSelectedExample] = useState<string>('');
   const [submissionMode, setSubmissionMode] = useState<'run' | 'schedule'>('run');
-  const [scheduleStart, setScheduleStart] = useState<string>(defaultStart);
+  const [scheduleStart, setScheduleStart] = useState<string>('');
   const [scheduleEnd, setScheduleEnd] = useState<string>('');
   const [scheduleIntervalMinutes, setScheduleIntervalMinutes] = useState<string>('60');
   const [scheduleInitialFundsIota, setScheduleInitialFundsIota] = useState<string>('5');
@@ -1250,9 +1245,16 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
       executionClientRef.current = networkClient;
 
       if (submissionMode === 'schedule') {
-        const startMs = datetimeLocalToMs(scheduleStart);
-        const endMs = scheduleEnd ? datetimeLocalToMs(scheduleEnd) : 0;
         const intervalMinutes = Number(scheduleIntervalMinutes);
+
+        if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
+          throw new Error('Interval must be a positive number of minutes.');
+        }
+
+        const startMs = scheduleStart
+          ? datetimeLocalToMs(scheduleStart)
+          : Date.now() + Math.trunc(intervalMinutes * 60_000);
+        const endMs = scheduleEnd ? datetimeLocalToMs(scheduleEnd) : 0;
 
         if (!Number.isFinite(startMs)) {
           throw new Error('Invalid start schedule date.');
@@ -1262,9 +1264,6 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
         }
         if (scheduleEnd && endMs < startMs) {
           throw new Error('End schedule must be after the start schedule.');
-        }
-        if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
-          throw new Error('Interval must be a positive number of minutes.');
         }
 
         const prepared = await prepareWalletTaskSchedule(
@@ -1389,6 +1388,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
             onChange={(e) => setScheduleStart(e.target.value)}
             disabled={submissionMode !== 'schedule'}
           />
+          <small>Leave empty to start after one full interval from submission.</small>
         </label>
 
         <label>

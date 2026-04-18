@@ -151,3 +151,25 @@ export type PreparedTaskScheduleWalletResponse = {
   startedAt: string;
   finishedAt: string;
 };
+
+export type PreparedScheduledTaskActionWalletResponse = {
+  ok: true;
+  mode: "prepare-scheduled-task-action-webview";
+  sender: string;
+  action: "freeze" | "unfreeze" | "cancel" | "fund";
+  taskId: string;
+  serializedTransaction: string;
+  gasBudget: string;
+  amount: string | null;
+  controllerCapId: string | null;
+  ownerCapId: string | null;
+  target: string;
+  cwd: string;
+  command: string;
+  taskFilePath: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  startedAt: string;
+  finishedAt: string;
+};

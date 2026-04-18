@@ -26,6 +26,16 @@ type PendingProposal = {
 
 type OracleNetwork = "devnet" | "testnet" | "mainnet";
 
+const RETRYABLE_PATTERNS = [
+  "fetch failed",
+  "network",
+  "timeout",
+  "timed out",
+  "econnreset",
+  "socket hang up",
+  "failed to fetch",
+];
+
 function parseArgs(argv: string[]) {
   const raw = argv.slice(2);
   const flags = new Set<string>();
@@ -140,13 +150,40 @@ function majorityThreshold(total: number): number {
   return Math.floor(total / 2) + 1;
 }
 
+function isRetryableError(error: unknown): boolean {
+  const msg = String((error as any)?.message ?? error ?? "").toLowerCase();
+  return RETRYABLE_PATTERNS.some((pattern) => msg.includes(pattern));
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withRetry<T>(label: string, fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableError(error) || attempt >= maxAttempts) break;
+      const backoffMs = 400 * attempt;
+      console.error(`[warn] ${label} failed (attempt ${attempt}/${maxAttempts}), retrying in ${backoffMs} ms: ${String((error as any)?.message ?? error)}`);
+      await sleep(backoffMs);
+    }
+  }
+  throw lastError;
+}
+
 async function getStateFields() {
   const stateId = getStateId();
   const client = iotaClient();
-  const res: any = await client.getObject({
-    id: stateId,
-    options: { showContent: true },
-  });
+  const res: any = await withRetry("getObject(state)", () =>
+    client.getObject({
+      id: stateId,
+      options: { showContent: true },
+    }),
+  );
   const fields = extractFields(res?.data?.content);
   if (!fields) throw new Error(`Cannot parse state object fields for ${stateId}`);
   return { client, stateId, fields };
@@ -157,14 +194,18 @@ async function listTemplateDynamicFields(client: any, stateId: string): Promise<
   let cursor: string | null | undefined = null;
 
   for (;;) {
-    const page: any = await client.getDynamicFields({ parentId: stateId, cursor, limit: 50 });
+    const page: any = await withRetry("getDynamicFields(state)", () =>
+      client.getDynamicFields({ parentId: stateId, cursor, limit: 50 }),
+    );
     for (const item of page?.data ?? []) {
       const nameType = String(item?.name?.type ?? "");
       if (!nameType.includes("TaskTemplateKey")) continue;
       const objectId = String(item?.objectId ?? "").trim();
       if (!objectId) continue;
 
-      const obj: any = await client.getObject({ id: objectId, options: { showContent: true } });
+      const obj: any = await withRetry(`getObject(template:${objectId})`, () =>
+        client.getObject({ id: objectId, options: { showContent: true } }),
+      );
       const outerFields = extractFields(obj?.data?.content);
       if (!outerFields) continue;
       const valueFields = extractFields(outerFields.value) ?? asRecord(outerFields.value);

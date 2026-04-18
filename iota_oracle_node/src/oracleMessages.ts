@@ -29,6 +29,10 @@ function clockId(): string {
   return (process.env.IOTA_CLOCK_ID?.trim() || '0x6').trim() || '0x6';
 }
 
+function taskRegistryId(): string {
+  return mustEnv('ORACLE_TASK_REGISTRY_ID');
+}
+
 function gasBudget(envKey: string, def: number): number {
   const raw = process.env[envKey]?.trim();
   if (!raw) return def;
@@ -205,9 +209,10 @@ export async function abortTaskWithCertificate(opts: {
     transactionFactory: () => {
       const tx = new Transaction();
       tx.setGasBudget(gasBudget('GAS_BUDGET_ABORT', gasBudget('GAS_BUDGET', 35_000_000)));
-      tx.moveCall({
+        tx.moveCall({
         target: `${tasksPkg()}::oracle_tasks::abort_task_with_certificate`,
         arguments: [
+          tx.object(taskRegistryId()),
           tx.object(opts.taskId),
           tx.pure(bcsU64(Math.max(1, Math.floor(opts.reasonCode)))),
           tx.pure(bcsVecU8(opts.multisigBytes)),

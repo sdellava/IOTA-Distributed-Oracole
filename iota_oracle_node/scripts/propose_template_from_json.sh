@@ -307,11 +307,35 @@ template_status() {
   if [[ -n "$NETWORK" ]]; then
     args+=(--network "$NETWORK")
   fi
-  (cd "${PROJECT_DIR}" && npm exec -- tsx src/tools/listTemplates.ts "${args[@]}") \
-    | node -e '
+  local output=""
+  local attempt=1
+  local max_attempts=3
+  while (( attempt <= max_attempts )); do
+    if output="$(cd "${PROJECT_DIR}" && npm exec -- tsx src/tools/listTemplates.ts "${args[@]}" 2>/dev/null)"; then
+      if [[ -n "$output" ]]; then
+        break
+      fi
+    fi
+    if (( attempt == max_attempts )); then
+      echo "[warn] unable to determine template status for template_id=$1 after ${max_attempts} attempts; continuing as none" >&2
+      printf "%s" "none"
+      return 0
+    fi
+    local backoff_ms=$(( attempt * 500 ))
+    echo "[warn] template status lookup failed for template_id=$1, retrying in ${backoff_ms} ms" >&2
+    sleep "$(awk "BEGIN { printf \"%.3f\", ${backoff_ms}/1000 }")"
+    (( attempt += 1 ))
+  done
+
+  printf "%s" "$output" | node -e '
 const fs = require("fs");
 const templateId = Number(process.argv[1]);
-const data = JSON.parse(fs.readFileSync(0, "utf8"));
+const raw = fs.readFileSync(0, "utf8");
+if (!raw.trim()) {
+  process.stdout.write("none");
+  process.exit(0);
+}
+const data = JSON.parse(raw);
 const approved = Array.isArray(data?.approvedTemplates) ? data.approvedTemplates : [];
 const pending = Array.isArray(data?.pendingProposals) ? data.pendingProposals : [];
 if (approved.some((x) => Number(x?.templateId) === templateId)) {

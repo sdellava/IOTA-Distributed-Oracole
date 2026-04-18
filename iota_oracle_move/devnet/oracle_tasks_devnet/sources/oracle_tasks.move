@@ -802,6 +802,7 @@ module iota_oracle_tasks::oracle_tasks {
     }
 
     public entry fun abort_task_with_certificate(
+        registry: &mut TaskRegistry,
         task: &mut Task,
         reason_code: u64,
         multisig_bytes: vector<u8>,
@@ -832,6 +833,8 @@ module iota_oracle_tasks::oracle_tasks {
         );
         pay_all_certificate_signers(task, &payout_signers, ctx);
         task.execution_state = EXEC_FAILED;
+        reconcile_task_status(task);
+        sync_registry_membership(registry, task);
 
         event::emit(TaskRunAborted {
             task_id: object::id(task),

@@ -9,7 +9,9 @@ import type {
   OracleStatus,
   PreparedWalletTaskResponse,
   PreparedTaskScheduleWalletResponse,
+  PreparedScheduledTaskActionWalletResponse,
   IotaMarketPriceResponse,
+  ScheduledTaskActionRequest,
   TaskSchedulesResponse,
 } from '../types';
 
@@ -105,5 +107,21 @@ export async function fetchIotaMarketPrice(): Promise<IotaMarketPriceResponse> {
 export async function fetchTaskSchedules(network: OracleNetwork): Promise<TaskSchedulesResponse> {
   return ensureOk<TaskSchedulesResponse>(
     await fetch(`/api/task-schedules?network=${encodeURIComponent(network)}`),
+  );
+}
+
+export async function prepareScheduledTaskActionWallet(
+  action: ScheduledTaskActionRequest,
+  sender: string,
+  network: OracleNetwork,
+): Promise<PreparedScheduledTaskActionWalletResponse> {
+  return ensureOk<PreparedScheduledTaskActionWalletResponse>(
+    await fetch('/api/task-schedules/prepare-action-wallet', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ action, sender, network }),
+    }),
   );
 }

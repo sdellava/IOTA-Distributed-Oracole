@@ -221,6 +221,7 @@ export async function runConsensusRound(
   const reveal = await waitForRevealResolution({ client, taskId, round, assignedNodes, quorumK, waitMs, pollMs });
   if (!reveal.ok) {
     console.log(`[node ${nodeId}] no winning reveal: ${reveal.reason}`);
+    let mediationStarted = false;
 
     if (reveal.reason === "no_quorum" && mediationMode === 1 && myAddr === leaderAddr && reveal.reveals) {
       const numericValues = [...reveal.reveals.values()]
@@ -240,26 +241,36 @@ export async function runConsensusRound(
         }).catch(() => null);
 
         if (md) {
+          mediationStarted = true;
           console.log(`[node ${nodeId}] mediation started tx=${md} mean=${mean} variance=${variance}`);
           return false;
         }
       }
     }
 
-    if (myAddr === leaderAddr && mediationMode !== 1) {
-      const cert = buildCertificateBlob({ kind: "abort", signers: [myAddr], reasonCode: 1003, round });
+    if (myAddr === leaderAddr && !mediationStarted) {
+      const reasonCode = reveal.reason === "reveal_timeout" ? 1002 : 1003;
+      const cert = buildCertificateBlob({ kind: "abort", signers: [myAddr], reasonCode, round });
       const digest = await abortTaskWithCertificate({
         client,
         keypair: identity.keypair,
         taskId,
-        reasonCode: 1003,
+        reasonCode,
         multisigBytes: cert,
         multisigAddr: myAddr,
         signerAddrs: leaders.slice(0, quorumK),
         certificateBlob: cert,
       }).catch(() => null);
 
-      if (digest) console.log(`[node ${nodeId}] abort no quorum tx=${digest}`);
+      if (digest) {
+        if (reveal.reason === "reveal_timeout") {
+          console.log(`[node ${nodeId}] abort reveal timeout tx=${digest}`);
+        } else if (mediationMode === 1) {
+          console.log(`[node ${nodeId}] abort mediation unavailable tx=${digest}`);
+        } else {
+          console.log(`[node ${nodeId}] abort no quorum tx=${digest}`);
+        }
+      }
     }
     return false;
   }

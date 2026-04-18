@@ -275,6 +275,17 @@ async function spawnPrepareTaskScheduleWalletTask(
   );
 }
 
+async function spawnPrepareScheduledTaskActionWalletTask(
+  actionFilePath: string,
+  sender: string,
+  network?: OracleNetwork,
+) {
+  return spawnClientCommand(
+    ["run", "create", "--", "prepare-scheduled-task-action-webview", actionFilePath, sender],
+    network,
+  );
+}
+
 export async function listExampleTasks() {
   try {
     const entries = await fs.readdir(config.oracleExamplesDir, { withFileTypes: true });
@@ -408,6 +419,67 @@ export async function prepareOracleTaskScheduleForWallet(
           ? `cmd.exe /d /s /c npm --silent run create -- prepare-task-schedule-webview ${taskFilePath} ${scheduleFilePath} ${normalizedSender}`
           : `${npmCommand()} --silent run create -- prepare-task-schedule-webview ${taskFilePath} ${scheduleFilePath} ${normalizedSender}`,
       taskFilePath,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.exitCode,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+    };
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+export async function prepareScheduledTaskActionForWallet(
+  action: unknown,
+  sender: string,
+  network?: OracleNetwork,
+) {
+  await fs.access(config.oracleClientDir).catch(() => {
+    throw new Error(`Oracle client directory not found: ${config.oracleClientDir}`);
+  });
+
+  const normalizedSender = String(sender ?? "").trim();
+  if (!normalizedSender) {
+    throw new Error("Wallet sender address is required.");
+  }
+
+  const normalizedAction =
+    action && typeof action === "object" && !Array.isArray(action)
+      ? { ...(action as Record<string, unknown>) }
+      : (() => {
+          throw new Error("Scheduled task action payload must be a JSON object.");
+        })();
+
+  await fs.mkdir(path.join(os.tmpdir(), "iota_oracle_webview"), { recursive: true });
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "iota_oracle_webview", "scheduled-task-action-"));
+  const actionFilePath = path.join(tempDir, "action.json");
+  await fs.writeFile(actionFilePath, `${JSON.stringify(normalizedAction, null, 2)}\n`, "utf8");
+
+  const startedAt = new Date().toISOString();
+  try {
+    const result = await runChildCommand(
+      spawnPrepareScheduledTaskActionWalletTask(actionFilePath, normalizedSender, network),
+    );
+
+    if (result.exitCode !== 0) {
+      throw new Error(
+        result.stderr.trim() ||
+          result.stdout.trim() ||
+          `Scheduled task action wallet preparation failed with exit code ${String(result.exitCode)}`,
+      );
+    }
+
+    const parsed = extractJsonFromStdout(result.stdout);
+
+    return {
+      ...parsed,
+      cwd: config.oracleClientDir,
+      command:
+        process.platform === "win32"
+          ? `cmd.exe /d /s /c npm --silent run create -- prepare-scheduled-task-action-webview ${actionFilePath} ${normalizedSender}`
+          : `${npmCommand()} --silent run create -- prepare-scheduled-task-action-webview ${actionFilePath} ${normalizedSender}`,
+      taskFilePath: actionFilePath,
       stdout: result.stdout,
       stderr: result.stderr,
       exitCode: result.exitCode,

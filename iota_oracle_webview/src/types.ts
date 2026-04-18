@@ -230,3 +230,34 @@ export type TaskSchedulesResponse = {
   items: TaskScheduleItem[];
   warnings: string[];
 };
+
+export type ScheduledTaskActionRequest = {
+  action: "freeze" | "unfreeze" | "cancel" | "fund";
+  taskId: string;
+  controllerCapId?: string;
+  ownerCapId?: string;
+  amountIota?: string;
+  amountNanoIota?: string;
+};
+
+export type PreparedScheduledTaskActionWalletResponse = {
+  ok: true;
+  mode: "prepare-scheduled-task-action-webview";
+  sender: string;
+  action: ScheduledTaskActionRequest["action"];
+  taskId: string;
+  serializedTransaction: string;
+  gasBudget: string;
+  amount: string | null;
+  controllerCapId: string | null;
+  ownerCapId: string | null;
+  target: string;
+  cwd: string;
+  command: string;
+  taskFilePath: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  startedAt: string;
+  finishedAt: string;
+};

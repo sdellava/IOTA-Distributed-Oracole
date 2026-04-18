@@ -632,6 +632,8 @@ export default function App() {
       ) : pageMode === "scheduled" ? (
         <TaskSchedulesPage
           activeNetwork={activeNetwork}
+          tasksPackageId={status?.tasksPackageId ?? null}
+          systemPackageId={status?.systemPackageId ?? null}
           onSelectTask={(taskId) => {
             setSelectedValidateTaskId(taskId);
             setPageMode("validate");

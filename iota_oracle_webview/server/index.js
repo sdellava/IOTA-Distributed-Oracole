@@ -247,6 +247,94 @@ async function queryTaskEventsByModule(client, packageId, moduleName, taskId) {
     }
     return out;
 }
+function eventTypeName(value) {
+    const raw = String(value ?? "").trim();
+    if (!raw)
+        return "";
+    const parts = raw.split("::");
+    return parts[parts.length - 1] || raw;
+}
+function buildRunHistory(events, results, fields) {
+    const byRun = new Map();
+    function ensure(runIndex) {
+        let current = byRun.get(runIndex);
+        if (!current) {
+            current = {
+                run_index: runIndex,
+                status: "OPEN",
+                submitted_at_ms: null,
+                completed_at_ms: null,
+                produced_at_ms: null,
+                result_seq: null,
+                reason_code: null,
+                signer_count: null,
+                next_run_ms: null,
+            };
+            byRun.set(runIndex, current);
+        }
+        return current;
+    }
+    for (const result of results) {
+        const runIndex = Number(result.run_index ?? -1);
+        if (!Number.isFinite(runIndex) || runIndex < 0)
+            continue;
+        const current = ensure(runIndex);
+        current.status = "FINALIZED";
+        current.produced_at_ms = result.produced_at_ms ?? null;
+        current.result_seq = result.seq ?? null;
+        current.reason_code = Number(result.reason_code ?? 0) || 0;
+        current.signer_count = Array.isArray(result.certificate_signers)
+            ? result.certificate_signers.length
+            : 0;
+    }
+    for (const evt of events) {
+        const parsed = asRecord(evt.parsedJson) ?? {};
+        const runIndex = numberFromUnknown(parsed.run_index);
+        if (runIndex == null || runIndex < 0)
+            continue;
+        const current = ensure(runIndex);
+        const timestampMs = numberFromUnknown(evt.timestampMs);
+        const typeName = eventTypeName(evt.type);
+        if (typeName === "TaskRunSubmitted") {
+            current.submitted_at_ms ??= timestampMs;
+            current.next_run_ms = numberFromUnknown(parsed.next_run_ms) ?? current.next_run_ms;
+            if (current.status !== "FINALIZED" && current.status !== "ABORTED")
+                current.status = "OPEN";
+            continue;
+        }
+        if (typeName === "TaskRunMediationStarted") {
+            current.submitted_at_ms ??= timestampMs;
+            if (current.status !== "FINALIZED" && current.status !== "ABORTED")
+                current.status = "MEDIATION";
+            continue;
+        }
+        if (typeName === "TaskRunFinalized") {
+            current.status = "FINALIZED";
+            current.completed_at_ms = timestampMs;
+            current.result_seq = numberFromUnknown(parsed.result_seq) ?? current.result_seq;
+            current.signer_count = numberFromUnknown(parsed.signer_count) ?? current.signer_count;
+            current.next_run_ms = numberFromUnknown(parsed.next_run_ms) ?? current.next_run_ms;
+            continue;
+        }
+        if (typeName === "TaskRunAborted") {
+            current.status = "ABORTED";
+            current.completed_at_ms = timestampMs;
+            current.reason_code = numberFromUnknown(parsed.reason_code) ?? current.reason_code;
+            current.result_seq = numberFromUnknown(parsed.result_seq) ?? current.result_seq;
+            current.next_run_ms = numberFromUnknown(parsed.next_run_ms) ?? current.next_run_ms;
+        }
+    }
+    const activeRunIndex = numberFromUnknown(fields.active_run_index) ?? -1;
+    const latestResultSeq = numberFromUnknown(fields.latest_result_seq) ?? -1;
+    const executionState = numberFromUnknown(fields.execution_state) ?? -1;
+    if (executionState === 1 && activeRunIndex > latestResultSeq && activeRunIndex >= 0) {
+        const current = ensure(activeRunIndex);
+        if (current.status !== "FINALIZED" && current.status !== "ABORTED") {
+            current.status = current.status === "MEDIATION" ? "MEDIATION" : "OPEN";
+        }
+    }
+    return [...byRun.values()].sort((a, b) => b.run_index - a.run_index);
+}
 app.get("/api/health", (_req, res) => {
     res.json({ ok: true, service: "iota_oracle_webview", time: new Date().toISOString() });
 });
@@ -357,10 +445,20 @@ app.get("/api/task/:taskId", async (req, res) => {
             return;
         }
         const fields = extractFields(data.content) ?? {};
+        const taskType = String(data.type ?? "");
+        const taskPackageId = taskType.split("::")[0] || runtime.oracleTasksPackageId || "";
         const latestResultSeq = numberFromUnknown(fields.latest_result_seq) ?? 0;
         const results = latestResultSeq > 0 && runtime.oracleTasksPackageId
             ? await fetchTaskResults(client, taskId, runtime.oracleTasksPackageId)
             : [];
+        const [taskEvents, messageEvents] = taskPackageId
+            ? await Promise.all([
+                queryTaskEventsByModule(client, taskPackageId, config.oracleTaskModule, taskId).catch(() => []),
+                queryTaskEventsByModule(client, taskPackageId, config.oracleMessageModule, taskId).catch(() => []),
+            ])
+            : [[], []];
+        const allEvents = [...taskEvents, ...messageEvents].sort((a, b) => Number(a.timestampMs ?? 0) - Number(b.timestampMs ?? 0));
+        const run_history = buildRunHistory(allEvents, results, fields);
         const latestResultFields = results[0]?.raw ?? {};
         function pick(...values) {
             for (const v of values) {
@@ -430,6 +528,7 @@ app.get("/api/task/:taskId", async (req, res) => {
             result_order: asArray(pick(fields.result_order, fields.runtime?.fields?.result_order)),
             latest_result: latestResultFields,
             results,
+            run_history,
             raw: fields,
         };
         res.json(normalized);

@@ -137,6 +137,28 @@ type PreparedTaskScheduleWalletTransaction = {
   };
 };
 
+type ScheduledTaskActionInput = {
+  action: "freeze" | "unfreeze" | "cancel" | "fund";
+  taskId: string;
+  controllerCapId?: string;
+  ownerCapId?: string;
+  amount?: bigint;
+};
+
+type PreparedScheduledTaskActionWalletTransaction = {
+  ok: true;
+  mode: "prepare-scheduled-task-action-webview";
+  sender: string;
+  action: ScheduledTaskActionInput["action"];
+  taskId: string;
+  serializedTransaction: string;
+  gasBudget: string;
+  amount: string | null;
+  controllerCapId: string | null;
+  ownerCapId: string | null;
+  target: string;
+};
+
 const EMediationVarianceTooHigh = 401;
 
 function mustEnv(k: string): string {
@@ -1125,6 +1147,110 @@ function makeCreateTaskWithScheduleTx(args: {
   return tx;
 }
 
+function normalizeObjectId(raw: unknown, field: string): string {
+  const value = String(raw ?? "").trim();
+  if (!value) throw new Error(`Missing ${field}.`);
+  return value;
+}
+
+function normalizeScheduledTaskActionInput(input: any): ScheduledTaskActionInput {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("Scheduled task action payload must be a JSON object.");
+  }
+
+  const action = String(input.action ?? "").trim().toLowerCase();
+  const taskId = normalizeObjectId(input.taskId ?? input.task_id, "taskId");
+
+  if (action === "freeze" || action === "unfreeze") {
+    return {
+      action,
+      taskId,
+      controllerCapId: normalizeObjectId(input.controllerCapId ?? input.controller_cap_id, "controllerCapId"),
+    };
+  }
+
+  if (action === "cancel") {
+    return {
+      action,
+      taskId,
+      ownerCapId: normalizeObjectId(input.ownerCapId ?? input.owner_cap_id, "ownerCapId"),
+    };
+  }
+
+  if (action === "fund") {
+    const amountRaw = input.amountNanoIota ?? input.amount_nano_iota ?? input.amountIota ?? input.amount_iota;
+    if (amountRaw == null || String(amountRaw).trim() === "") {
+      throw new Error("Missing funding amount.");
+    }
+
+    const amount =
+      input.amountNanoIota != null || input.amount_nano_iota != null
+        ? parseNonNegativeBigInt(amountRaw, "amount_nano_iota")
+        : parseIotaToNano(amountRaw, "amount_iota");
+
+    if (amount <= 0n) {
+      throw new Error("Funding amount must be greater than zero.");
+    }
+
+    return {
+      action,
+      taskId,
+      amount,
+    };
+  }
+
+  throw new Error(`Unsupported scheduled task action: ${String(input.action ?? "")}`);
+}
+
+function makeScheduledTaskActionTx(args: {
+  tasksPkg: string;
+  gasBudget: bigint;
+  input: ScheduledTaskActionInput;
+}): { tx: Transaction; target: string } {
+  const { tasksPkg, gasBudget, input } = args;
+  const tx = new Transaction();
+  tx.setGasBudget(Number(gasBudget));
+
+  if (input.action === "freeze") {
+    const target = `${tasksPkg}::oracle_scheduled_tasks::freeze_scheduled_task_by_controller`;
+    tx.moveCall({
+      target,
+      arguments: [tx.object(input.controllerCapId!), tx.object(input.taskId)],
+    });
+    return { tx, target };
+  }
+
+  if (input.action === "unfreeze") {
+    const target = `${tasksPkg}::oracle_scheduled_tasks::unfreeze_scheduled_task_by_controller`;
+    tx.moveCall({
+      target,
+      arguments: [tx.object(input.controllerCapId!), tx.object(input.taskId)],
+    });
+    return { tx, target };
+  }
+
+  if (input.action === "cancel") {
+    const target = `${tasksPkg}::oracle_scheduled_tasks::cancel_scheduled_task`;
+    tx.moveCall({
+      target,
+      arguments: [tx.object(input.ownerCapId!), tx.object(input.taskId)],
+    });
+    return { tx, target };
+  }
+
+  if (input.action === "fund") {
+    const target = `${tasksPkg}::oracle_scheduled_tasks::top_up_scheduled_task`;
+    const [fundingCoin] = tx.splitCoins(tx.gas, [tx.pure(bcsU64(input.amount!))]);
+    tx.moveCall({
+      target,
+      arguments: [tx.object(input.taskId), fundingCoin],
+    });
+    return { tx, target };
+  }
+
+  throw new Error(`Unsupported scheduled task action: ${input.action}`);
+}
+
 function isSignatureMismatchError(error: unknown): boolean {
   const msg = String((error as any)?.message ?? error ?? "").toLowerCase();
   if (!msg) return false;
@@ -1383,6 +1509,48 @@ async function runPrepareTaskScheduleWebview(
   process.stdout.write(`${JSON.stringify(payload)}\n`);
 }
 
+async function runPrepareScheduledTaskActionWebview(
+  actionArg: string | undefined,
+  sender: string | undefined,
+) {
+  const normalizedSender = String(sender ?? "").trim();
+  if (!normalizedSender) {
+    throw new Error(
+      "Usage: npm run create -- prepare-scheduled-task-action-webview <action.json | inline-json> <sender-address>",
+    );
+  }
+
+  const actionInput = normalizeScheduledTaskActionInput(
+    loadJsonArg(
+      actionArg,
+      "Usage: npm run create -- prepare-scheduled-task-action-webview <action.json | inline-json> <sender-address>",
+    ),
+  );
+
+  const txPlan = makeScheduledTaskActionTx({
+    tasksPkg: getTasksPackageId(),
+    gasBudget: asBigInt(process.env.GAS_BUDGET ?? "50000000", 50_000_000n),
+    input: actionInput,
+  });
+  txPlan.tx.setSender(normalizedSender);
+
+  const payload: PreparedScheduledTaskActionWalletTransaction = {
+    ok: true,
+    mode: "prepare-scheduled-task-action-webview",
+    sender: normalizedSender,
+    action: actionInput.action,
+    taskId: actionInput.taskId,
+    serializedTransaction: serializeTransactionForWallet(txPlan.tx),
+    gasBudget: String(asBigInt(process.env.GAS_BUDGET ?? "50000000", 50_000_000n)),
+    amount: actionInput.amount == null ? null : actionInput.amount.toString(),
+    controllerCapId: actionInput.controllerCapId ?? null,
+    ownerCapId: actionInput.ownerCapId ?? null,
+    target: txPlan.target,
+  };
+
+  process.stdout.write(`${JSON.stringify(payload)}\n`);
+}
+
 async function runPrepareWebview(taskArg: string | undefined, sender: string | undefined) {
   const normalizedSender = String(sender ?? "").trim();
   if (!normalizedSender) {
@@ -1523,6 +1691,11 @@ async function main() {
 
   if (mode === "prepare-task-schedule-webview") {
     await runPrepareTaskScheduleWebview(process.argv[3], process.argv[4], process.argv[5]);
+    return;
+  }
+
+  if (mode === "prepare-scheduled-task-action-webview") {
+    await runPrepareScheduledTaskActionWebview(process.argv[3], process.argv[4]);
     return;
   }
 
