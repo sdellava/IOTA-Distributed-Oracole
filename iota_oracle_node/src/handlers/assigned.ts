@@ -299,6 +299,7 @@ export async function runConsensusRound(
     waitMs,
     pollMs,
     minTimestampMs: runStartedAtMs,
+    extraCollectMs: optInt("PARTIAL_EXTRA_COLLECT_MS", 2_500),
   });
 
   if (!partials.ok) {
@@ -320,7 +321,7 @@ export async function runConsensusRound(
     return false;
   }
 
-  const chosenSigners = [...partials.partials.keys()].sort().slice(0, quorumK);
+  const chosenSigners = [...partials.partials.keys()].sort();
   if (myAddr !== leaderAddr) return true;
 
   // La committee multisig del task e' definita dall'intero assigned set + quorum_k.
@@ -356,6 +357,10 @@ export async function runConsensusRound(
     combinedSigB64,
   );
   if (!verified) throw new Error("Combined multisig signature verification failed");
+
+  console.log(
+    `[node ${nodeId}] finalize signer set=${chosenSigners.length}/${assignedNodes.length} threshold=${quorumK} signers=${chosenSigners.join(",")}`,
+  );
 
   const cert = buildCertificateBlob({
     kind: "finalize",

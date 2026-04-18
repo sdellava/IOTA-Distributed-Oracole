@@ -92,10 +92,11 @@ export async function waitForRevealResolution(opts: {
 }
 
 export async function waitForPartialQuorum(opts: {
-  client: IotaClient; taskId: string; round: number; signerAddrs: string[]; quorumK: number; messageDigestHex: string; waitMs: number; pollMs: number; minTimestampMs?: number;
+  client: IotaClient; taskId: string; round: number; signerAddrs: string[]; quorumK: number; messageDigestHex: string; waitMs: number; pollMs: number; minTimestampMs?: number; extraCollectMs?: number;
 }) {
   const until = Date.now() + opts.waitMs;
   const allowed = new Set(opts.signerAddrs.map((x) => x.toLowerCase()));
+  let quorumReachedAt = 0;
   while (Date.now() < until) {
     const msgs = await readOracleMessages(opts.client, opts.taskId, opts.round, { minTimestampMs: opts.minTimestampMs });
     const partials = msgs.filter((m) => m.kind === MSG_PARTIAL && allowed.has(m.sender));
@@ -105,7 +106,13 @@ export async function waitForPartialQuorum(opts: {
       if (digestHex !== opts.messageDigestHex) continue;
       if (!bySender.has(m.sender)) bySender.set(m.sender, m);
     }
-    if (bySender.size >= opts.quorumK) return { ok: true, partials: bySender };
+    if (bySender.size >= opts.quorumK) {
+      if (!quorumReachedAt) quorumReachedAt = Date.now();
+      const extraCollectMs = Math.max(0, opts.extraCollectMs ?? 0);
+      if (bySender.size >= allowed.size || Date.now() >= quorumReachedAt + extraCollectMs) {
+        return { ok: true, partials: bySender };
+      }
+    }
     await sleep(opts.pollMs);
   }
   return { ok: false, reason: 'partial_timeout' as const };
