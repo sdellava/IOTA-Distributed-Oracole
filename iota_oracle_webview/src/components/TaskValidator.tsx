@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Stefano Della Valle
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { validateTaskMultisig } from "../lib/multisigValidation";
 
 type RegisteredNode = {
@@ -796,7 +796,6 @@ function explainEvent(
 }
 
 export default function TaskValidator({ task, registeredNodes, events = [] }: Props) {
-  const validation = useMemo(() => validateTaskMultisig(task, registeredNodes), [task, registeredNodes]);
   const results = useMemo(
     () =>
       (Array.isArray(task?.results) ? task.results : [])
@@ -811,12 +810,50 @@ export default function TaskValidator({ task, registeredNodes, events = [] }: Pr
         }),
     [task?.results],
   );
+  const [selectedResultKey, setSelectedResultKey] = useState("");
+
+  useEffect(() => {
+    if (!results.length) {
+      setSelectedResultKey("");
+      return;
+    }
+    const hasCurrentSelection = results.some(
+      (item, index) => `${item.objectId || ""}:${item.seq ?? "-"}:${index}` === selectedResultKey,
+    );
+    if (!hasCurrentSelection) {
+      setSelectedResultKey(`${results[0].objectId || ""}:${results[0].seq ?? "-"}:0`);
+    }
+  }, [results, selectedResultKey]);
+
+  const selectedResult = useMemo(() => {
+    if (!results.length) return null;
+    return (
+      results.find(
+        (item, index) => `${item.objectId || ""}:${item.seq ?? "-"}:${index}` === selectedResultKey,
+      ) ?? results[0]
+    );
+  }, [results, selectedResultKey]);
+
+  const validationTask = useMemo<TaskLike | null>(() => {
+    if (!task) return null;
+    if (!selectedResult) return task;
+    return {
+      ...task,
+      multisig_addr: selectedResult.multisig_addr ?? task.multisig_addr,
+      multisig_bytes: selectedResult.multisig_bytes ?? task.multisig_bytes,
+      certificate_signers: selectedResult.certificate_signers ?? task.certificate_signers,
+      result: selectedResult.result ?? task.result,
+      result_hash: selectedResult.result_hash ?? task.result_hash,
+    };
+  }, [task, selectedResult]);
+
+  const validation = useMemo(() => validateTaskMultisig(validationTask, registeredNodes), [validationTask, registeredNodes]);
   const latestResultText = useMemo(
     () =>
-      prettyResultText(results[0]?.result) ??
+      prettyResultText(selectedResult?.result) ??
       prettyResultText(task?.result) ??
       prettyResultText(task?.result_bytes),
-    [results, task?.result, task?.result_bytes],
+    [selectedResult, task?.result, task?.result_bytes],
   );
 
   const explainedEvents = useMemo(
@@ -899,11 +936,13 @@ export default function TaskValidator({ task, registeredNodes, events = [] }: Pr
       {latestResultText ? (
         <>
           <div className="subsection-title" style={{ marginTop: 18 }}>
-            Latest result
+            {selectedResult && selectedResult !== results[0] ? "Selected result" : "Latest result"}
           </div>
-          {results[0] ? (
+          {selectedResult ? (
             <div className="summary-hint" style={{ marginBottom: 8 }}>
-              Produced at: {formatProducedAt(results[0].produced_at_ms)}{results[0].seq != null ? ` | seq=${results[0].seq}` : ""}{results[0].run_index != null ? ` | run=${results[0].run_index}` : ""}
+              Produced at: {formatProducedAt(selectedResult.produced_at_ms)}
+              {selectedResult.seq != null ? ` | seq=${selectedResult.seq}` : ""}
+              {selectedResult.run_index != null ? ` | run=${selectedResult.run_index}` : ""}
             </div>
           ) : null}
           <pre>{latestResultText}</pre>
@@ -933,8 +972,17 @@ export default function TaskValidator({ task, registeredNodes, events = [] }: Pr
                   const signers = Array.isArray(item.certificate_signers) ? item.certificate_signers.length : 0;
                   const hash = bytesToHex(toUint8Array(item.result_hash) ?? undefined) || "-";
                   const preview = prettyResultText(item.result);
+                  const rowKey = `${item.objectId || ""}:${item.seq ?? "-"}:${index}`;
+                  const isSelected = rowKey === selectedResultKey;
                   return (
-                    <tr key={item.objectId || `${item.seq ?? "-"}-${index}`}>
+                    <tr
+                      key={item.objectId || `${item.seq ?? "-"}-${index}`}
+                      onClick={() => setSelectedResultKey(rowKey)}
+                      style={{
+                        cursor: "pointer",
+                        backgroundColor: isSelected ? "rgba(56, 112, 255, 0.08)" : undefined,
+                      }}
+                    >
                       <td>{item.seq ?? "-"}</td>
                       <td>{formatProducedAt(item.produced_at_ms)}</td>
                       <td>{item.run_index ?? "-"}</td>
