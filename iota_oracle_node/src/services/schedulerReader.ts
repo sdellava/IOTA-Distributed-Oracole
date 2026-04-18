@@ -4,18 +4,26 @@
 import type { IotaClient } from "@iota/iota-sdk/client";
 
 import {
+  getStateId,
   getTaskRegistryId,
   getTaskSchedulerQueueId,
 } from "../config/env";
-import { getMoveFields } from "../utils/move";
+import { resolveNodeRegistryId } from "./nodeRegistry";
+import { getAnyMoveFields, getMoveFields } from "../utils/move";
 
 export type SchedulerQueueSnapshot = {
   id: string;
-  nodes: string[];
-  head: string | null;
+  nodeIds: number[];
+  headNodeId: number | null;
   activeRoundStartedMs: number;
   lastRoundCompletedMs: number;
   roundCounter: number;
+};
+
+export type RegisteredOracleNodeSnapshot = {
+  nodeId: number;
+  addr: string;
+  acceptedTemplateIds: number[];
 };
 
 export type TaskSnapshot = {
@@ -75,15 +83,32 @@ export async function readTaskSchedulerQueue(
 ): Promise<SchedulerQueueSnapshot> {
   const obj = await client.getObject({ id: queueId, options: { showContent: true } } as any);
   const f = getMoveFields(obj);
-  const nodes = toArray(f.nodes).map(toStr).filter(Boolean).map((x) => x.toLowerCase());
+  const nodeIds = toArray(f.node_ids).map(toNum).filter((x) => x > 0);
   return {
     id: queueId,
-    nodes,
-    head: nodes[0] ?? null,
+    nodeIds,
+    headNodeId: nodeIds[0] ?? null,
     activeRoundStartedMs: toNum(f.active_round_started_ms),
     lastRoundCompletedMs: toNum(f.last_round_completed_ms),
     roundCounter: toNum(f.round_counter),
   };
+}
+
+export async function readRegisteredOracleNodes(
+  client: IotaClient,
+  stateId = getStateId(),
+): Promise<RegisteredOracleNodeSnapshot[]> {
+  const nodeRegistryId = await resolveNodeRegistryId(client, stateId);
+  const obj = await client.getObject({ id: nodeRegistryId, options: { showContent: true } } as any);
+  const f = getMoveFields(obj);
+  return toArray(f.oracle_nodes)
+    .map((item) => getAnyMoveFields(item))
+    .map((node) => ({
+      nodeId: toNum(node.node_id),
+      addr: toStr(node.addr).toLowerCase(),
+      acceptedTemplateIds: toArray(node.accepted_template_ids).map(toNum).filter((x) => x >= 0),
+    }))
+    .filter((node) => node.nodeId > 0 && !!node.addr);
 }
 
 export async function readTaskRegistry(client: IotaClient, registryId = getTaskRegistryId()): Promise<string[]> {

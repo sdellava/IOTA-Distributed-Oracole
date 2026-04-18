@@ -65,6 +65,7 @@ type WalletScheduledResult = {
 type TaskDetail = {
   assigned_nodes?: Array<string | number>;
   certificate_signers?: Array<string | number>;
+  state?: number | string | null;
   status?: number | string | null;
   execution_state?: number | string | null;
   active_round?: number | string | null;
@@ -74,6 +75,7 @@ type TaskDetail = {
   result?: unknown;
   result_bytes?: number[] | Uint8Array | string | null;
   result_hash?: number[] | Uint8Array | string | null;
+  latest_result?: unknown;
 };
 
 type TaskEvent = {
@@ -852,6 +854,7 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
   );
   const executionClientRef = useRef(iotaClients.devnet);
   const pollTokenRef = useRef(0);
+  const finalizedResultRefetchKeyRef = useRef<string>('');
   const { mutateAsync: signAndExecuteTransaction } = useSignAndExecuteTransaction({
     execute: async ({ bytes, signature }) =>
       await executionClientRef.current.executeTransactionBlock({
@@ -954,9 +957,47 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
       result?.live.resultText ??
       resultValueToPrettyText(taskDetail?.result) ??
       resultValueToPrettyText(taskDetail?.result_bytes) ??
+      resultValueToPrettyText(taskDetail?.latest_result) ??
       null
     );
   }, [result?.live.resultText, taskDetail]);
+
+  useEffect(() => {
+    const taskId = result?.taskId?.trim();
+    const state = Number(taskDetail?.state ?? result?.live.state ?? -1);
+    if (!taskId) return;
+    if (state !== 9) {
+      finalizedResultRefetchKeyRef.current = '';
+      return;
+    }
+    if (displayResultText) {
+      finalizedResultRefetchKeyRef.current = '';
+      return;
+    }
+
+    const refetchKey = `${taskId}:${state}`;
+    if (finalizedResultRefetchKeyRef.current === refetchKey) return;
+    finalizedResultRefetchKeyRef.current = refetchKey;
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/task/${encodeURIComponent(taskId)}`);
+        if (!response.ok) return;
+        const payload = (await response.json()) as TaskDetail;
+        if (!cancelled) setTaskDetail(payload);
+      } catch {
+        // Best-effort refresh only.
+      } finally {
+        if (!cancelled) finalizedResultRefetchKeyRef.current = '';
+      }
+    }, 1200);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [displayResultText, result?.live.state, result?.taskId, taskDetail?.state]);
 
   const assignedNodeRows = useMemo(() => {
       const assignedNodes = Array.isArray(taskDetail?.assigned_nodes)

@@ -47,6 +47,10 @@ export function getStateId(): string {
   );
 }
 
+export function getConfiguredNodeRegistryId(): string | undefined {
+  return envByNetwork("ORACLE_NODE_REGISTRY_ID");
+}
+
 export function getTreasuryId(): string {
   return (
     envByNetwork("ORACLE_TREASURY_ID") ||

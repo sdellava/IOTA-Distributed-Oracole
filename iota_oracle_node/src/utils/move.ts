@@ -7,6 +7,34 @@ export function getMoveFields(obj: any): Record<string, any> {
   return (c.fields ?? {}) as Record<string, any>;
 }
 
+export function getAnyMoveFields(value: any): Record<string, any> {
+  const top = getMoveFields(value);
+  if (Object.keys(top).length > 0) return top;
+  if (!value || typeof value !== "object") return {};
+
+  const directFields = (value as any).fields;
+  if (directFields && typeof directFields === "object" && !Array.isArray(directFields)) {
+    return directFields as Record<string, any>;
+  }
+
+  const directValueFields = (value as any).value?.fields;
+  if (directValueFields && typeof directValueFields === "object" && !Array.isArray(directValueFields)) {
+    return directValueFields as Record<string, any>;
+  }
+
+  const directDataFields = (value as any).data?.fields;
+  if (directDataFields && typeof directDataFields === "object" && !Array.isArray(directDataFields)) {
+    return directDataFields as Record<string, any>;
+  }
+
+  const contentFields = (value as any).data?.content?.fields;
+  if (contentFields && typeof contentFields === "object" && !Array.isArray(contentFields)) {
+    return contentFields as Record<string, any>;
+  }
+
+  return {};
+}
+
 export function moveToArray(value: any): any[] {
   if (Array.isArray(value)) return value;
   if (!value || typeof value !== "object") return [];

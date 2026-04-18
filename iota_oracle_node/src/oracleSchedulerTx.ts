@@ -14,6 +14,7 @@ import {
   getTreasuryId,
 } from "./config/env";
 import type { NodeContext } from "./nodeContext";
+import { resolveNodeRegistryId } from "./services/nodeRegistry";
 import { signAndExecuteWithLockRetry } from "./txRetry";
 
 function gasBudget(envKey: string, def: number): number {
@@ -29,6 +30,7 @@ function tasksPkg(): string {
 }
 
 export async function reconcileSchedulerQueueTx(ctx: NodeContext): Promise<string> {
+  const nodeRegistryId = await resolveNodeRegistryId(ctx.client, getStateId());
   const res = await signAndExecuteWithLockRetry({
     client: ctx.client,
     signer: ctx.identity.keypair,
@@ -37,7 +39,7 @@ export async function reconcileSchedulerQueueTx(ctx: NodeContext): Promise<strin
       tx.setGasBudget(gasBudget("GAS_BUDGET_SCHEDULER_RECONCILE", gasBudget("GAS_BUDGET", 20_000_000)));
       tx.moveCall({
         target: `${tasksPkg()}::oracle_tasks::reconcile_scheduler_queue`,
-        arguments: [tx.object(getTaskSchedulerQueueId()), tx.object(getStateId())],
+        arguments: [tx.object(getTaskSchedulerQueueId()), tx.object(nodeRegistryId)],
       });
       return tx;
     },
@@ -48,6 +50,7 @@ export async function reconcileSchedulerQueueTx(ctx: NodeContext): Promise<strin
 }
 
 export async function startSchedulerRoundTx(ctx: NodeContext): Promise<string> {
+  const nodeRegistryId = await resolveNodeRegistryId(ctx.client, getStateId());
   const res = await signAndExecuteWithLockRetry({
     client: ctx.client,
     signer: ctx.identity.keypair,
@@ -56,7 +59,7 @@ export async function startSchedulerRoundTx(ctx: NodeContext): Promise<string> {
       tx.setGasBudget(gasBudget("GAS_BUDGET_SCHEDULER_START", gasBudget("GAS_BUDGET", 20_000_000)));
       tx.moveCall({
         target: `${tasksPkg()}::oracle_tasks::start_scheduler_round`,
-        arguments: [tx.object(getTaskSchedulerQueueId()), tx.object(getStateId()), tx.object(getClockId())],
+        arguments: [tx.object(getTaskSchedulerQueueId()), tx.object(nodeRegistryId), tx.object(getClockId())],
       });
       return tx;
     },
@@ -67,6 +70,7 @@ export async function startSchedulerRoundTx(ctx: NodeContext): Promise<string> {
 }
 
 export async function advanceSchedulerQueueTx(ctx: NodeContext): Promise<string> {
+  const nodeRegistryId = await resolveNodeRegistryId(ctx.client, getStateId());
   const res = await signAndExecuteWithLockRetry({
     client: ctx.client,
     signer: ctx.identity.keypair,
@@ -75,7 +79,7 @@ export async function advanceSchedulerQueueTx(ctx: NodeContext): Promise<string>
       tx.setGasBudget(gasBudget("GAS_BUDGET_SCHEDULER_ADVANCE", gasBudget("GAS_BUDGET", 20_000_000)));
       tx.moveCall({
         target: `${tasksPkg()}::oracle_tasks::advance_scheduler_queue`,
-        arguments: [tx.object(getTaskSchedulerQueueId()), tx.object(getStateId()), tx.object(getClockId())],
+        arguments: [tx.object(getTaskSchedulerQueueId()), tx.object(nodeRegistryId), tx.object(getClockId())],
       });
       return tx;
     },
@@ -86,6 +90,7 @@ export async function advanceSchedulerQueueTx(ctx: NodeContext): Promise<string>
 }
 
 export async function completeSchedulerRoundTx(ctx: NodeContext, processedTasks: number): Promise<string> {
+  const nodeRegistryId = await resolveNodeRegistryId(ctx.client, getStateId());
   const res = await signAndExecuteWithLockRetry({
     client: ctx.client,
     signer: ctx.identity.keypair,
@@ -96,7 +101,7 @@ export async function completeSchedulerRoundTx(ctx: NodeContext, processedTasks:
         target: `${tasksPkg()}::oracle_tasks::complete_scheduler_round`,
         arguments: [
           tx.object(getTaskSchedulerQueueId()),
-          tx.object(getStateId()),
+          tx.object(nodeRegistryId),
           tx.object(getClockId()),
           tx.pure(bcsU64(processedTasks)),
         ],
@@ -110,6 +115,8 @@ export async function completeSchedulerRoundTx(ctx: NodeContext, processedTasks:
 }
 
 export async function submitTaskRunTx(ctx: NodeContext, taskId: string): Promise<string> {
+  const stateId = getStateId();
+  const nodeRegistryId = await resolveNodeRegistryId(ctx.client, stateId);
   const res = await signAndExecuteWithLockRetry({
     client: ctx.client,
     signer: ctx.identity.keypair,
@@ -122,8 +129,8 @@ export async function submitTaskRunTx(ctx: NodeContext, taskId: string): Promise
           tx.object(getTaskRegistryId()),
           tx.object(getTaskSchedulerQueueId()),
           tx.object(taskId),
-          tx.object(getStateId()),
-          tx.object("0x5"),
+          tx.object(stateId),
+          tx.object(nodeRegistryId),
           tx.object(getTreasuryId()),
           tx.object(getRandomId()),
           tx.object(getClockId()),

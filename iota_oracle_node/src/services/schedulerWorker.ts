@@ -11,11 +11,18 @@ function jitterMs(maxMs: number): number {
   return Math.floor(Math.random() * (maxMs + 1));
 }
 
+function nextAlignedDelayMs(checkMs: number, nowMs = Date.now()): number {
+  if (checkMs <= 0) return 0;
+  const remainder = nowMs % checkMs;
+  if (remainder === 0) return checkMs;
+  return checkMs - remainder;
+}
+
 export function startSchedulerWorker(ctx: NodeContext): void {
   if (!optBool("SCHEDULER_ENABLED", true)) return;
 
   const checkMs = optInt("SCHEDULER_CHECK_MS", 30_000);
-  const startupJitter = jitterMs(optInt("SCHEDULER_STARTUP_JITTER_MS", 8_000));
+  const startupJitter = jitterMs(optInt("SCHEDULER_STARTUP_JITTER_MS", 0));
   let inFlight = false;
 
   const loop = async () => {
@@ -33,8 +40,8 @@ export function startSchedulerWorker(ctx: NodeContext): void {
   void (async () => {
     if (startupJitter > 0) await sleep(startupJitter);
     for (;;) {
+      await sleep(nextAlignedDelayMs(checkMs));
       await loop();
-      await sleep(checkMs);
     }
   })();
 }

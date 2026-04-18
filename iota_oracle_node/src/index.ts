@@ -28,6 +28,7 @@ import { processMediationStarted } from "./handlers/mediationStarted";
 import { startMonitorServer, type MonitorRuntimeState } from "./monitor";
 import type { NodeContext } from "./nodeContext";
 import { startSchedulerWorker } from "./services/schedulerWorker";
+import { sleep } from "./utils/sleep";
 
 function buildContext(): NodeContext {
   const nodeId = parseNodeId(process.argv);
@@ -70,6 +71,10 @@ async function registerNode(ctx: NodeContext): Promise<string | null> {
     console.warn(`[node ${ctx.nodeId}] register failed (continue): ${msg}`);
     throw e;
   }
+}
+
+function registerRetryDelayMs(): number {
+  return 1000 + Math.floor(Math.random() * 3001);
 }
 
 async function unregisterNode(ctx: NodeContext): Promise<void> {
@@ -197,11 +202,19 @@ async function main() {
 
   if (autoRegister) {
     runtimeState.registration.attempted = true;
-    try {
-      runtimeState.registration.txDigest = await registerNode(ctx);
-      runtimeState.registration.succeeded = true;
-    } catch (e: any) {
-      runtimeState.registration.lastError = String(e?.message ?? e);
+    for (;;) {
+      try {
+        runtimeState.registration.txDigest = await registerNode(ctx);
+        runtimeState.registration.succeeded = true;
+        runtimeState.registration.lastError = null;
+        break;
+      } catch (e: any) {
+        const msg = String(e?.message ?? e);
+        runtimeState.registration.lastError = msg;
+        const waitMs = registerRetryDelayMs();
+        console.warn(`[node ${ctx.nodeId}] auto-register retry in ${waitMs} ms: ${msg}`);
+        await sleep(waitMs);
+      }
     }
   }
 

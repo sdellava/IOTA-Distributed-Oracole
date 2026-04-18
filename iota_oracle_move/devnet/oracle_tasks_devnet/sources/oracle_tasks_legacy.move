@@ -129,6 +129,7 @@ module iota_oracle_tasks::oracle_tasks_legacy {
 
     #[allow(lint(public_random))]
     public entry fun create_task(
+        node_registry: &mut systemState::NodeRegistry,
         st: &mut systemState::State,
         system: &mut IotaSystemState,
         treasury: &mut systemState::OracleTreasury,
@@ -148,6 +149,7 @@ module iota_oracle_tasks::oracle_tasks_legacy {
     ) {
         let sender = tx_context::sender(ctx);
         let _ = create_task_internal(
+            node_registry,
             st,
             system,
             treasury,
@@ -170,6 +172,7 @@ module iota_oracle_tasks::oracle_tasks_legacy {
 
     #[allow(lint(public_random))]
     public fun create_task_internal(
+        node_registry: &mut systemState::NodeRegistry,
         st: &mut systemState::State,
         system: &mut IotaSystemState,
         treasury: &mut systemState::OracleTreasury,
@@ -188,7 +191,7 @@ module iota_oracle_tasks::oracle_tasks_legacy {
         creator: address,
         ctx: &mut TxContext
     ): object::ID {
-        systemState::prune_oracle_nodes_if_epoch_changed(st, system, ctx);
+        systemState::prune_oracle_nodes_if_epoch_changed(node_registry, st, system, ctx);
         assert!(vector::length(&payload) > 0, EInvalidPayload);
         assert!(
             mediation_mode == MEDIATION_NONE || mediation_mode == MEDIATION_MEAN_U64,
@@ -212,7 +215,7 @@ module iota_oracle_tasks::oracle_tasks_legacy {
 
         let task_type = systemState::task_template_task_type(st, template_id);
 
-        let nodes_ref = systemState::oracle_nodes(st);
+        let nodes_ref = systemState::oracle_nodes(node_registry);
         let mut candidates = vector::empty<address>();
         let mut i = 0;
         while (i < vector::length(nodes_ref)) {

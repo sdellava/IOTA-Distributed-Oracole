@@ -106,6 +106,11 @@ values = {
         object_id_for_type(system_text, "systemState::ControllerCap"),
         first_env_value("CONTROLLER_CAP_ID"),
     ),
+    "ORACLE_NODE_REGISTRY_ID": pick(
+        "ORACLE_NODE_REGISTRY_ID",
+        object_id_for_type(system_text, "systemState::NodeRegistry"),
+        first_env_value("ORACLE_NODE_REGISTRY_ID"),
+    ),
     "ORACLE_TASK_REGISTRY_ID": pick(
         "ORACLE_TASK_REGISTRY_ID",
         object_id_for_type(tasks_text, "oracle_tasks::TaskRegistry"),
@@ -201,6 +206,7 @@ node_pairs = [
     ("ORACLE_STATE_ID", values["ORACLE_STATE_ID"]),
     ("ORACLE_TREASURY_ID", values["ORACLE_TREASURY_ID"]),
     ("CONTROLLER_CAP_ID", values["CONTROLLER_CAP_ID"]),
+    ("ORACLE_NODE_REGISTRY_ID", values["ORACLE_NODE_REGISTRY_ID"]),
     ("ORACLE_TASK_REGISTRY_ID", values["ORACLE_TASK_REGISTRY_ID"]),
     ("ORACLE_TASK_SCHEDULER_QUEUE_ID", values["ORACLE_TASK_SCHEDULER_QUEUE_ID"]),
 ]
@@ -213,12 +219,14 @@ webview_direct_pairs = [
     ("ORACLE_SYSTEM_PACKAGE_ID", values["ORACLE_SYSTEM_PACKAGE_ID"]),
     ("ORACLE_STATE_ID", values["ORACLE_STATE_ID"]),
     ("ORACLE_TREASURY_ID", values["ORACLE_TREASURY_ID"]),
+    ("ORACLE_NODE_REGISTRY_ID", values["ORACLE_NODE_REGISTRY_ID"]),
     ("ORACLE_TASK_REGISTRY_ID", values["ORACLE_TASK_REGISTRY_ID"]),
     ("ORACLE_TASK_SCHEDULER_QUEUE_ID", values["ORACLE_TASK_SCHEDULER_QUEUE_ID"]),
     ("DEVNET_ORACLE_TASKS_PACKAGE_ID", values["ORACLE_TASKS_PACKAGE_ID"]),
     ("DEVNET_ORACLE_SYSTEM_PACKAGE_ID", values["ORACLE_SYSTEM_PACKAGE_ID"]),
     ("DEVNET_ORACLE_STATE_ID", values["ORACLE_STATE_ID"]),
     ("DEVNET_ORACLE_TREASURY_ID", values["ORACLE_TREASURY_ID"]),
+    ("DEVNET_ORACLE_NODE_REGISTRY_ID", values["ORACLE_NODE_REGISTRY_ID"]),
     ("DEVNET_ORACLE_TASK_REGISTRY_ID", values["ORACLE_TASK_REGISTRY_ID"]),
     ("DEVNET_ORACLE_TASK_SCHEDULER_QUEUE_ID", values["ORACLE_TASK_SCHEDULER_QUEUE_ID"]),
 ]
@@ -231,6 +239,7 @@ webview_example_pairs = [
     ("DEVNET_ORACLE_SYSTEM_PACKAGE_ID", values["ORACLE_SYSTEM_PACKAGE_ID"]),
     ("DEVNET_ORACLE_STATE_ID", values["ORACLE_STATE_ID"]),
     ("DEVNET_ORACLE_TREASURY_ID", values["ORACLE_TREASURY_ID"]),
+    ("DEVNET_ORACLE_NODE_REGISTRY_ID", values["ORACLE_NODE_REGISTRY_ID"]),
     ("DEVNET_ORACLE_TASK_REGISTRY_ID", values["ORACLE_TASK_REGISTRY_ID"]),
     ("DEVNET_ORACLE_TASK_SCHEDULER_QUEUE_ID", values["ORACLE_TASK_SCHEDULER_QUEUE_ID"]),
 ]

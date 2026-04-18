@@ -1,0 +1,78 @@
+{
+  "template_id": 5,
+  "type": "LLM_EXTRACT_STRUCTURED",
+  "requested_nodes": 3,
+  "source": {
+    "kind": "document_url",
+    "mimeType": "text/html",
+    "url": "https://en.wikipedia.org/wiki/2025%E2%80%9326_UEFA_Champions_League",
+    "method": "GET",
+    "headers": {
+      "accept": "text/html,*/*"
+    }
+  },
+  "llm": {
+    "task": "extract_structured_data",
+    "temperature": 0,
+    "top_p": 1,
+    "max_output_tokens": 300,
+    "rules": {
+      "return_json_only": true,
+      "unknown_string": "",
+      "date_format": "YYYY-MM-DD"
+    },
+    "output_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "competition",
+        "season",
+        "round"
+      ],
+      "properties": {
+        "competition": {
+          "type": "string"
+        },
+        "season": {
+          "type": "string"
+        },
+        "round": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "normalization": {
+    "kind": "html_text",
+    "stripScripts": true,
+    "stripStyles": true,
+    "stripComments": true,
+    "removeSelectors": [
+      "script",
+      "style",
+      "noscript",
+      "header",
+      "footer",
+      "nav"
+    ],
+    "dropTextPatterns": [
+      "\\b\\d{1,2}:\\d{2}(:\\d{2})?\\b",
+      "\\b\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z)?\\b",
+      "\\bLast\\s+updated\\b.*",
+      "\\bUpdated\\b.*"
+    ],
+    "trim": true,
+    "collapseWhitespace": true,
+    "lineEnding": "lf"
+  },
+  "consensus": {
+    "mode": "exact_hash",
+    "quorum": {
+      "type": "pct",
+      "value": 0.67
+    }
+  },
+  "timeouts": {
+    "step1Ms": 30000
+  }
+}

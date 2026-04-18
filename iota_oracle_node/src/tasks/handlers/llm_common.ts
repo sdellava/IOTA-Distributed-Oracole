@@ -1,7 +1,9 @@
 // Copyright (c) 2026 Stefano Della Valle
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
-import { callLlmJsonWithPdfUrl } from "../utils/llm";
+import { httpFetchText } from "../../http";
+import { normalizeHtmlText } from "../utils/html";
+import { callLlmJson, callLlmJsonWithPdfUrl } from "../utils/llm";
 
 function stringifySchema(schema: any): string {
   return JSON.stringify(schema, null, 2);
@@ -9,8 +11,28 @@ function stringifySchema(schema: any): string {
 
 function normalizeUrl(value: unknown): string {
   const url = String(value ?? "").trim();
-  if (!/^https?:\/\//i.test(url)) throw new Error(`Invalid PDF source url: ${url}`);
+  if (!/^https?:\/\//i.test(url)) throw new Error(`Invalid source url: ${url}`);
   return url;
+}
+
+function normalizeMethod(value: unknown): string {
+  const method = String(value ?? "GET").trim().toUpperCase();
+  return method || "GET";
+}
+
+function normalizeHeaders(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value)) {
+    const key = String(k ?? "").trim();
+    if (!key || v == null) continue;
+    out[key] = String(v);
+  }
+  return out;
+}
+
+function resolveSourceMimeType(payload: any): string {
+  return String(payload?.source?.mimeType ?? payload?.mimeType ?? "").trim().toLowerCase();
 }
 
 function parsePageRange(input: unknown): [number, number] | null {
@@ -89,4 +111,86 @@ export async function runPdfLlmJsonTask(opts: {
   });
 
   return { canonical: result.canonical, parsed: result.parsed };
+}
+
+export async function runUrlTextLlmJsonTask(opts: {
+  payload: any;
+  objective: string;
+  extraRules?: string[];
+}): Promise<{ canonical: string; parsed: any }> {
+  const source = opts.payload?.source ?? {};
+  const url = normalizeUrl(source?.url ?? opts.payload?.url);
+  const schema = requireSchema(opts.payload);
+  const method = normalizeMethod(source?.method ?? opts.payload?.method);
+  const headers = normalizeHeaders(source?.headers ?? opts.payload?.headers);
+  const timeoutMs = Number(opts.payload?.timeouts?.step1Ms ?? 15_000);
+
+  const raw = await httpFetchText({
+    url,
+    method,
+    headers,
+    timeoutMs,
+  });
+
+  const normalizedText = normalizeHtmlText(raw, opts.payload?.normalization ?? {});
+  const prompt = [
+    `Objective: ${opts.objective}`,
+    `Source URL: ${url}`,
+    "Source content follows between markers. Use only this content for extraction.",
+    "Output schema:",
+    stringifySchema(schema),
+    "Rules:",
+    "1. Return exactly one JSON object.",
+    "2. Do not include markdown fences.",
+    "3. Use only values explicitly supported by the provided content.",
+    "4. If a value cannot be determined with confidence, use an empty string for strings, false for booleans, and 0 for integers unless the schema or task rules require otherwise.",
+    ...(opts.extraRules ?? []).map((r, idx) => `${idx + 5}. ${r}`),
+    "BEGIN SOURCE CONTENT",
+    normalizedText,
+    "END SOURCE CONTENT",
+  ].join("\n\n");
+
+  const result = await callLlmJson({
+    taskName: String(opts.payload?.type ?? "LLM_TASK"),
+    prompt,
+    schema,
+    llmConfig: opts.payload?.llm,
+    normalization: { canonical: true, dropNulls: false, sortArrays: true },
+  });
+
+  return { canonical: result.canonical, parsed: result.parsed };
+}
+
+export async function runDocumentLlmJsonTask(opts: {
+  payload: any;
+  pdfObjective: string;
+  textObjective: string;
+  extraRules?: string[];
+}): Promise<{ canonical: string; parsed: any }> {
+  const mimeType = resolveSourceMimeType(opts.payload);
+  const sourceKind = String(opts.payload?.source?.kind ?? "").trim().toLowerCase();
+  const looksLikePdf = mimeType.includes("pdf");
+
+  if (looksLikePdf) {
+    return runPdfLlmJsonTask({
+      payload: opts.payload,
+      objective: opts.pdfObjective,
+      extraRules: opts.extraRules,
+    });
+  }
+
+  if (
+    mimeType.includes("html") ||
+    mimeType.startsWith("text/") ||
+    sourceKind === "document_url" ||
+    sourceKind === "url"
+  ) {
+    return runUrlTextLlmJsonTask({
+      payload: opts.payload,
+      objective: opts.textObjective,
+      extraRules: opts.extraRules,
+    });
+  }
+
+  throw new Error(`Unsupported source mime type for document extraction: ${mimeType || "<missing>"}`);
 }

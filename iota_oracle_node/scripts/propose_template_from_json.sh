@@ -12,6 +12,7 @@ GAS_BUDGET="${GAS_BUDGET:-50000000}"
 CONTROLLER_ADDRESS_OR_ALIAS="${CONTROLLER_ADDRESS_OR_ALIAS:-}"
 SYSTEM_PKG="${SYSTEM_PKG:-${ORACLE_SYSTEM_PACKAGE_ID:-}}"
 STATE_ID="${STATE_ID:-${ORACLE_STATE_ID:-}}"
+NODE_REGISTRY_ID="${NODE_REGISTRY_ID:-${ORACLE_NODE_REGISTRY_ID:-}}"
 CONTROLLER_CAP_ID="${CONTROLLER_CAP_ID:-}"
 CLOCK_ID="${CLOCK_ID:-0x6}"
 NETWORK=""
@@ -34,6 +35,7 @@ Options:
   --gas-budget <u64>            Gas budget (default: 50000000)
   --system-pkg <id>             System package id
   --state-id <id>               Oracle state object id
+  --node-registry-id <id>       Oracle node registry object id
   --controller-cap-id <id>      Oracle controller cap id
   --clock-id <id>               Clock object id (default: 0x6)
   --network <name>              Network for listTemplates check (devnet|testnet|mainnet)
@@ -86,6 +88,11 @@ while [[ $# -gt 0 ]]; do
       [[ $# -gt 0 ]] || { echo "[error] missing value for --state-id" >&2; usage; exit 1; }
       STATE_ID="$1"
       ;;
+    --node-registry-id)
+      shift
+      [[ $# -gt 0 ]] || { echo "[error] missing value for --node-registry-id" >&2; usage; exit 1; }
+      NODE_REGISTRY_ID="$1"
+      ;;
     --controller-cap-id)
       shift
       [[ $# -gt 0 ]] || { echo "[error] missing value for --controller-cap-id" >&2; usage; exit 1; }
@@ -125,9 +132,9 @@ fi
 if [[ -n "$ENV_FILE" ]]; then
   [[ -f "$ENV_FILE" ]] || { echo "[error] env file not found: $ENV_FILE" >&2; exit 1; }
   for k in \
-    DEVNET_IOTA_RPC_URL DEVNET_IOTA_RPC_URLS DEVNET_IOTA_CLOCK_ID DEVNET_ORACLE_TASKS_PACKAGE_ID DEVNET_ORACLE_SYSTEM_PACKAGE_ID DEVNET_ORACLE_STATE_ID DEVNET_CONTROLLER_CAP_ID DEVNET_CONTROLLER_ADDRESS_OR_ALIAS DEVNET_ORACLE_CONTROLLER_ADDRESS \
-    TESTNET_IOTA_RPC_URL TESTNET_IOTA_RPC_URLS TESTNET_IOTA_CLOCK_ID TESTNET_ORACLE_TASKS_PACKAGE_ID TESTNET_ORACLE_SYSTEM_PACKAGE_ID TESTNET_ORACLE_STATE_ID TESTNET_CONTROLLER_CAP_ID TESTNET_CONTROLLER_ADDRESS_OR_ALIAS TESTNET_ORACLE_CONTROLLER_ADDRESS \
-    MAINNET_IOTA_RPC_URL MAINNET_IOTA_RPC_URLS MAINNET_IOTA_CLOCK_ID MAINNET_ORACLE_TASKS_PACKAGE_ID MAINNET_ORACLE_SYSTEM_PACKAGE_ID MAINNET_ORACLE_STATE_ID MAINNET_CONTROLLER_CAP_ID MAINNET_CONTROLLER_ADDRESS_OR_ALIAS MAINNET_ORACLE_CONTROLLER_ADDRESS
+    DEVNET_IOTA_RPC_URL DEVNET_IOTA_RPC_URLS DEVNET_IOTA_CLOCK_ID DEVNET_ORACLE_TASKS_PACKAGE_ID DEVNET_ORACLE_SYSTEM_PACKAGE_ID DEVNET_ORACLE_STATE_ID DEVNET_ORACLE_NODE_REGISTRY_ID DEVNET_CONTROLLER_CAP_ID DEVNET_CONTROLLER_ADDRESS_OR_ALIAS DEVNET_ORACLE_CONTROLLER_ADDRESS \
+    TESTNET_IOTA_RPC_URL TESTNET_IOTA_RPC_URLS TESTNET_IOTA_CLOCK_ID TESTNET_ORACLE_TASKS_PACKAGE_ID TESTNET_ORACLE_SYSTEM_PACKAGE_ID TESTNET_ORACLE_STATE_ID TESTNET_ORACLE_NODE_REGISTRY_ID TESTNET_CONTROLLER_CAP_ID TESTNET_CONTROLLER_ADDRESS_OR_ALIAS TESTNET_ORACLE_CONTROLLER_ADDRESS \
+    MAINNET_IOTA_RPC_URL MAINNET_IOTA_RPC_URLS MAINNET_IOTA_CLOCK_ID MAINNET_ORACLE_TASKS_PACKAGE_ID MAINNET_ORACLE_SYSTEM_PACKAGE_ID MAINNET_ORACLE_STATE_ID MAINNET_ORACLE_NODE_REGISTRY_ID MAINNET_CONTROLLER_CAP_ID MAINNET_CONTROLLER_ADDRESS_OR_ALIAS MAINNET_ORACLE_CONTROLLER_ADDRESS
   do
     unset "$k" || true
   done
@@ -176,6 +183,9 @@ fi
 if [[ -z "$STATE_ID" ]]; then
   STATE_ID="$(get_prefixed_env ORACLE_STATE_ID)"
 fi
+if [[ -z "$NODE_REGISTRY_ID" ]]; then
+  NODE_REGISTRY_ID="$(get_prefixed_env ORACLE_NODE_REGISTRY_ID)"
+fi
 if [[ -z "$CONTROLLER_CAP_ID" ]]; then
   CONTROLLER_CAP_ID="$(get_prefixed_env CONTROLLER_CAP_ID)"
 fi
@@ -195,6 +205,7 @@ fi
 [[ -z "$TEMPLATE_ID_OVERRIDE" || "$TEMPLATE_ID_OVERRIDE" =~ ^[0-9]+$ ]] || { echo "[error] --template-id must be numeric" >&2; exit 1; }
 [[ -n "$SYSTEM_PKG" ]] || { echo "[error] missing SYSTEM_PKG / ORACLE_SYSTEM_PACKAGE_ID" >&2; exit 1; }
 [[ -n "$STATE_ID" ]] || { echo "[error] missing STATE_ID / ORACLE_STATE_ID" >&2; exit 1; }
+[[ -n "$NODE_REGISTRY_ID" ]] || { echo "[error] missing NODE_REGISTRY_ID / ORACLE_NODE_REGISTRY_ID" >&2; exit 1; }
 [[ -n "$CONTROLLER_CAP_ID" ]] || { echo "[error] missing CONTROLLER_CAP_ID" >&2; exit 1; }
 [[ -n "$CONTROLLER_ADDRESS_OR_ALIAS" ]] || { echo "[error] missing controller address/alias" >&2; exit 1; }
 [[ "$PROPOSAL_TIMEOUT_MS" =~ ^[0-9]+$ ]] || { echo "[error] --proposal-timeout-ms must be numeric" >&2; exit 1; }
@@ -403,6 +414,7 @@ iota client switch --address "$CONTROLLER_ADDRESS_OR_ALIAS" >/dev/null
 iota client ptb \
   --move-call "${SYSTEM_PKG}::systemState::propose_task_template_upsert" \
   "@${CONTROLLER_CAP_ID}" \
+  "@${NODE_REGISTRY_ID}" \
   "@${STATE_ID}" \
   "@${CLOCK_ID}" \
   "$PROPOSAL_TIMEOUT_MS" \

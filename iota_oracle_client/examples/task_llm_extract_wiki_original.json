@@ -1,0 +1,163 @@
+{
+  "template_id": 5,
+  "type": "LLM_EXTRACT_STRUCTURED",
+  "requested_nodes": 3,
+  "source": {
+    "kind": "document_url",
+    "mimeType": "text/html",
+    "url": "[https://en.wikipedia.org/wiki/2025%E2%80%9326_UEFA_Champions_League](https://en.wikipedia.org/wiki/2025%E2%80%9326_UEFA_Champions_League)"
+  },
+  "llm": {
+    "task": "extract_structured_data",
+    "temperature": 0,
+    "top_p": 1,
+    "max_output_tokens": 300,
+    "rules": {
+      "return_json_only": true,
+      "unknown_string": "",
+      "date_format": "YYYY-MM-DD"
+    },
+    "output_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "competition",
+        "season",
+        "round",
+        "first_leg",
+        "second_leg",
+        "aggregate"
+      ],
+      "properties": {
+        "competition": {
+          "type": "string",
+          "enum": [
+            "UEFA Champions League"
+          ]
+        },
+        "season": {
+          "type": "string",
+          "enum": [
+            "2025-26"
+          ]
+        },
+        "round": {
+          "type": "string",
+          "enum": [
+            "quarter-finals"
+          ]
+        },
+        "first_leg": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "home_team",
+            "away_team",
+            "home_score",
+            "away_score"
+          ],
+          "properties": {
+            "home_team": {
+              "type": "string",
+              "enum": [
+                "Real Madrid"
+              ]
+            },
+            "away_team": {
+              "type": "string",
+              "enum": [
+                "Bayern Munich"
+              ]
+            },
+            "home_score": {
+              "type": "integer"
+            },
+            "away_score": {
+              "type": "integer"
+            }
+          }
+        },
+        "second_leg": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "home_team",
+            "away_team",
+            "home_score",
+            "away_score"
+          ],
+          "properties": {
+            "home_team": {
+              "type": "string",
+              "enum": [
+                "Bayern Munich"
+              ]
+            },
+            "away_team": {
+              "type": "string",
+              "enum": [
+                "Real Madrid"
+              ]
+            },
+            "home_score": {
+              "type": "integer"
+            },
+            "away_score": {
+              "type": "integer"
+            }
+          }
+        },
+        "aggregate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "real_madrid_score",
+            "bayern_munich_score",
+            "qualified_team"
+          ],
+          "properties": {
+            "real_madrid_score": {
+              "type": "integer"
+            },
+            "bayern_munich_score": {
+              "type": "integer"
+            },
+            "qualified_team": {
+              "type": "string",
+              "enum": [
+                "Bayern Munich"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "normalization": {
+    "kind": "json",
+    "canonical": true,
+    "dropNulls": false,
+    "sortArrays": true
+  },
+  "consensus": {
+    "mode": "exact_hash",
+    "quorum": {
+      "type": "pct",
+      "value": 0.67
+    }
+  },
+  "timeouts": {
+    "step1Ms": 30000
+  },
+  "template": {
+    "type": "LLM_EXTRACT_STRUCTURED",
+    "template_id": 5,
+    "is_enabled": 1,
+    "max_input_bytes": 8192,
+    "max_output_bytes": 8192,
+    "included_download_bytes": 8192,
+    "allow_storage": 0,
+    "min_retention_days": 0,
+    "max_retention_days": 0
+  }
+}

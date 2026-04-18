@@ -52,6 +52,7 @@ type CreateTaskContext = {
   tasksPkg: string;
   registryId: string;
   stateId: string;
+  nodeRegistryId: string;
   iotaSystemStateId: string;
   treasuryId: string;
   randomId: string;
@@ -184,6 +185,35 @@ function getTaskRegistryId(): string {
   const v = envAny("ORACLE_TASK_REGISTRY_ID");
   if (!v) throw new Error("Missing env ORACLE_TASK_REGISTRY_ID");
   return v;
+}
+
+function getConfiguredNodeRegistryId(): string | undefined {
+  return envAny("ORACLE_NODE_REGISTRY_ID");
+}
+
+function moveToString(value: any): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "bigint") return String(value);
+  if (!value || typeof value !== "object") return "";
+  for (const key of ["value", "id", "objectId", "bytes", "address"]) {
+    const nested = (value as any)[key];
+    if (typeof nested === "string" || typeof nested === "number" || typeof nested === "bigint") {
+      return String(nested);
+    }
+  }
+  if ((value as any).fields) return moveToString((value as any).fields);
+  if ((value as any).data) return moveToString((value as any).data);
+  return "";
+}
+
+async function resolveNodeRegistryId(client: AnyClient, stateId: string): Promise<string> {
+  const configured = getConfiguredNodeRegistryId()?.trim();
+  if (configured) return configured;
+  const obj = await client.getObject({ id: stateId, options: { showContent: true } } as any);
+  const fields = getMoveFields(obj);
+  const nodeRegistryId = moveToString(fields.node_registry_id).trim();
+  if (!nodeRegistryId) throw new Error(`State ${stateId} does not expose node_registry_id`);
+  return nodeRegistryId;
 }
 
 function loadTaskJson(arg?: string): any {
@@ -1022,7 +1052,7 @@ function extractTaskIdFromTx(res: any): string {
 }
 
 function makeCreateTaskTx(ctx: CreateTaskContext): Transaction {
-  const { tasksPkg, registryId, stateId, prepared, requiredPerRun, gasBudget } = ctx;
+  const { tasksPkg, registryId, stateId, nodeRegistryId, prepared, requiredPerRun, gasBudget } = ctx;
   const tx = new Transaction();
   tx.setGasBudget(Number(gasBudget));
   const [paymentCoin] = tx.splitCoins(tx.gas, [tx.pure(bcsU64(requiredPerRun))]);
@@ -1033,6 +1063,7 @@ function makeCreateTaskTx(ctx: CreateTaskContext): Transaction {
     arguments: [
       tx.object(registryId),
       tx.object(stateId),
+      tx.object(nodeRegistryId),
       paymentCoin,
       tx.pure(bcsU64(prepared.templateId)),
       tx.pure(bcsU64(prepared.requestedNodes)),
@@ -1061,11 +1092,12 @@ function makeCreateTaskWithScheduleTx(args: {
   tasksPkg: string;
   registryId: string;
   stateId: string;
+  nodeRegistryId: string;
   prepared: PreparedTask;
   schedule: ScheduleInput;
   gasBudget: bigint;
 }): Transaction {
-  const { tasksPkg, registryId, stateId, prepared, schedule, gasBudget } = args;
+  const { tasksPkg, registryId, stateId, nodeRegistryId, prepared, schedule, gasBudget } = args;
   const tx = new Transaction();
   tx.setGasBudget(Number(gasBudget));
   const [fundingCoin] = tx.splitCoins(tx.gas, [tx.pure(bcsU64(schedule.initialFunds))]);
@@ -1074,6 +1106,7 @@ function makeCreateTaskWithScheduleTx(args: {
     arguments: [
       tx.object(registryId),
       tx.object(stateId),
+      tx.object(nodeRegistryId),
       fundingCoin,
       tx.pure(bcsU64(prepared.templateId)),
       tx.pure(bcsU64(prepared.requestedNodes)),
@@ -1197,6 +1230,7 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
   const systemPkg = getSystemPackageId();
   const registryId = getTaskRegistryId();
   const stateId = getStateId();
+  const nodeRegistryId = await resolveNodeRegistryId(client, stateId);
   const iotaSystemStateId = getIotaSystemStateId();
   const treasuryId = getTreasuryId();
   const randomId = (process.env.IOTA_RANDOM_OBJECT_ID ?? "0x8").trim() || "0x8";
@@ -1237,6 +1271,7 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
     tasksPkg,
     registryId,
     stateId,
+    nodeRegistryId,
     iotaSystemStateId,
     treasuryId,
     randomId,
@@ -1251,6 +1286,7 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
     registryId,
     systemPkg,
     stateId,
+    nodeRegistryId,
     iotaSystemStateId,
     treasuryId,
     randomId,
@@ -1299,6 +1335,7 @@ async function runPrepareTaskScheduleWebview(
     tasksPkg,
     registryId,
     stateId: plan.stateId,
+    nodeRegistryId: plan.nodeRegistryId,
     prepared: plan.prepared,
     schedule,
     gasBudget: plan.gasBudget,

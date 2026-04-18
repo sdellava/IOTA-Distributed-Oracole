@@ -8,6 +8,7 @@ import { Ed25519Keypair } from "@iota/iota-sdk/keypairs/ed25519";
 import { bcsVecU8, bcsAddress, bcsVecU64, bcsU64 } from "./bcs";
 import { envByNetwork } from "./config/env";
 import { parseAcceptedTemplateIds } from "./nodeConfig";
+import { resolveNodeRegistryId } from "./services/nodeRegistry";
 import { signAndExecuteWithLockRetry } from "./txRetry.js";
 
 function mustEnv(key: string): string {
@@ -221,6 +222,7 @@ export async function registerOracleNode(opts: {
   const { client, oracleKeypair, oracleAddr, oraclePubkeyRaw32 } = opts;
 
   const stateId = getStateId();
+  const nodeRegistryId = await resolveNodeRegistryId(client, stateId);
   const pkg = await resolveSystemPackageId(client, stateId, getSystemPackageId());
   const acceptedTemplateIds = (opts.acceptedTemplateIds?.length ? [...opts.acceptedTemplateIds] : parseAcceptedTemplateIds())
     .map((n) => Math.floor(Number(n)))
@@ -285,6 +287,7 @@ export async function registerOracleNode(opts: {
         tx.moveCall({
           target: `${pkg}::systemState::register_oracle_node`,
           arguments: [
+            tx.object(nodeRegistryId),
             tx.object(stateId),
             tx.object(systemId),
             tx.object(delegatedCapId),
@@ -297,6 +300,7 @@ export async function registerOracleNode(opts: {
       },
       options: { showEffects: true, showObjectChanges: true },
       label: "register_oracle_node",
+      maxAttempts: 1,
     });
     const immediateReason = txFailureReason(res);
     if (immediateReason) {
@@ -315,7 +319,7 @@ export async function registerOracleNode(opts: {
       tx.moveCall({
         target: `${pkg}::systemState::register_oracle_node_dev`,
         arguments: [
-          tx.object(stateId),
+          tx.object(nodeRegistryId),
           tx.pure(bcsAddress(oracleAddr)),
           tx.pure(bcsVecU8(oraclePubkeyRaw32)),
           tx.pure(bcsVecU64(acceptedTemplateIds)),
@@ -325,6 +329,7 @@ export async function registerOracleNode(opts: {
     },
     options: { showEffects: true, showObjectChanges: true },
     label: "register_oracle_node_dev",
+    maxAttempts: 1,
   });
   const immediateReason = txFailureReason(res);
   if (immediateReason) {
@@ -338,6 +343,7 @@ export async function unregisterOracleNode(opts: { client: IotaClient; keypair: 
   const { client, keypair } = opts;
   const pkg = getSystemPackageId();
   const stateId = getStateId();
+  const nodeRegistryId = await resolveNodeRegistryId(client, stateId);
 
   const res = await signAndExecuteWithLockRetry({
     client,
@@ -347,12 +353,13 @@ export async function unregisterOracleNode(opts: { client: IotaClient; keypair: 
       tx.setGasBudget(gasBudget("GAS_BUDGET_UNREGISTER", gasBudget("GAS_BUDGET", 20_000_000)));
       tx.moveCall({
         target: `${pkg}::systemState::unregister_oracle_node`,
-        arguments: [tx.object(stateId)],
+        arguments: [tx.object(nodeRegistryId)],
       });
       return tx;
     },
     options: { showEffects: true, showObjectChanges: true },
     label: "unregister_oracle_node",
+    maxAttempts: 1,
   });
   const immediateReason = txFailureReason(res);
   if (immediateReason) {
@@ -372,6 +379,7 @@ export async function approveTaskTemplateProposal(opts: {
   const { client, keypair, proposalId, expectedTemplateId } = opts;
   const pkg = getSystemPackageId();
   const stateId = getStateId();
+  const nodeRegistryId = await resolveNodeRegistryId(client, stateId);
   const clockId = getClockId();
   const resolvedProposalId = await resolvePendingTemplateProposalId(client, stateId, {
     proposalId,
@@ -386,7 +394,12 @@ export async function approveTaskTemplateProposal(opts: {
       tx.setGasBudget(gasBudget("GAS_BUDGET_TEMPLATE_PROPOSAL_APPROVE", gasBudget("GAS_BUDGET", 20_000_000)));
       tx.moveCall({
         target: `${pkg}::systemState::approve_task_template_proposal`,
-        arguments: [tx.object(stateId), tx.object(clockId), tx.pure(bcsU64(resolvedProposalId))],
+        arguments: [
+          tx.object(nodeRegistryId),
+          tx.object(stateId),
+          tx.object(clockId),
+          tx.pure(bcsU64(resolvedProposalId)),
+        ],
       });
       return tx;
     },

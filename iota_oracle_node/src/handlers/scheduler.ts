@@ -10,14 +10,14 @@ import {
   submitTaskRunTx,
 } from "../oracleSchedulerTx";
 import { optInt } from "../nodeConfig";
-import { listDueTasks, readTaskSchedulerQueue } from "../services/schedulerReader";
+import { listDueTasks, readRegisteredOracleNodes, readTaskSchedulerQueue } from "../services/schedulerReader";
 
 function schedulerLeaseMs(): number {
   return optInt("SCHEDULER_ROUND_TIMEOUT_MS", 30_000);
 }
 
-function queueIndexOf(nodes: string[], addr: string): number {
-  return nodes.findIndex((node) => node === addr);
+function queueIndexOf(nodeIds: number[], nodeId: number): number {
+  return nodeIds.findIndex((item) => item === nodeId);
 }
 
 function takeoverEligible(
@@ -34,31 +34,35 @@ function takeoverEligible(
 
 export async function processSchedulerRound(ctx: NodeContext): Promise<void> {
   const nowMs = Date.now();
+  const registeredNodes = await readRegisteredOracleNodes(ctx.client);
+  const myNode = registeredNodes.find((node) => node.addr === ctx.myAddr);
+  if (!myNode) return;
+
   let queue = await readTaskSchedulerQueue(ctx.client);
-  if (!queue.nodes.length) {
-    await reconcileSchedulerQueueTx(ctx).catch((e: any) => {
-      console.warn(`[scheduler ${ctx.nodeId}] reconcile failed: ${String(e?.message ?? e)}`);
-    });
+  if (!queue.nodeIds.length) {
+    const lowestNodeId = registeredNodes
+      .map((node) => node.nodeId)
+      .sort((a, b) => a - b)[0];
+    if (myNode.nodeId !== lowestNodeId) return;
+    try {
+      const digest = await reconcileSchedulerQueueTx(ctx);
+      console.log(`[scheduler ${ctx.nodeId}] reconcile queue tx=${digest}`);
+    } catch (e: any) {
+      console.warn(`[scheduler ${ctx.nodeId}] reconcile queue failed: ${String(e?.message ?? e)}`);
+      return;
+    }
     queue = await readTaskSchedulerQueue(ctx.client);
   }
 
-  if (!queue.nodes.length) {
+  if (!queue.nodeIds.length && !registeredNodes.length) {
     console.warn(`[scheduler ${ctx.nodeId}] queue empty`);
     return;
   }
 
-  const myIndex = queueIndexOf(queue.nodes, ctx.myAddr);
-  if (myIndex < 0) {
-    await reconcileSchedulerQueueTx(ctx).catch((e: any) => {
-      console.warn(`[scheduler ${ctx.nodeId}] reconcile failed: ${String(e?.message ?? e)}`);
-    });
-    queue = await readTaskSchedulerQueue(ctx.client);
-  }
-
-  const refreshedIndex = queueIndexOf(queue.nodes, ctx.myAddr);
+  const refreshedIndex = queueIndexOf(queue.nodeIds, myNode.nodeId);
   if (refreshedIndex < 0) return;
 
-  if (queue.head !== ctx.myAddr) {
+  if (queue.headNodeId !== myNode.nodeId) {
     if (!takeoverEligible(queue.activeRoundStartedMs, queue.lastRoundCompletedMs, refreshedIndex, nowMs)) return;
     try {
       const digest = await advanceSchedulerQueueTx(ctx);
@@ -68,7 +72,7 @@ export async function processSchedulerRound(ctx: NodeContext): Promise<void> {
       return;
     }
     queue = await readTaskSchedulerQueue(ctx.client);
-    if (queue.head !== ctx.myAddr) return;
+    if (queue.headNodeId !== myNode.nodeId) return;
   }
 
   const startDigest = await startSchedulerRoundTx(ctx);

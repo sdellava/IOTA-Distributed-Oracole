@@ -598,6 +598,15 @@ async function getStateObjectContent(client: IotaClient, stateId: string, warnin
   }
 }
 
+async function getNodeRegistryContent(client: IotaClient, stateId: string, warnings: string[]): Promise<unknown | null> {
+  const stateContent = await getStateObjectContent(client, stateId, warnings);
+  if (!stateContent) return null;
+  const stateFields = extractFields(stateContent) ?? {};
+  const nodeRegistryId = toObjectId(stateFields.node_registry_id);
+  if (!nodeRegistryId) return stateContent;
+  return getObjectContent(client, nodeRegistryId, warnings, "node registry");
+}
+
 async function getObjectContent(client: IotaClient, objectId: string, warnings: string[], label: string): Promise<unknown | null> {
   try {
     const response = (await client.getObject({ id: objectId, options: { showContent: true } })) as RpcObjectResponse;
@@ -851,7 +860,7 @@ export async function getOracleStatus(network?: string): Promise<OracleStatusRes
     warnings.push(`Unable to read latest checkpoint: ${String(error)}`);
   }
 
-  const content = runtime.oracleStateId ? await getStateObjectContent(client, runtime.oracleStateId, warnings) : null;
+  const content = runtime.oracleStateId ? await getNodeRegistryContent(client, runtime.oracleStateId, warnings) : null;
   const registeredNodesRaw = content ? parseRegisteredNodes(content) : [];
   const registeredNodes = await enrichRegisteredNodesWithValidatorInfo(client, registeredNodesRaw, warnings);
   const registeredNodeAddresses = registeredNodes.map((node) => node.address);

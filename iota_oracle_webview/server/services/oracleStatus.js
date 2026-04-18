@@ -508,6 +508,16 @@ async function getStateObjectContent(client, stateId, warnings) {
         return null;
     }
 }
+async function getNodeRegistryContent(client, stateId, warnings) {
+    const stateContent = await getStateObjectContent(client, stateId, warnings);
+    if (!stateContent)
+        return null;
+    const stateFields = extractFields(stateContent) ?? {};
+    const nodeRegistryId = toObjectId(stateFields.node_registry_id);
+    if (!nodeRegistryId)
+        return stateContent;
+    return getObjectContent(client, nodeRegistryId, warnings, "node registry");
+}
 async function getObjectContent(client, objectId, warnings, label) {
     try {
         const response = (await client.getObject({ id: objectId, options: { showContent: true } }));
@@ -737,7 +747,7 @@ export async function getOracleStatus(network) {
     catch (error) {
         warnings.push(`Unable to read latest checkpoint: ${String(error)}`);
     }
-    const content = runtime.oracleStateId ? await getStateObjectContent(client, runtime.oracleStateId, warnings) : null;
+    const content = runtime.oracleStateId ? await getNodeRegistryContent(client, runtime.oracleStateId, warnings) : null;
     const registeredNodesRaw = content ? parseRegisteredNodes(content) : [];
     const registeredNodes = await enrichRegisteredNodesWithValidatorInfo(client, registeredNodesRaw, warnings);
     const registeredNodeAddresses = registeredNodes.map((node) => node.address);

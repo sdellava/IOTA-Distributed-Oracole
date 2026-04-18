@@ -62,6 +62,6 @@ flavor = "iota"
 
 [env.devnet]
 chain-id = "daf90477"
-original-published-id = "0x230051406993f20201a30402efc3083ec31a458812bee3c84e8af7e9b445b193"
-latest-published-id = "0x230051406993f20201a30402efc3083ec31a458812bee3c84e8af7e9b445b193"
+original-published-id = "0xfe2b331c5337f38b17e429b8030ce293e4e2fb704f536463a1ceb97a43488634"
+latest-published-id = "0xfe2b331c5337f38b17e429b8030ce293e4e2fb704f536463a1ceb97a43488634"
 published-version = "1"

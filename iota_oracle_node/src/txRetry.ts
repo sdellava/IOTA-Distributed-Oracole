@@ -54,9 +54,11 @@ export async function signAndExecuteWithLockRetry(opts: {
   transaction?: any;
   options?: Record<string, any>;
   label?: string;
+  maxAttempts?: number;
 }): Promise<any> {
   const { client, signer, transactionFactory, transaction, options, label } = opts;
-  const maxAttempts = envInt('TX_LOCK_RETRY_MAX_ATTEMPTS', 0); // 0 = unlimited
+  const maxAttempts =
+    opts.maxAttempts == null ? envInt('TX_LOCK_RETRY_MAX_ATTEMPTS', 0) : Math.max(1, Math.floor(opts.maxAttempts));
 
   let attempt = 0;
   for (;;) {

@@ -146,18 +146,79 @@ function taskCompatState(fields: Record<string, any>): number {
 }
 
 function unwrapFieldValue(obj: any): Record<string, any> {
-  const direct = asRecord(obj?.data?.content?.fields);
-  if (direct) return direct;
-  const value = asRecord(obj?.data?.content?.fields?.value);
-  if (value) return value;
   const nestedValue = asRecord(obj?.data?.content?.fields?.value?.fields);
   if (nestedValue) return nestedValue;
+  const value = asRecord(obj?.data?.content?.fields?.value);
+  if (value) return value;
+  const direct = asRecord(obj?.data?.content?.fields);
+  if (direct) return direct;
   const content = asRecord(obj?.data?.content);
   if (content) {
     const nested = asRecord(content.fields);
     if (nested) return nested;
   }
   return {};
+}
+
+async function fetchLatestTaskResult(
+  client: IotaClient,
+  taskId: string,
+  tasksPackageId: string,
+): Promise<Record<string, any>> {
+  if (!taskId || !tasksPackageId) return {};
+
+  try {
+    const page: any = await client.getDynamicFields({
+      parentId: taskId,
+      limit: 50,
+    } as any);
+
+    const candidates = (page?.data ?? []).filter((item: any) => {
+      const objectType = String(item?.objectType ?? "");
+      const nameType = String(item?.name?.type ?? "");
+      return (
+        objectType === `${tasksPackageId}::oracle_tasks::TaskResult` ||
+        nameType === `${tasksPackageId}::oracle_tasks::TaskResultKey`
+      );
+    });
+
+    if (!candidates.length) return {};
+
+    const objects = await Promise.all(
+      candidates.map(async (item: any) => {
+        const objectId = String(item?.objectId ?? "").trim();
+        if (!objectId) return null;
+        try {
+          const obj: any = await client.getObject({
+            id: objectId,
+            options: { showContent: true, showType: true },
+          });
+          const fields = unwrapFieldValue(obj);
+          return {
+            objectId,
+            seq: numberFromUnknown(item?.name?.value?.seq) ?? -1,
+            producedAtMs: numberFromUnknown(fields.produced_at_ms) ?? -1,
+            runIndex: numberFromUnknown(fields.run_index) ?? -1,
+            fields,
+          };
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    const latest = objects
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      .sort((a, b) => {
+        if (b.producedAtMs !== a.producedAtMs) return b.producedAtMs - a.producedAtMs;
+        if (b.seq !== a.seq) return b.seq - a.seq;
+        return b.runIndex - a.runIndex;
+      })[0];
+
+    return latest?.fields ?? {};
+  } catch {
+    return {};
+  }
 }
 
 async function queryTaskEventsByModule(
@@ -333,22 +394,10 @@ app.get("/api/task/:taskId", async (req, res) => {
 
     const fields = extractFields(data.content) ?? {};
     const latestResultSeq = numberFromUnknown(fields.latest_result_seq) ?? 0;
-    let latestResultFields: Record<string, any> = {};
-
-    if (latestResultSeq > 0 && runtime.oracleTasksPackageId) {
-      try {
-        const latestResultObj = await client.getDynamicFieldObject({
-          parentId: taskId,
-          name: {
-            type: `${runtime.oracleTasksPackageId}::oracle_tasks::TaskResultKey`,
-            value: { seq: String(latestResultSeq) },
-          },
-        } as any);
-        latestResultFields = unwrapFieldValue(latestResultObj);
-      } catch {
-        latestResultFields = {};
-      }
-    }
+    const latestResultFields =
+      latestResultSeq > 0 && runtime.oracleTasksPackageId
+        ? await fetchLatestTaskResult(client, taskId, runtime.oracleTasksPackageId)
+        : {};
 
     function pick(...values: unknown[]) {
       for (const v of values) {
