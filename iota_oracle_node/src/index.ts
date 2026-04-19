@@ -11,7 +11,7 @@ console.warn("[oracle-node] TLS certificate verification is DISABLED globally");
 import { requestFaucetIfEnabled } from "./faucet";
 import { iotaClient } from "./iota";
 import { loadOrCreateNodeIdentity } from "./keys";
-import { optBool, optInt, parseAcceptedTemplateIds } from "./nodeConfig";
+import { optBool, optInt } from "./nodeConfig";
 import { registerOracleNode, unregisterOracleNode } from "./oracleTx";
 import { TaskCache } from "./cache/taskCache";
 import { defaultEventType, parseNodeId } from "./config/env";
@@ -35,7 +35,6 @@ function buildContext(): NodeContext {
   const client = iotaClient();
   const identity = loadOrCreateNodeIdentity(nodeId);
   const myAddr = identity.address.toLowerCase();
-  const acceptedTemplateIds = parseAcceptedTemplateIds();
   const pollMs = optInt("EVENT_POLL_MS", 1200);
   const startupMs = Date.now();
 
@@ -44,7 +43,7 @@ function buildContext(): NodeContext {
     identity,
     nodeId,
     myAddr,
-    acceptedTemplateIds,
+    acceptedTemplateIds: [],
     pollMs,
     startupMs,
     taskAssignedType: defaultEventType("TASK_ASSIGNED_EVENT_TYPE", "oracle_tasks::TaskRunSubmitted"),
@@ -116,9 +115,8 @@ function installShutdownHooks(
 
 function logStartup(ctx: NodeContext): void {
   console.log(`[node ${ctx.nodeId}] address=${ctx.identity.address}`);
-  console.log(
-    `[node ${ctx.nodeId}] accepted templates=${ctx.acceptedTemplateIds.length ? ctx.acceptedTemplateIds.join(",") : "<none>"}`,
-  );
+  console.log(`[node ${ctx.nodeId}] supported templates source=on-chain registry`);
+  console.log(`[node ${ctx.nodeId}] scheduler loop=enabled for all nodes (role resolved on-chain each round)`);
   console.log(`[node ${ctx.nodeId}] listening assigned tasks: ${ctx.taskAssignedType}`);
   console.log(`[node ${ctx.nodeId}] listening data requests: ${ctx.dataReqType}`);
   console.log(`[node ${ctx.nodeId}] listening mediation started: ${ctx.mediationType}`);

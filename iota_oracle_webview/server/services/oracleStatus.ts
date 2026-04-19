@@ -8,6 +8,7 @@ import type {
   OracleEventItem,
   OracleStatusResponse,
   OracleTemplateCost,
+  PendingTemplateProposal,
   RegisteredOracleNode,
 } from "../types.js";
 
@@ -124,6 +125,18 @@ function toBool(value: unknown): boolean {
   return false;
 }
 
+function toNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.floor(value);
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "string") {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.floor(n) : null;
+  }
+  const record = asRecord(value);
+  if (!record) return null;
+  return toNumber(record.value);
+}
+
 function toText(value: unknown): string {
   if (typeof value === "string") return value;
   if (Array.isArray(value) && value.every((item) => typeof item === "number")) {
@@ -192,6 +205,17 @@ function toStringArray(value: unknown): string[] {
   const out: string[] = [];
   collectStringValues(value, out);
   return out.filter((item, index) => item.length > 0 && out.indexOf(item) === index);
+}
+
+function toArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  const record = asRecord(value);
+  if (!record) return [];
+  for (const key of ["items", "contents", "vec", "value"]) {
+    const nested = record[key];
+    if (Array.isArray(nested)) return nested;
+  }
+  return [];
 }
 
 function toObjectId(value: unknown): string | null {
@@ -648,6 +672,33 @@ function parseRegisteredNodes(content: unknown): RegisteredOracleNode[] {
   return out.sort((a, b) => a.address.localeCompare(b.address));
 }
 
+function parsePendingTemplateProposals(content: unknown): PendingTemplateProposal[] {
+  const stateFields = extractFields(content) ?? {};
+  const raw = toArray(stateFields.template_proposals);
+  const proposals: PendingTemplateProposal[] = [];
+
+  for (const item of raw) {
+    const fields = extractFields(item) ?? asRecord(item) ?? {};
+    const proposalId = toNumber(fields.proposal_id);
+    const templateId = toNumber(fields.template_id);
+    if (proposalId == null || templateId == null) continue;
+    const electorateSize = toNumber(fields.electorate_size) ?? 0;
+    proposals.push({
+      proposalId: String(proposalId),
+      templateId: String(templateId),
+      proposalKind: toNumber(fields.proposal_kind) ?? 0,
+      approvals: String(toNumber(fields.approvals) ?? 0),
+      electorateSize: String(electorateSize),
+      approvalsNeeded: String(Math.floor(electorateSize / 2) + 1),
+      taskType: toText(fields.task_type).trim() || null,
+      isEnabled: fields.is_enabled == null ? null : toBool(fields.is_enabled),
+    });
+  }
+
+  proposals.sort((a, b) => Number(a.proposalId) - Number(b.proposalId));
+  return proposals;
+}
+
 function formatAcceptedTasks(
   acceptedTemplateIds: string[],
   _templates: OracleTemplateCost[],
@@ -860,8 +911,10 @@ export async function getOracleStatus(network?: string): Promise<OracleStatusRes
     warnings.push(`Unable to read latest checkpoint: ${String(error)}`);
   }
 
-  const content = runtime.oracleStateId ? await getNodeRegistryContent(client, runtime.oracleStateId, warnings) : null;
-  const registeredNodesRaw = content ? parseRegisteredNodes(content) : [];
+  const stateContent = runtime.oracleStateId ? await getStateObjectContent(client, runtime.oracleStateId, warnings) : null;
+  const nodeRegistryContent = runtime.oracleStateId ? await getNodeRegistryContent(client, runtime.oracleStateId, warnings) : null;
+  const registeredNodesRaw = nodeRegistryContent ? parseRegisteredNodes(nodeRegistryContent) : [];
+  const pendingTemplateProposals = stateContent ? parsePendingTemplateProposals(stateContent) : [];
   const registeredNodes = await enrichRegisteredNodesWithValidatorInfo(client, registeredNodesRaw, warnings);
   const registeredNodeAddresses = registeredNodes.map((node) => node.address);
   const configuredCosts = await getConfiguredCosts(client, runtime.oracleStateId, warnings);
@@ -943,6 +996,7 @@ export async function getOracleStatus(network?: string): Promise<OracleStatusRes
       totalEvents: combined.length,
     },
     costs: configuredCosts,
+    pendingTemplateProposals,
     registeredNodes,
     nodeActivity,
     recentEvents: combined.slice(0, 50),

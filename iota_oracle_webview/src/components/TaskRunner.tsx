@@ -62,6 +62,11 @@ type WalletScheduledResult = {
   taskId: string | null;
 };
 
+type TaskBudgetQuote = {
+  requiredPerRunNanoIota: bigint;
+  requiredPerRunIotaText: string;
+};
+
 type TaskDetail = {
   assigned_nodes?: Array<string | number>;
   certificate_signers?: Array<string | number>;
@@ -317,6 +322,54 @@ function formatDateTimeLocalInput(date: Date): string {
 function datetimeLocalToMs(value: string): number {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? Math.floor(parsed) : Number.NaN;
+}
+
+const SCHEDULE_ALIGNMENT_MS = 60_000;
+
+function ceilToMinuteBoundary(ms: number): number {
+  if (!Number.isFinite(ms)) return Number.NaN;
+  const remainder = ms % SCHEDULE_ALIGNMENT_MS;
+  if (remainder === 0) return ms;
+  return ms + (SCHEDULE_ALIGNMENT_MS - remainder);
+}
+
+function toDatetimeLocalValue(ms: number): string {
+  const date = new Date(ms);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function normalizeScheduleInputValue(value: string): string {
+  if (!value.trim()) return '';
+  const parsedMs = datetimeLocalToMs(value);
+  if (!Number.isFinite(parsedMs)) return value;
+  return toDatetimeLocalValue(ceilToMinuteBoundary(parsedMs));
+}
+
+function currentAlignedMinuteMs(nowMs = Date.now()): number {
+  return ceilToMinuteBoundary(nowMs);
+}
+
+function parseIotaToNano(value: string): bigint {
+  const text = String(value ?? '').trim();
+  if (!text) return 0n;
+  if (!/^\d+(\.\d+)?$/.test(text)) {
+    throw new Error('Initial funds must be a positive IOTA amount.');
+  }
+  const [wholePart, fractionalPart = ''] = text.split('.');
+  const whole = BigInt(wholePart || '0') * 1_000_000_000n;
+  const fractional = BigInt((fractionalPart + '000000000').slice(0, 9) || '0');
+  return whole + fractional;
+}
+
+function formatNanoIotaToIota(value: bigint): string {
+  const whole = value / 1_000_000_000n;
+  const fractional = (value % 1_000_000_000n).toString().padStart(9, '0').replace(/0+$/, '');
+  return fractional ? `${whole.toString()}.${fractional}` : whole.toString();
 }
 
 async function fetchExecutionForDigest(iotaClient: any, digest: string, fallbackExecution: any): Promise<any> {
@@ -801,6 +854,9 @@ function formatUserFacingError(error: unknown): string {
   if (/Insufficient IOTA for address/i.test(message)) {
     return 'Error: Insufficient IOTA';
   }
+  if (/must be aligned to the start of a minute/i.test(message) || /EInvalidScheduleAlignment/i.test(message)) {
+    return 'Schedule times must be aligned to minute boundaries. Use seconds 00 for start, end, and interval.';
+  }
   const templateNotFound = message.match(/Template\s+(\d+)\s+not found under state\s+(0x[a-f0-9]+)/i);
   if (templateNotFound) {
     const [, templateId, stateId] = templateNotFound;
@@ -818,11 +874,10 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
   const [taskEvents, setTaskEvents] = useState<TaskEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selectedExample, setSelectedExample] = useState<string>('');
-  const [submissionMode, setSubmissionMode] = useState<'run' | 'schedule'>('run');
-  const [scheduleStart, setScheduleStart] = useState<string>('');
-  const [scheduleEnd, setScheduleEnd] = useState<string>('');
-  const [scheduleIntervalMinutes, setScheduleIntervalMinutes] = useState<string>('60');
+  const [scheduleStart, setScheduleStart] = useState<string>(() => toDatetimeLocalValue(currentAlignedMinuteMs()));
+  const [scheduleIntervalMinutes, setScheduleIntervalMinutes] = useState<string>('');
   const [scheduleInitialFundsIota, setScheduleInitialFundsIota] = useState<string>('5');
+  const [budgetQuote, setBudgetQuote] = useState<TaskBudgetQuote | null>(null);
   const currentAccount = useCurrentAccount();
   const iotaClients = useMemo(
     () => ({
@@ -1102,6 +1157,79 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
     }
   }, [taskText]);
 
+  const normalizedStartMs = useMemo(() => {
+    const parsed = datetimeLocalToMs(scheduleStart);
+    if (Number.isFinite(parsed)) return ceilToMinuteBoundary(parsed);
+    return currentAlignedMinuteMs();
+  }, [scheduleStart]);
+
+  const recurringIntervalMinutes = useMemo(() => {
+    const raw = scheduleIntervalMinutes.trim();
+    if (!raw) return null;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return Math.floor(parsed);
+  }, [scheduleIntervalMinutes]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!parsedTask || !currentAccount?.address) {
+      setBudgetQuote(null);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const { task } = normalizeTaskText(taskText);
+          const prepared = await prepareWalletTask(task, currentAccount.address, activeNetwork);
+          if (cancelled) return;
+          const requiredPerRunNanoIota = BigInt(prepared.requiredPayment);
+          setBudgetQuote({
+            requiredPerRunNanoIota,
+            requiredPerRunIotaText: formatNanoIotaToIota(requiredPerRunNanoIota),
+          });
+        } catch {
+          if (!cancelled) setBudgetQuote(null);
+        }
+      })();
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [activeNetwork, currentAccount?.address, parsedTask, taskText]);
+
+  const schedulePreview = useMemo(() => {
+    let budgetNanoIota = 0n;
+    try {
+      budgetNanoIota = parseIotaToNano(scheduleInitialFundsIota);
+    } catch {
+      budgetNanoIota = 0n;
+    }
+
+    const possibleRuns =
+      budgetQuote?.requiredPerRunNanoIota && budgetQuote.requiredPerRunNanoIota > 0n
+        ? budgetNanoIota / budgetQuote.requiredPerRunNanoIota
+        : null;
+    const endMs =
+      recurringIntervalMinutes != null && possibleRuns && possibleRuns > 0n
+        ? normalizedStartMs + Number(possibleRuns - 1n) * recurringIntervalMinutes * 60_000
+        : normalizedStartMs;
+
+    return {
+      startMs: normalizedStartMs,
+      endMs,
+      possibleRuns,
+    };
+  }, [budgetQuote?.requiredPerRunNanoIota, normalizedStartMs, recurringIntervalMinutes, scheduleInitialFundsIota]);
+
+  const budgetStepIota = useMemo(() => {
+    if (budgetQuote?.requiredPerRunIotaText) return budgetQuote.requiredPerRunIotaText;
+    return '1';
+  }, [budgetQuote?.requiredPerRunIotaText]);
+
   useEffect(() => {
     const templateId = parsedTask && typeof parsedTask === 'object' && !Array.isArray(parsedTask)
       ? (parsedTask as Record<string, unknown>).template_id
@@ -1243,91 +1371,64 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
       const networkClient = iotaClients[activeNetwork];
       const chain = CHAIN_BY_NETWORK[activeNetwork];
       executionClientRef.current = networkClient;
-
-      if (submissionMode === 'schedule') {
-        const intervalMinutes = Number(scheduleIntervalMinutes);
-
-        if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
-          throw new Error('Interval must be a positive number of minutes.');
-        }
-
-        const startMs = scheduleStart
-          ? datetimeLocalToMs(scheduleStart)
-          : Date.now() + Math.trunc(intervalMinutes * 60_000);
-        const endMs = scheduleEnd ? datetimeLocalToMs(scheduleEnd) : 0;
-
-        if (!Number.isFinite(startMs)) {
-          throw new Error('Invalid start schedule date.');
-        }
-        if (scheduleEnd && !Number.isFinite(endMs)) {
-          throw new Error('Invalid end schedule date.');
-        }
-        if (scheduleEnd && endMs < startMs) {
-          throw new Error('End schedule must be after the start schedule.');
-        }
-
-        const prepared = await prepareWalletTaskSchedule(
-          task,
-          {
-            startScheduleMs: startMs,
-            endScheduleMs: scheduleEnd ? endMs : 0,
-            intervalMinutes,
-            initialFundsIota: scheduleInitialFundsIota,
-          },
-          currentAccount.address,
-          activeNetwork,
-        );
-        const transaction = Transaction.from(prepared.serializedTransaction);
-        const execution = await signAndExecuteTransaction({ transaction, chain });
-        const digest = String(execution?.digest ?? '').trim();
-        const confirmedExecution = await fetchExecutionForDigest(networkClient, digest, execution);
-        const taskId = extractCreatedTaskId(confirmedExecution) || extractCreatedTaskId(execution) || null;
-
-        setTaskScheduleResult({
-          prepared,
-          digest,
-          taskId,
-        });
-        onExecuted();
-      } else {
-        const prepared = await prepareWalletTask(task, currentAccount.address, activeNetwork);
-        const transaction = Transaction.from(prepared.serializedTransaction);
-        const execution = await signAndExecuteTransaction({ transaction, chain });
-        const digest = String(execution?.digest ?? '').trim();
-        const confirmedExecution = await fetchExecutionForDigest(networkClient, digest, execution);
-        const taskId = extractTaskId(confirmedExecution) || extractTaskId(execution);
-
-        if (!taskId) {
-          throw new Error(
-            `Wallet execution succeeded, but the created task id could not be extracted from the transaction. digest=${digest || '<unknown>'}`,
-          );
-        }
-
-        const token = pollTokenRef.current + 1;
-        pollTokenRef.current = token;
-
-        setResult({
-          prepared,
-          digest,
-          taskId,
-          live: {
-            kind: 'submitted',
-            state: null,
-            phaseLabel: 'Submitted',
-            detail: 'Transaction accepted. Waiting for the oracle network to process the task.',
-            round: 0,
-            mediationAttempts: 0,
-            mediationStatus: 0,
-            mediationVariance: 0,
-            resultText: null,
-            noCommitMessages: [],
-            updatedAt: new Date().toISOString(),
-          },
-        });
-
-        void monitorTask(networkClient, taskId, prepared, digest, token);
-        onExecuted();
+      const startMs = schedulePreview.startMs;
+      const budgetNanoIota = parseIotaToNano(scheduleInitialFundsIota);
+      if (budgetNanoIota <= 0n) {
+        throw new Error('Initial funds must be greater than zero.');
       }
+
+      let quote = budgetQuote;
+      if (!quote) {
+        const preparedQuote = await prepareWalletTask(task, currentAccount.address, activeNetwork);
+        const requiredPerRunNanoIota = BigInt(preparedQuote.requiredPayment);
+        quote = {
+          requiredPerRunNanoIota,
+          requiredPerRunIotaText: formatNanoIotaToIota(requiredPerRunNanoIota),
+        };
+        setBudgetQuote(quote);
+      }
+      const requiredPerRun = quote.requiredPerRunNanoIota;
+      if (requiredPerRun <= 0n) {
+        throw new Error('Unable to determine the required budget per run for this task.');
+      }
+
+      const intervalMinutesRaw = scheduleIntervalMinutes.trim();
+      const hasRecurringInterval = intervalMinutesRaw.length > 0;
+      const intervalMinutes = hasRecurringInterval ? Number(intervalMinutesRaw) : 1;
+      if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
+        throw new Error('Interval must be a positive number of minutes.');
+      }
+
+      const maxRuns = budgetNanoIota / requiredPerRun;
+      if (maxRuns <= 0n) {
+        throw new Error('Initial funds are lower than the required budget for one run.');
+      }
+
+      const endMs = hasRecurringInterval ? schedulePreview.endMs : startMs;
+
+      const prepared = await prepareWalletTaskSchedule(
+        task,
+        {
+          startScheduleMs: startMs,
+          endScheduleMs: endMs,
+          intervalMinutes,
+          initialFundsIota: scheduleInitialFundsIota,
+        },
+        currentAccount.address,
+        activeNetwork,
+      );
+      const transaction = Transaction.from(prepared.serializedTransaction);
+      const execution = await signAndExecuteTransaction({ transaction, chain });
+      const digest = String(execution?.digest ?? '').trim();
+      const confirmedExecution = await fetchExecutionForDigest(networkClient, digest, execution);
+      const taskId = extractCreatedTaskId(confirmedExecution) || extractCreatedTaskId(execution) || null;
+
+      setTaskScheduleResult({
+        prepared,
+        digest,
+        taskId,
+      });
+      onExecuted();
     } catch (err) {
       setError(formatUserFacingError(err));
     } finally {
@@ -1337,9 +1438,9 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
 
   return (
     <section className="card task-card">
-      <div className="section-title">Run or schedule a task</div>
+      <div className="section-title">Create a scheduled task</div>
       <div className="task-intro">
-        The server prepares the transaction, your wallet signs it, and the webview either follows the task on-chain or creates a task with an embedded schedule.
+        Every task is now created as a scheduled task. By default it runs once immediately; if you set an interval, the webview derives the maximum number of runs from the available budget and sets the schedule end automatically.
       </div>
 
       <div className="task-toolbar task-toolbar-grid">
@@ -1379,29 +1480,28 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
         spellCheck={false}
       />
 
-      <div className={`schedule-form-grid ${submissionMode !== 'schedule' ? 'is-disabled' : ''}`}>
-        <label>
+      <div className="schedule-form-grid">
+        <label className="schedule-field">
           Start schedule
           <input
             type="datetime-local"
             value={scheduleStart}
-            onChange={(e) => setScheduleStart(e.target.value)}
-            disabled={submissionMode !== 'schedule'}
+            onChange={(e) => setScheduleStart(normalizeScheduleInputValue(e.target.value))}
           />
-          <small>Leave empty to start after one full interval from submission.</small>
+          <small>The start is minute-aligned automatically, but you can move it into the future.</small>
         </label>
 
-        <label>
+        <label className="schedule-field">
           End schedule
-          <input
-            type="datetime-local"
-            value={scheduleEnd}
-            onChange={(e) => setScheduleEnd(e.target.value)}
-            disabled={submissionMode !== 'schedule'}
-          />
+          <input type="text" value={toDatetimeLocalValue(schedulePreview.endMs)} disabled />
+          <small>
+            {recurringIntervalMinutes != null
+              ? 'Calculated automatically from start, interval, and budget.'
+              : 'If no interval is set, start and end coincide so the task runs once.'}
+          </small>
         </label>
 
-        <label>
+        <label className="schedule-field">
           Interval (minutes)
           <input
             type="number"
@@ -1409,47 +1509,37 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
             step="1"
             value={scheduleIntervalMinutes}
             onChange={(e) => setScheduleIntervalMinutes(e.target.value)}
-            disabled={submissionMode !== 'schedule'}
+            placeholder="-"
           />
+          <small>Leave empty for a one-shot run. If set, the end date is derived from the budget.</small>
         </label>
 
-        <label>
-          Initial funds (IOTA)
+        <label className="schedule-field">
+          Budget (IOTA)
           <input
             type="number"
             min="0"
-            step="0.000000001"
+            step={budgetStepIota}
+            inputMode="decimal"
+            key={budgetStepIota}
             value={scheduleInitialFundsIota}
             onChange={(e) => setScheduleInitialFundsIota(e.target.value)}
-            disabled={submissionMode !== 'schedule'}
           />
+          <small>
+            Cost per run: <span className="mono">{budgetQuote ? `${budgetQuote.requiredPerRunIotaText} IOTA` : '-'}</span>
+            {schedulePreview.possibleRuns != null ? (
+              <>
+                {' '}| possible runs: <span className="mono">{schedulePreview.possibleRuns.toString()}</span>
+              </>
+            ) : null}
+          </small>
         </label>
       </div>
 
       <div className="task-actions task-actions-mobile">
         <button className="wallet-submit-button" onClick={() => void onSubmit()} disabled={busy || !parsedTask || !currentAccount}>
-          {busy ? 'Opening wallet...' : submissionMode === 'schedule' ? 'Sign and create task schedule' : 'Sign and execute with wallet'}
+          {busy ? 'Opening wallet...' : 'Sign and create scheduled task'}
         </button>
-        <fieldset className="task-mode-radio-group task-mode-toggle-inline" aria-label="Submission mode">
-          <label className="task-mode-radio">
-            <input
-              type="radio"
-              name="submissionMode"
-              checked={submissionMode === 'run'}
-              onChange={() => setSubmissionMode('run')}
-            />
-            <span>Run</span>
-          </label>
-          <label className="task-mode-radio">
-            <input
-              type="radio"
-              name="submissionMode"
-              checked={submissionMode === 'schedule'}
-              onChange={() => setSubmissionMode('schedule')}
-            />
-            <span>Schedule</span>
-          </label>
-        </fieldset>
         {!parsedTask ? <span className="error-inline">Invalid JSON</span> : null}
       </div>
 
@@ -1473,10 +1563,12 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
             <div className="task-summary-card">
               <div className="summary-label">Schedule</div>
               <div className="summary-value">
-                every {Math.max(1, Math.floor(Number(taskScheduleResult.prepared.schedule.intervalMs) / 60000))} min
+                {Number(taskScheduleResult.prepared.schedule.endScheduleMs) === Number(taskScheduleResult.prepared.schedule.startScheduleMs)
+                  ? 'one run'
+                  : `every ${Math.max(1, Math.floor(Number(taskScheduleResult.prepared.schedule.intervalMs) / 60000))} min`}
               </div>
               <div className="summary-hint">
-                Initial funds: <span className="mono">{taskScheduleResult.prepared.initialFunds}</span> nano-IOTA
+                Budget: <span className="mono">{taskScheduleResult.prepared.initialFunds}</span> nano-IOTA
               </div>
             </div>
           </div>

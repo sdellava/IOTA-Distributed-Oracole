@@ -111,6 +111,17 @@ export async function readRegisteredOracleNodes(
     .filter((node) => node.nodeId > 0 && !!node.addr);
 }
 
+export async function readRegisteredOracleNodeByAddr(
+  client: IotaClient,
+  addr: string,
+  stateId = getStateId(),
+): Promise<RegisteredOracleNodeSnapshot | null> {
+  const normalizedAddr = String(addr ?? "").trim().toLowerCase();
+  if (!normalizedAddr) return null;
+  const nodes = await readRegisteredOracleNodes(client, stateId);
+  return nodes.find((node) => node.addr === normalizedAddr) ?? null;
+}
+
 export async function readTaskRegistry(client: IotaClient, registryId = getTaskRegistryId()): Promise<string[]> {
   const obj = await client.getObject({ id: registryId, options: { showContent: true } } as any);
   const f = getMoveFields(obj);

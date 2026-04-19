@@ -8,6 +8,7 @@ import { publishNoCommit } from "../taskSignFlow";
 import type { NodeContext } from "../nodeContext";
 import { assertCommitteeMultisigAddress, buildMultiSigPublicKey } from "../multisig.js";
 import { loadPubkeysByAddrB64 } from "../services/pubkeys";
+import { readRegisteredOracleNodeByAddr } from "../services/schedulerReader";
 import { loadTaskBundle, isTaskFreshForNode, taskCreatedAtMs } from "../services/taskObjects";
 import { moveToArray, moveToString } from "../utils/move";
 import {
@@ -453,7 +454,7 @@ export async function processAssigned(
   creator: string,
   opts?: { ignoreFreshness?: boolean; runIndex?: number },
 ): Promise<void> {
-  const { client, identity, nodeId, myAddr, acceptedTemplateIds, cache, stats } = ctx;
+  const { client, identity, nodeId, myAddr, cache, stats } = ctx;
 
   const bundle = await loadTaskBundle(client, taskId);
   const { taskFields, configFields, runtimeFields } = bundle;
@@ -507,6 +508,8 @@ export async function processAssigned(
   const paymentIota = String(taskFields.payment_iota ?? "0");
   const mediationMode = Number(configFields.mediation_mode ?? 0);
   const varianceMax = Number(configFields.variance_max ?? 0);
+  const myNode = await readRegisteredOracleNodeByAddr(client, myAddr);
+  const acceptedTemplateIds = myNode?.acceptedTemplateIds ?? [];
 
   if (!acceptsTemplate(templateId, acceptedTemplateIds)) {
     console.log(

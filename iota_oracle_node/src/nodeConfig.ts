@@ -46,3 +46,7 @@ export function parseAcceptedTemplateIds(raw = process.env.ORACLE_ACCEPTED_TEMPL
 export function acceptsTemplate(templateId: number, acceptedTemplateIds: number[]): boolean {
   return acceptedTemplateIds.includes(templateId);
 }
+
+export function supportsScheduler(acceptedTemplateIds: number[]): boolean {
+  return acceptsTemplate(0, acceptedTemplateIds);
+}

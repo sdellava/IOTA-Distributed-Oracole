@@ -31,7 +31,10 @@ module iota_oracle_system_state::systemState {
     const EProposalNotFound: u64 = 67;
     const EValidatorCapAlreadyRegistered: u64 = 68;
     const EDelegatedCapInUse: u64 = 69;
+    const ESchedulerTemplateReserved: u64 = 70;
     const EUnprunedEpoch: u64 = 18446744073709551615;
+
+    const SCHEDULER_TEMPLATE_ID: u64 = 0;
 
     const PROPOSAL_KIND_NONE: u8 = 0;
     const PROPOSAL_KIND_TEMPLATE_UPSERT: u8 = 1;
@@ -174,6 +177,11 @@ module iota_oracle_system_state::systemState {
         amount: u64,
     }
 
+    public struct ControllerCapMinted has copy, drop {
+        by: address,
+        recipient: address,
+    }
+
     fun init(ctx: &mut TxContext) {
         let sender = iota::tx_context::sender(ctx);
 
@@ -224,6 +232,17 @@ module iota_oracle_system_state::systemState {
         transfer::public_transfer(delegated, recipient);
     }
 
+    public entry fun mint_supervisor_controller_cap(
+        _cap: &ControllerCap,
+        recipient: address,
+        ctx: &mut TxContext
+    ) {
+        let by = tx_context::sender(ctx);
+        let cap = ControllerCap { id: object::new(ctx) };
+        transfer::public_transfer(cap, recipient);
+        event::emit(ControllerCapMinted { by, recipient });
+    }
+
     public entry fun delete_delegated_controller_cap(
         st: &State,
         delegated_cap: DelegatedControllerCap
@@ -265,6 +284,7 @@ module iota_oracle_system_state::systemState {
         price_per_retention_day_iota: u64,
         ctx: &mut TxContext
     ) {
+        assert!(template_id != SCHEDULER_TEMPLATE_ID, ESchedulerTemplateReserved);
         let electorate = vector::length(&st.oracle_nodes);
         assert!(electorate > 0, ENoOracleNodesRegistered);
 

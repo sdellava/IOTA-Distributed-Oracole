@@ -3,6 +3,7 @@
 
 import { bytesToUtf8, decodeVecU8 } from '../events';
 import type { NodeContext } from '../nodeContext';
+import { readRegisteredOracleNodeByAddr } from '../services/schedulerReader';
 import { loadTaskBundle, isTaskFreshForNode } from '../services/taskObjects';
 import { acceptsTemplate } from '../nodeConfig';
 import { moveToArray, moveToString } from '../utils/move';
@@ -13,7 +14,7 @@ export async function processMediationStarted(
   ctx: NodeContext,
   params: { taskId: string; toRound?: number; runIndex?: number },
 ): Promise<void> {
-  const { client, nodeId, myAddr, acceptedTemplateIds, cache } = ctx;
+  const { client, nodeId, myAddr, cache } = ctx;
   const { taskId } = params;
 
   const bundle = await loadTaskBundle(client, taskId);
@@ -41,6 +42,8 @@ export async function processMediationStarted(
   }
 
   const templateId = Number(taskFields.template_id ?? 0);
+  const myNode = await readRegisteredOracleNodeByAddr(client, myAddr);
+  const acceptedTemplateIds = myNode?.acceptedTemplateIds ?? [];
   if (!acceptsTemplate(templateId, acceptedTemplateIds)) {
     console.log(
       `[node ${nodeId}] ignore mediation task=${taskId} round=${toRound} reason=template_not_accepted template=${templateId} accepted=${acceptedTemplateIds.join(",") || "<none>"}`,

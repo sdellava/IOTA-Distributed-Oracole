@@ -137,7 +137,7 @@ function truncate(text: string, max = 600): string {
 function summarizeEnv(taskType: string) {
   const lines = [
     `IOTA_NETWORK=${String(process.env.IOTA_NETWORK ?? "<unset>")}`,
-    `ORACLE_ACCEPTED_TEMPLATE_IDS=${String(process.env.ORACLE_ACCEPTED_TEMPLATE_IDS ?? "<unset>")}`,
+    `NODE_SUPPORTED_TEMPLATES_SOURCE=on-chain`,
   ];
 
   if (taskType === "STORAGE") {
@@ -180,8 +180,8 @@ async function main() {
   console.log(`retention_days: ${retentionDays}`);
   console.log(`declared_download_bytes: ${declaredDownloadBytes}`);
   console.log(`handler_found: ${handler ? "yes" : "no"}`);
-  console.log(`template_accepted_by_env: ${templateId > 0 && acceptedTemplateIds.includes(templateId) ? "yes" : "no"}`);
-  console.log(`accepted_templates_env: ${acceptedTemplateIds.length ? acceptedTemplateIds.join(",") : "<none>"}`);
+  console.log(`template_accepted_by_local_test_env: ${templateId > 0 && acceptedTemplateIds.includes(templateId) ? "yes" : "no"}`);
+  console.log(`local_test_accepted_templates: ${acceptedTemplateIds.length ? acceptedTemplateIds.join(",") : "<none>"}`);
   console.log("--- ENV ---");
   for (const line of summarizeEnv(taskType)) console.log(line);
   console.log("--- INPUT PAYLOAD PREVIEW ---");

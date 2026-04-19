@@ -7,8 +7,8 @@ import { Ed25519Keypair } from "@iota/iota-sdk/keypairs/ed25519";
 
 import { bcsVecU8, bcsAddress, bcsVecU64, bcsU64 } from "./bcs";
 import { envByNetwork } from "./config/env";
-import { parseAcceptedTemplateIds } from "./nodeConfig";
 import { resolveNodeRegistryId } from "./services/nodeRegistry";
+import { readRegisteredOracleNodeByAddr } from "./services/schedulerReader";
 import { signAndExecuteWithLockRetry } from "./txRetry.js";
 
 function mustEnv(key: string): string {
@@ -224,7 +224,12 @@ export async function registerOracleNode(opts: {
   const stateId = getStateId();
   const nodeRegistryId = await resolveNodeRegistryId(client, stateId);
   const pkg = await resolveSystemPackageId(client, stateId, getSystemPackageId());
-  const acceptedTemplateIds = (opts.acceptedTemplateIds?.length ? [...opts.acceptedTemplateIds] : parseAcceptedTemplateIds())
+  const currentNode = await readRegisteredOracleNodeByAddr(client, oracleAddr, stateId);
+  const effectiveAcceptedTemplateIds = (
+    opts.acceptedTemplateIds != null
+      ? opts.acceptedTemplateIds
+      : currentNode?.acceptedTemplateIds ?? []
+  )
     .map((n) => Math.floor(Number(n)))
     .filter((n) => Number.isFinite(n) && n >= 0);
 
@@ -293,7 +298,7 @@ export async function registerOracleNode(opts: {
             tx.object(delegatedCapId),
             tx.pure(bcsAddress(oracleAddr)),
             tx.pure(bcsVecU8(oraclePubkeyRaw32)),
-            tx.pure(bcsVecU64(acceptedTemplateIds)),
+            tx.pure(bcsVecU64(effectiveAcceptedTemplateIds)),
           ],
         });
         return tx;
@@ -322,7 +327,7 @@ export async function registerOracleNode(opts: {
           tx.object(nodeRegistryId),
           tx.pure(bcsAddress(oracleAddr)),
           tx.pure(bcsVecU8(oraclePubkeyRaw32)),
-          tx.pure(bcsVecU64(acceptedTemplateIds)),
+          tx.pure(bcsVecU64(effectiveAcceptedTemplateIds)),
         ],
       });
       return tx;

@@ -63,7 +63,10 @@ export function startMonitorServer(ctx: NodeContext, state: MonitorRuntimeState)
         status: state.booting ? "booting" : "ok",
         nodeId: ctx.nodeId,
         address: ctx.identity.address,
-        acceptedTemplateIds: ctx.acceptedTemplateIds,
+        acceptedTemplateIds: {
+          source: "on-chain",
+          configuredEnvFallback: ctx.acceptedTemplateIds,
+        },
         pollMs: ctx.pollMs,
         startupMs: ctx.startupMs,
         uptimeMs,

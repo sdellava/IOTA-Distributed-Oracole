@@ -385,6 +385,14 @@ function parseIotaToNano(raw: unknown, field: string): bigint {
   return whole + frac;
 }
 
+const SCHEDULE_ALIGNMENT_MS = 60_000n;
+
+function assertMinuteAligned(value: bigint, field: string): void {
+  if (value % SCHEDULE_ALIGNMENT_MS !== 0n) {
+    throw new Error(`${field} must be aligned to the start of a minute (seconds must be 00).`);
+  }
+}
+
 function normalizeScheduleInput(input: any): ScheduleInput {
   const startRaw = input?.start_schedule_ms ?? input?.startScheduleMs ?? input?.start ?? input?.startAt;
   const endRaw = input?.end_schedule_ms ?? input?.endScheduleMs ?? input?.end ?? input?.endAt ?? 0;
@@ -406,6 +414,10 @@ function normalizeScheduleInput(input: any): ScheduleInput {
     input?.initial_funds_nano_iota != null || input?.initialFundsNanoIota != null
       ? parseNonNegativeBigInt(fundsRaw, "initial_funds_nano_iota")
       : parseIotaToNano(fundsRaw, "initial_funds_iota");
+
+  assertMinuteAligned(startScheduleMs, "start_schedule_ms");
+  assertMinuteAligned(intervalMs, "interval_ms");
+  if (endScheduleMs !== 0n) assertMinuteAligned(endScheduleMs, "end_schedule_ms");
 
   return {
     startScheduleMs,

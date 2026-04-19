@@ -47,6 +47,17 @@ export type OracleTemplateCost = {
   pricePerRetentionDayIota: string | null;
 };
 
+export type PendingTemplateProposal = {
+  proposalId: string;
+  templateId: string;
+  proposalKind: number;
+  approvals: string;
+  electorateSize: string;
+  approvalsNeeded: string;
+  taskType: string | null;
+  isEnabled: boolean | null;
+};
+
 export type OracleStatus = {
   ok: boolean;
   mode: "live" | "degraded";
@@ -75,6 +86,7 @@ export type OracleStatus = {
     minPayment: string | null;
     templates: OracleTemplateCost[];
   };
+  pendingTemplateProposals: PendingTemplateProposal[];
   registeredNodes: RegisteredOracleNode[];
   nodeActivity: NodeActivity[];
   recentEvents: OracleEventItem[];
@@ -260,4 +272,28 @@ export type PreparedScheduledTaskActionWalletResponse = {
   exitCode: number | null;
   startedAt: string;
   finishedAt: string;
+};
+
+export type PreparedNodeManagementWalletResponse = {
+  ok: true;
+  mode: "prepare-node-management-webview";
+  sender: string;
+  nodeAddress: string;
+  serializedTransaction: string;
+  gasBudget: string;
+  acceptedTemplateIds: string[];
+  target: string;
+  registrationMode: "dev" | "prod";
+  delegatedControllerCapId: string | null;
+};
+
+export type PreparedProposalApprovalWalletResponse = {
+  ok: true;
+  mode: "prepare-proposal-approval-webview";
+  sender: string;
+  proposalId: string;
+  templateId: string;
+  serializedTransaction: string;
+  gasBudget: string;
+  target: string;
 };

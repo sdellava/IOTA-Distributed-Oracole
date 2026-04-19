@@ -11,6 +11,8 @@ import type {
   PreparedTaskScheduleWalletResponse,
   PreparedScheduledTaskActionWalletResponse,
   IotaMarketPriceResponse,
+  PreparedNodeManagementWalletResponse,
+  PreparedProposalApprovalWalletResponse,
   ScheduledTaskActionRequest,
   TaskSchedulesResponse,
 } from '../types';
@@ -122,6 +124,39 @@ export async function prepareScheduledTaskActionWallet(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ action, sender, network }),
+    }),
+  );
+}
+
+export async function prepareNodeManagementWallet(
+  acceptedTemplateIds: number[],
+  sender: string,
+  network: OracleNetwork,
+): Promise<PreparedNodeManagementWalletResponse> {
+  return ensureOk<PreparedNodeManagementWalletResponse>(
+    await fetch('/api/node-management/prepare-wallet', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ acceptedTemplateIds, sender, network }),
+    }),
+  );
+}
+
+export async function prepareProposalApprovalWallet(
+  proposalId: number,
+  templateId: number,
+  sender: string,
+  network: OracleNetwork,
+): Promise<PreparedProposalApprovalWalletResponse> {
+  return ensureOk<PreparedProposalApprovalWalletResponse>(
+    await fetch('/api/node-management/prepare-approve-wallet', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ proposalId, templateId, sender, network }),
     }),
   );
 }

@@ -10,12 +10,13 @@ import MetricCard from "./components/MetricCard";
 import TaskRunner from "./components/TaskRunner";
 import { fetchExamples, fetchIotaMarketPrice, fetchNetworkConfig, fetchStatusForNetwork, updateActiveNetwork } from "./lib/api";
 import type { ExampleTask, IotaMarketPriceResponse, OracleNetwork, OracleStatus, OracleTemplateCost } from "./types";
+import NodeManagementPage from "./pages/NodeManagementPage";
 import ValidateTaskPage from "./pages/ValidateTaskPage";
 import TaskSchedulesPage from "./pages/TaskSchedulesPage";
 
 const REFRESH_MS = 10_000;
 
-type PageMode = "run" | "validate" | "scheduled";
+type PageMode = "run" | "validate" | "scheduled" | "node-management";
 const FALLBACK_NETWORKS: OracleNetwork[] = ["mainnet", "testnet", "devnet"];
 
 function normalizeNetwork(value: string | null | undefined): OracleNetwork {
@@ -393,17 +394,20 @@ export default function App() {
                         selectedKeys={[pageMode]}
                         className="page-switcher-popup-menu"
                         onClick={({ key }: { key: string }) => {
-                          if (key === "run" || key === "validate" || key === "scheduled") {
+                          if (key === "run" || key === "validate" || key === "scheduled" || key === "node-management") {
                             setPageMode(key);
                             setMenuOpen(false);
                           }
                         }}
                       >
-                        <RcMenuItem key="run">Run task</RcMenuItem>
+                        <RcMenuItem key="run">Schedule a new task</RcMenuItem>
                         <Divider />
-                        <RcMenuItem key="scheduled">Task schedules</RcMenuItem>
+                        <RcMenuItem key="scheduled">Scheduled task list</RcMenuItem>
                         <Divider />
-                        <RcMenuItem key="validate">Validate task</RcMenuItem>
+                        <RcMenuItem key="validate">Validate a task</RcMenuItem>
+                        <Divider />
+                        <RcMenuItem key="node-management">Node management</RcMenuItem>
+                       
                       </Menu>
                     </div>
                   ) : null}
@@ -638,6 +642,12 @@ export default function App() {
             setSelectedValidateTaskId(taskId);
             setPageMode("validate");
           }}
+        />
+      ) : pageMode === "node-management" ? (
+        <NodeManagementPage
+          activeNetwork={activeNetwork}
+          status={status}
+          onChanged={() => void refreshStatus(activeNetwork)}
         />
       ) : (
         <ValidateTaskPage initialTaskId={selectedValidateTaskId} activeNetwork={activeNetwork} />

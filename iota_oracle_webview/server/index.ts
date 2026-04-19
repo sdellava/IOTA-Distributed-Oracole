@@ -23,6 +23,10 @@ import {
   readExampleTask,
 } from "./services/oracleClient.js";
 import { getIotaMarketPrice } from "./services/marketData.js";
+import {
+  prepareNodeManagementForWallet,
+  prepareProposalApprovalForWallet,
+} from "./services/nodeManagement.js";
 import { getOracleStatus } from "./services/oracleStatus.js";
 import { getTaskSchedules } from "./services/taskSchedules.js";
 
@@ -743,6 +747,62 @@ app.post("/api/task-schedules/prepare-action-wallet", async (req, res) => {
       return;
     }
     const prepared = await prepareScheduledTaskActionForWallet(action, sender, network);
+    res.json(prepared);
+  } catch (error) {
+    sendApiError(res, 400, error);
+  }
+});
+
+app.post("/api/node-management/prepare-wallet", async (req, res) => {
+  try {
+    const sender = String((req.body as any)?.sender ?? "").trim();
+    const network = typeof (req.body as any)?.network === "string" ? (req.body as any).network : undefined;
+    const acceptedTemplateIdsRaw = Array.isArray((req.body as any)?.acceptedTemplateIds)
+      ? (req.body as any).acceptedTemplateIds
+      : null;
+    if (!sender) {
+      res.status(400).json({ error: "Body must include sender." });
+      return;
+    }
+    if (!acceptedTemplateIdsRaw) {
+      res.status(400).json({ error: "Body must include acceptedTemplateIds array." });
+      return;
+    }
+    const acceptedTemplateIds = acceptedTemplateIdsRaw
+      .map((item: unknown) => Number(item))
+      .filter((item: number) => Number.isFinite(item) && item >= 0)
+      .map((item: number) => Math.floor(item));
+    const prepared = await prepareNodeManagementForWallet(sender, acceptedTemplateIds, network);
+    res.json(prepared);
+  } catch (error) {
+    sendApiError(res, 400, error);
+  }
+});
+
+app.post("/api/node-management/prepare-approve-wallet", async (req, res) => {
+  try {
+    const sender = String((req.body as any)?.sender ?? "").trim();
+    const network = typeof (req.body as any)?.network === "string" ? (req.body as any).network : undefined;
+    const proposalId = Number((req.body as any)?.proposalId);
+    const templateId = Number((req.body as any)?.templateId);
+    if (!sender) {
+      res.status(400).json({ error: "Body must include sender." });
+      return;
+    }
+    if (!Number.isFinite(proposalId) || proposalId <= 0) {
+      res.status(400).json({ error: "Body must include a valid proposalId." });
+      return;
+    }
+    if (!Number.isFinite(templateId) || templateId < 0) {
+      res.status(400).json({ error: "Body must include a valid templateId." });
+      return;
+    }
+    const prepared = await prepareProposalApprovalForWallet(
+      sender,
+      Math.floor(proposalId),
+      Math.floor(templateId),
+      network,
+    );
     res.json(prepared);
   } catch (error) {
     sendApiError(res, 400, error);

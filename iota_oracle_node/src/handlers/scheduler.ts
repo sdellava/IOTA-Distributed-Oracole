@@ -9,10 +9,16 @@ import {
   startSchedulerRoundTx,
   submitTaskRunTx,
 } from "../oracleSchedulerTx";
-import { optInt } from "../nodeConfig";
+import { optInt, supportsScheduler } from "../nodeConfig";
 import { abortTaskWithCertificate } from "../oracleMessages";
 import { buildCertificateBlob } from "../services/eventConsensus";
-import { listDueTasks, readRegisteredOracleNodes, readTaskRegistry, readTaskSchedulerQueue } from "../services/schedulerReader";
+import {
+  listDueTasks,
+  readRegisteredOracleNodeByAddr,
+  readRegisteredOracleNodes,
+  readTaskRegistry,
+  readTaskSchedulerQueue,
+} from "../services/schedulerReader";
 import { loadTaskBundle } from "../services/taskObjects";
 import { moveToArray, moveToString } from "../utils/move";
 
@@ -26,6 +32,10 @@ function staleRunTimeoutMs(): number {
 
 function queueIndexOf(nodeIds: number[], nodeId: number): number {
   return nodeIds.findIndex((item) => item === nodeId);
+}
+
+function schedulerNodesOnly<T extends { acceptedTemplateIds: number[] }>(nodes: T[]): T[] {
+  return nodes.filter((node) => supportsScheduler(node.acceptedTemplateIds));
 }
 
 function queueNeedsReconcile(queueNodeIds: number[], registeredNodeIds: number[], myNodeId: number): boolean {
@@ -116,7 +126,19 @@ export async function processSchedulerRound(ctx: NodeContext): Promise<void> {
   let processed = 0;
   processed += await abortStaleOpenRuns(ctx, nowMs);
 
-  const registeredNodes = await readRegisteredOracleNodes(ctx.client);
+  const currentNode = await readRegisteredOracleNodeByAddr(ctx.client, ctx.myAddr);
+  if (!currentNode) {
+    console.log(`[scheduler ${ctx.nodeId}] skip round: node not registered on-chain`);
+    return;
+  }
+  if (!supportsScheduler(currentNode.acceptedTemplateIds)) {
+    console.log(
+      `[scheduler ${ctx.nodeId}] skip round: scheduler role not enabled on-chain accepted=${currentNode.acceptedTemplateIds.join(",") || "<none>"}`,
+    );
+    return;
+  }
+
+  const registeredNodes = schedulerNodesOnly(await readRegisteredOracleNodes(ctx.client));
   const myNode = registeredNodes.find((node) => node.addr === ctx.myAddr);
   if (!myNode) return;
   const registeredNodeIds = registeredNodes.map((node) => node.nodeId);
@@ -135,7 +157,7 @@ export async function processSchedulerRound(ctx: NodeContext): Promise<void> {
     queue = await readTaskSchedulerQueue(ctx.client);
   }
 
-  if (!queue.nodeIds.length && !registeredNodes.length) {
+  if (!queue.nodeIds.length && !registeredNodeIds.length) {
     console.warn(`[scheduler ${ctx.nodeId}] queue empty`);
     return;
   }
