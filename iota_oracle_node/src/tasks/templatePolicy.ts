@@ -5,6 +5,7 @@ const EXPECTED_TEMPLATE_BY_TASK_TYPE: Record<string, number> = {
   RANDOM_NUMBER_MEDIATION: 1,
   COMMODITY_PRICE: 2,
   WEATHER: 3,
+  LLM_OPEN_QUESTION: 12,
   STORAGE: 4,
   LLM_EXTRACT_STRUCTURED: 5,
   LLM_CLASSIFY_DOCUMENT: 6,
@@ -43,4 +44,3 @@ export function validateTemplatePolicy(taskTypeRaw: string, payload: any, ctxTem
     );
   }
 }
-

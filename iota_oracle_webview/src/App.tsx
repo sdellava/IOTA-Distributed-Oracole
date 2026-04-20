@@ -13,10 +13,11 @@ import type { ExampleTask, IotaMarketPriceResponse, OracleNetwork, OracleStatus,
 import NodeManagementPage from "./pages/NodeManagementPage";
 import ValidateTaskPage from "./pages/ValidateTaskPage";
 import TaskSchedulesPage from "./pages/TaskSchedulesPage";
+import TermsPage from "./pages/TermsPage";
 
 const REFRESH_MS = 10_000;
 
-type PageMode = "run" | "validate" | "scheduled" | "node-management";
+type PageMode = "run" | "validate" | "scheduled" | "node-management" | "terms";
 const FALLBACK_NETWORKS: OracleNetwork[] = ["mainnet", "testnet", "devnet"];
 
 function normalizeNetwork(value: string | null | undefined): OracleNetwork {
@@ -394,7 +395,13 @@ export default function App() {
                         selectedKeys={[pageMode]}
                         className="page-switcher-popup-menu"
                         onClick={({ key }: { key: string }) => {
-                          if (key === "run" || key === "validate" || key === "scheduled" || key === "node-management") {
+                          if (
+                            key === "run" ||
+                            key === "validate" ||
+                            key === "scheduled" ||
+                            key === "node-management" ||
+                            key === "terms"
+                          ) {
                             setPageMode(key);
                             setMenuOpen(false);
                           }
@@ -407,7 +414,8 @@ export default function App() {
                         <RcMenuItem key="validate">Validate a task</RcMenuItem>
                         <Divider />
                         <RcMenuItem key="node-management">Node management</RcMenuItem>
-                       
+                        <Divider />
+                        <RcMenuItem key="terms">EULA</RcMenuItem>
                       </Menu>
                     </div>
                   ) : null}
@@ -649,6 +657,8 @@ export default function App() {
           status={status}
           onChanged={() => void refreshStatus(activeNetwork)}
         />
+      ) : pageMode === "terms" ? (
+        <TermsPage />
       ) : (
         <ValidateTaskPage initialTaskId={selectedValidateTaskId} activeNetwork={activeNetwork} />
       )}

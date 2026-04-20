@@ -9,6 +9,7 @@ import { handleStorage } from "./handlers/storage";
 import { handleLlmExtractStructured } from "./handlers/llm_extract_structured";
 import { handleLlmClassifyDocument } from "./handlers/llm_classify_document";
 import { handleLlmRiskScore } from "./handlers/llm_risk_score";
+import { handleLlmOpenQuestion } from "./handlers/llm_open_question";
 import { handleTaskDlvcValidation } from "./handlers/task_dlvc_validation";
 
 const handlers: Record<string, TaskHandler> = {
@@ -19,6 +20,7 @@ const handlers: Record<string, TaskHandler> = {
   COMMODITY_PRICE: handleGetJsonCanonical,
   WEATHER: handleGetJsonCanonical,
   STORAGE: handleStorage,
+  LLM_OPEN_QUESTION: handleLlmOpenQuestion,
   LLM_EXTRACT_STRUCTURED: handleLlmExtractStructured,
   LLM_CLASSIFY_DOCUMENT: handleLlmClassifyDocument,
   LLM_RISK_SCORE: handleLlmRiskScore,

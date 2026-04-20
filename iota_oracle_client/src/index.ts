@@ -387,6 +387,8 @@ function parseIotaToNano(raw: unknown, field: string): bigint {
 
 const SCHEDULE_ALIGNMENT_MS = 60_000n;
 
+const MIN_SCHEDULE_INTERVAL_MS = 300_000n;
+
 function assertMinuteAligned(value: bigint, field: string): void {
   if (value % SCHEDULE_ALIGNMENT_MS !== 0n) {
     throw new Error(`${field} must be aligned to the start of a minute (seconds must be 00).`);
@@ -418,6 +420,9 @@ function normalizeScheduleInput(input: any): ScheduleInput {
   assertMinuteAligned(startScheduleMs, "start_schedule_ms");
   assertMinuteAligned(intervalMs, "interval_ms");
   if (endScheduleMs !== 0n) assertMinuteAligned(endScheduleMs, "end_schedule_ms");
+  if (intervalMs < MIN_SCHEDULE_INTERVAL_MS) {
+    throw new Error("interval_ms must be at least 300000 ms (5 minutes).");
+  }
 
   return {
     startScheduleMs,

@@ -123,6 +123,7 @@ type TaskCompositeState = {
 const POLL_MS = 1500;
 const MAX_POLL_MS = 180_000;
 const MEDIATION_MEAN_U64 = 1;
+const MIN_SCHEDULE_INTERVAL_MINUTES = 5;
 
 const MSG_NO_COMMIT = 7;
 const NO_COMMIT_FETCH_LIMIT = 200;
@@ -857,6 +858,12 @@ function formatUserFacingError(error: unknown): string {
   if (/must be aligned to the start of a minute/i.test(message) || /EInvalidScheduleAlignment/i.test(message)) {
     return 'Schedule times must be aligned to minute boundaries. Use seconds 00 for start, end, and interval.';
   }
+  if (/abort code:\s*1002/i.test(message) || /EInvalidInterval/i.test(message) || /interval_ms must be at least 300000/i.test(message)) {
+    return 'Schedule interval must be at least 5 minutes.';
+  }
+  if (/abort code:\s*1001/i.test(message) || /EInvalidScheduleWindow/i.test(message)) {
+    return 'Schedule end must be greater than or equal to schedule start.';
+  }
   const templateNotFound = message.match(/Template\s+(\d+)\s+not found under state\s+(0x[a-f0-9]+)/i);
   if (templateNotFound) {
     const [, templateId, stateId] = templateNotFound;
@@ -1394,9 +1401,12 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
 
       const intervalMinutesRaw = scheduleIntervalMinutes.trim();
       const hasRecurringInterval = intervalMinutesRaw.length > 0;
-      const intervalMinutes = hasRecurringInterval ? Number(intervalMinutesRaw) : 1;
+      const intervalMinutes = hasRecurringInterval ? Number(intervalMinutesRaw) : MIN_SCHEDULE_INTERVAL_MINUTES;
       if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
         throw new Error('Interval must be a positive number of minutes.');
+      }
+      if (intervalMinutes < MIN_SCHEDULE_INTERVAL_MINUTES) {
+        throw new Error(`Interval must be at least ${MIN_SCHEDULE_INTERVAL_MINUTES} minutes.`);
       }
 
       const maxRuns = budgetNanoIota / requiredPerRun;
@@ -1505,13 +1515,13 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
           Interval (minutes)
           <input
             type="number"
-            min="1"
+            min={String(MIN_SCHEDULE_INTERVAL_MINUTES)}
             step="1"
             value={scheduleIntervalMinutes}
             onChange={(e) => setScheduleIntervalMinutes(e.target.value)}
             placeholder="-"
           />
-          <small>Leave empty for a one-shot run. If set, the end date is derived from the budget.</small>
+          <small>Leave empty for a one-shot run. If set, the minimum supported interval is 5 minutes and the end date is derived from the budget.</small>
         </label>
 
         <label className="schedule-field">
