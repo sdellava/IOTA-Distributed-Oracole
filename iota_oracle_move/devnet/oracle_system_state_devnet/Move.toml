@@ -2,9 +2,9 @@
 name = "iota_oracle_system_state"
 version = "0.0.1"
 edition = "2024.beta"
-published-at = "0x9b8155374bad2697a32a7e73b43df5104d72ac9f9ed1e8406dfbd1600836169d"
+published-at = "0x7d4baec39c8d16a43083ef54a17d3d426df9a7f6208d278f109020d368ea2adc"
 # license = "SPDX-License-Identifier: AGPLv3"
 # authors = [""]
 
 [addresses]
-iota_oracle_system_state = "0x9b8155374bad2697a32a7e73b43df5104d72ac9f9ed1e8406dfbd1600836169d"
+iota_oracle_system_state = "0x7d4baec39c8d16a43083ef54a17d3d426df9a7f6208d278f109020d368ea2adc"

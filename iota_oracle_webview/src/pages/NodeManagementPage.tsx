@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Stefano Della Valle
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useCurrentAccount, useSignAndExecuteTransaction } from "@iota/dapp-kit";
 import { IotaClient, type ChainType } from "@iota/iota-sdk/client";
 import {
@@ -76,6 +76,8 @@ export default function NodeManagementPage({ activeNetwork, status, onChanged }:
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [busyProposalId, setBusyProposalId] = useState<string | null>(null);
+  const lastSyncedNodeAddressRef = useRef("");
+  const lastSyncedTemplateSignatureRef = useRef("");
 
   const rpcClients = useMemo(
     () => ({
@@ -104,19 +106,36 @@ export default function NodeManagementPage({ activeNetwork, status, onChanged }:
     () => status?.registeredNodes.find((item) => normalizeAddress(item.address) === connectedAddress) ?? null,
     [connectedAddress, status?.registeredNodes],
   );
+  const nodeTemplateIds = useMemo(
+    () =>
+      node?.acceptedTemplateIds
+        .map((item) => Number(item))
+        .filter((item) => Number.isFinite(item) && item >= 0)
+        .sort((a, b) => a - b) ?? [],
+    [node?.acceptedTemplateIds],
+  );
+  const nodeTemplateSignature = useMemo(() => nodeTemplateIds.join(","), [nodeTemplateIds]);
 
   useEffect(() => {
     if (!node) {
       setSelectedTemplateIds([]);
+      lastSyncedNodeAddressRef.current = "";
+      lastSyncedTemplateSignatureRef.current = "";
       return;
     }
-    setSelectedTemplateIds(
-      node.acceptedTemplateIds
-        .map((item) => Number(item))
-        .filter((item) => Number.isFinite(item) && item >= 0)
-        .sort((a, b) => a - b),
-    );
-  }, [node]);
+    const nodeAddress = normalizeAddress(node.address);
+    setSelectedTemplateIds((prev) => {
+      const prevSignature = prev.join(",");
+      const nodeChanged = lastSyncedNodeAddressRef.current !== nodeAddress;
+      const canResync =
+        nodeChanged ||
+        prevSignature === lastSyncedTemplateSignatureRef.current ||
+        prevSignature === nodeTemplateSignature;
+      return canResync ? nodeTemplateIds : prev;
+    });
+    lastSyncedNodeAddressRef.current = nodeAddress;
+    lastSyncedTemplateSignatureRef.current = nodeTemplateSignature;
+  }, [node, nodeTemplateIds, nodeTemplateSignature]);
 
   useEffect(() => {
     let cancelled = false;
@@ -184,12 +203,8 @@ export default function NodeManagementPage({ activeNetwork, status, onChanged }:
   );
   const hasTemplateChanges = useMemo(() => {
     if (!node) return false;
-    const current = node.acceptedTemplateIds
-      .map((item) => Number(item))
-      .filter((item) => Number.isFinite(item) && item >= 0)
-      .sort((a, b) => a - b);
-    return current.join(",") !== selectedTemplateIds.join(",");
-  }, [node, selectedTemplateIds]);
+    return nodeTemplateSignature !== selectedTemplateIds.join(",");
+  }, [node, nodeTemplateSignature, selectedTemplateIds]);
 
   function toggleTemplate(templateId: number) {
     setSelectedTemplateIds((prev) =>

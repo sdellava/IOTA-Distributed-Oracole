@@ -21,8 +21,10 @@ module iota_oracle_tasks::oracle_tasks {
 
     const STATUS_ACTIVE: u8 = 1;
     const STATUS_SUSPENDED: u8 = 2;
+    const STATUS_DEPLETED: u8 = 3;
     const STATUS_CANCELLED: u8 = 9;
     const STATUS_ENDED: u8 = 10;
+    const STATUS_COMPLETED: u8 = 11;
 
     const EXEC_IDLE: u8 = 0;
     const EXEC_OPEN: u8 = 1;
@@ -41,7 +43,7 @@ module iota_oracle_tasks::oracle_tasks {
     const ENoSchedulerNodes: u64 = 1003;
     const EOwnerCapMismatch: u64 = 1004;
     const ETaskNotActive: u64 = 1005;
-    const EDeleteRequiresSuspendedState: u64 = 1006;
+    const EDeleteRequiresTerminalState: u64 = 1006;
     const ENotHeadScheduler: u64 = 1007;
     const ERoundStillOwnedByHead: u64 = 1008;
     const EInvalidPayload: u64 = 1009;
@@ -51,7 +53,7 @@ module iota_oracle_tasks::oracle_tasks {
     const EInvalidControllerCapFlag: u64 = 1013;
     const ETaskOwnerMismatch: u64 = 1014;
     const ETaskHasLiveExecution: u64 = 1015;
-    const ETaskNotSuspended: u64 = 1016;
+    const ETaskNotReactivatable: u64 = 1016;
     const ETaskNotDue: u64 = 1017;
     const EInsufficientTaskBalance: u64 = 1018;
     const EInvalidCertificate: u64 = 1019;
@@ -100,6 +102,7 @@ module iota_oracle_tasks::oracle_tasks {
         interval_ms: u64,
         last_run_ms: u64,
         next_run_ms: u64,
+        inactive_since_ms: u64,
         last_scheduler_node: address,
 
         available_balance_iota: Balance<IOTA>,
@@ -178,11 +181,28 @@ module iota_oracle_tasks::oracle_tasks {
         refunded_iota: u64,
     }
 
+    public struct TaskDepleted has copy, drop {
+        task_id: object::ID,
+        by: address,
+        available_balance_iota: u64,
+        required_iota: u64,
+        next_run_ms: u64,
+    }
+
     public struct TaskFunded has copy, drop {
         task_id: object::ID,
         by: address,
         amount: u64,
         balance_after: u64,
+        status_after: u8,
+        next_run_ms: u64,
+    }
+
+    public struct TaskCompleted has copy, drop {
+        task_id: object::ID,
+        by: address,
+        last_run_ms: u64,
+        completed_at_ms: u64,
     }
 
     public struct TaskRunSubmitted has copy, drop {
@@ -432,7 +452,7 @@ module iota_oracle_tasks::oracle_tasks {
         let task = Task {
             id: uid,
             creator,
-            status: if (next_run_ms == 0) STATUS_ENDED else STATUS_ACTIVE,
+            status: if (next_run_ms == 0) STATUS_COMPLETED else STATUS_ACTIVE,
             execution_state: EXEC_IDLE,
             template_id,
             task_type: systemState::task_template_task_type(st, template_id),
@@ -449,6 +469,7 @@ module iota_oracle_tasks::oracle_tasks {
             interval_ms,
             last_run_ms: 0,
             next_run_ms,
+            inactive_since_ms: if (next_run_ms == 0) start_schedule_ms else 0,
             last_scheduler_node: @0x0,
             available_balance_iota: coin::into_balance(initial_funds),
             run_escrow_iota: balance::zero(),
@@ -483,17 +504,36 @@ module iota_oracle_tasks::oracle_tasks {
     }
 
     public entry fun top_up_task(
+        registry: &mut TaskRegistry,
         task: &mut Task,
         funds: Coin<IOTA>,
+        clock: &Clock,
         ctx: &mut TxContext
     ) {
+        let now = timestamp_ms(clock);
         let amount = coin::value(&funds);
         balance::join(&mut task.available_balance_iota, coin::into_balance(funds));
+        if (task.status == STATUS_DEPLETED) {
+            if (task.next_run_ms == 0) {
+                task.status = STATUS_COMPLETED;
+                record_inactive_status(task, now);
+            } else if (task.last_run_ms == 0) {
+                task.status = STATUS_ACTIVE;
+                clear_inactive_status(task);
+            } else {
+                task.status = STATUS_ENDED;
+                clear_inactive_status(task);
+            };
+        };
+        reconcile_task_status(task, now, tx_context::sender(ctx));
+        sync_registry_membership(registry, task);
         event::emit(TaskFunded {
             task_id: object::id(task),
             by: tx_context::sender(ctx),
             amount,
             balance_after: balance::value(&task.available_balance_iota),
+            status_after: task.status,
+            next_run_ms: task.next_run_ms,
         });
     }
 
@@ -666,7 +706,7 @@ module iota_oracle_tasks::oracle_tasks {
         let sender = tx_context::sender(ctx);
         assert!(vector::length(&queue.node_ids) > 0, ENoSchedulerNodes);
         assert!(head_matches_sender(queue, node_registry, sender), ENotHeadScheduler);
-        assert!(task.status == STATUS_ACTIVE, ETaskNotActive);
+        assert!(task.status == STATUS_ACTIVE || task.status == STATUS_ENDED, ETaskNotActive);
         assert!(task.execution_state != EXEC_OPEN && task.execution_state != EXEC_MEDIATION_PENDING, ETaskHasLiveExecution);
 
         let now = timestamp_ms(clock);
@@ -692,7 +732,22 @@ module iota_oracle_tasks::oracle_tasks {
         );
         let scheduler_fee_iota = systemState::task_template_scheduler_fee_iota(st, task.template_id);
         let total_required = required_payment + scheduler_fee_iota;
-        assert!(balance::value(&task.available_balance_iota) >= total_required, EInsufficientTaskBalance);
+        if (balance::value(&task.available_balance_iota) < total_required) {
+            task.execution_state = EXEC_IDLE;
+            task.assigned_nodes = vector::empty();
+            task.active_round = 0;
+            task.status = STATUS_DEPLETED;
+            record_inactive_status(task, now);
+            sync_registry_membership(registry, task);
+            event::emit(TaskDepleted {
+                task_id: object::id(task),
+                by: sender,
+                available_balance_iota: balance::value(&task.available_balance_iota),
+                required_iota: total_required,
+                next_run_ms: task.next_run_ms,
+            });
+            return;
+        };
 
         if (scheduler_fee_iota > 0) {
             let fee_balance = balance::split(&mut task.available_balance_iota, scheduler_fee_iota);
@@ -714,10 +769,11 @@ module iota_oracle_tasks::oracle_tasks {
         task.last_run_ms = now;
         task.last_scheduler_node = sender;
         task.execution_state = EXEC_OPEN;
+        task.status = STATUS_ACTIVE;
 
         let scheduled_for_ms = task.next_run_ms;
         task.next_run_ms = compute_following_run_ms(task, scheduled_for_ms, now);
-        reconcile_task_status(task);
+        clear_inactive_status(task);
         sync_registry_membership(registry, task);
 
         event::emit(TaskRunSubmitted {
@@ -756,6 +812,7 @@ module iota_oracle_tasks::oracle_tasks {
     }
 
     public entry fun finalize_task_with_certificate(
+        registry: &mut TaskRegistry,
         task: &mut Task,
         result_bytes: vector<u8>,
         multisig_bytes: vector<u8>,
@@ -789,6 +846,8 @@ module iota_oracle_tasks::oracle_tasks {
         );
         pay_all_certificate_signers(task, &payout_signers, ctx);
         task.execution_state = EXEC_FINALIZED;
+        reconcile_task_status(task, timestamp_ms(clock), tx_context::sender(ctx));
+        sync_registry_membership(registry, task);
 
         event::emit(TaskRunFinalized {
             task_id: object::id(task),
@@ -833,7 +892,7 @@ module iota_oracle_tasks::oracle_tasks {
         );
         pay_all_certificate_signers(task, &payout_signers, ctx);
         task.execution_state = EXEC_FAILED;
-        reconcile_task_status(task);
+        reconcile_task_status(task, timestamp_ms(clock), tx_context::sender(ctx));
         sync_registry_membership(registry, task);
 
         event::emit(TaskRunAborted {
@@ -990,7 +1049,8 @@ module iota_oracle_tasks::oracle_tasks {
             task.next_run_ms = compute_next_run_ms(task.last_run_ms, task.interval_ms, task.end_schedule_ms);
         };
 
-        reconcile_task_status(task);
+        let last_run_ms = task.last_run_ms;
+        reconcile_task_status(task, last_run_ms, actor);
         sync_registry_membership(registry, task);
 
         event::emit(TaskUpdated {
@@ -1040,8 +1100,14 @@ module iota_oracle_tasks::oracle_tasks {
         task: &mut Task,
         actor: address
     ) {
-        assert!(task.status == STATUS_ACTIVE, ETaskNotActive);
+        assert!(
+            task.status == STATUS_ACTIVE ||
+            task.status == STATUS_ENDED ||
+            task.status == STATUS_DEPLETED,
+            ETaskNotActive
+        );
         task.status = STATUS_SUSPENDED;
+        clear_inactive_status(task);
         remove_registry_id(&mut registry.live_task_ids, object::id(task));
         event::emit(TaskSuspended {
             task_id: object::id(task),
@@ -1055,7 +1121,10 @@ module iota_oracle_tasks::oracle_tasks {
         now: u64,
         actor: address
     ) {
-        assert!(task.status == STATUS_SUSPENDED, ETaskNotSuspended);
+        assert!(
+            task.status == STATUS_SUSPENDED || task.status == STATUS_DEPLETED,
+            ETaskNotReactivatable
+        );
         if (task.next_run_ms == 0) {
             if (task.last_run_ms == 0) {
                 task.next_run_ms = initial_next_run_ms(task.start_schedule_ms, task.end_schedule_ms);
@@ -1063,8 +1132,13 @@ module iota_oracle_tasks::oracle_tasks {
                 task.next_run_ms = compute_next_run_ms(now, task.interval_ms, task.end_schedule_ms);
             };
         };
-        reconcile_task_status(task);
-        if (task.status != STATUS_ENDED && task.status != STATUS_CANCELLED) {
+        clear_inactive_status(task);
+        reconcile_task_status(task, now, actor);
+        if (
+            task.status != STATUS_ENDED &&
+            task.status != STATUS_COMPLETED &&
+            task.status != STATUS_CANCELLED
+        ) {
             task.status = STATUS_ACTIVE;
         };
         sync_registry_membership(registry, task);
@@ -1082,7 +1156,10 @@ module iota_oracle_tasks::oracle_tasks {
         ctx: &mut TxContext
     ) {
         let task_id = object::id(&task);
-        assert!(task.status == STATUS_SUSPENDED, EDeleteRequiresSuspendedState);
+        assert!(
+            task.status == STATUS_SUSPENDED || task.status == STATUS_COMPLETED,
+            EDeleteRequiresTerminalState
+        );
         assert!(task.execution_state != EXEC_OPEN && task.execution_state != EXEC_MEDIATION_PENDING, ETaskHasLiveExecution);
         remove_registry_id(&mut registry.live_task_ids, task_id);
 
@@ -1121,6 +1198,7 @@ module iota_oracle_tasks::oracle_tasks {
             interval_ms: _,
             last_run_ms: _,
             next_run_ms: _,
+            inactive_since_ms: _,
             last_scheduler_node: _,
             available_balance_iota,
             run_escrow_iota,
@@ -1218,16 +1296,47 @@ module iota_oracle_tasks::oracle_tasks {
     }
 
     fun should_be_in_registry(task: &Task): bool {
-        task.status == STATUS_ACTIVE && task.next_run_ms != 0
+        (task.status == STATUS_ACTIVE || task.status == STATUS_ENDED) && task.next_run_ms != 0
     }
 
-    fun reconcile_task_status(task: &mut Task) {
-        if (task.status == STATUS_CANCELLED) return;
+    fun reconcile_task_status(task: &mut Task, now: u64, actor: address) {
+        if (task.status == STATUS_CANCELLED || task.status == STATUS_SUSPENDED) return;
         if (task.next_run_ms == 0) {
-            task.status = STATUS_ENDED;
-        } else if (task.status == STATUS_ENDED) {
-            task.status = STATUS_ACTIVE;
+            mark_task_completed(task, now, actor);
+        } else if (
+            task.execution_state == EXEC_FINALIZED ||
+            task.execution_state == EXEC_FAILED ||
+            task.status == STATUS_COMPLETED ||
+            task.status == STATUS_DEPLETED ||
+            task.status == STATUS_ENDED
+        ) {
+            task.status = if (task.last_run_ms == 0) STATUS_ACTIVE else STATUS_ENDED;
+            clear_inactive_status(task);
         };
+    }
+
+    fun mark_task_completed(task: &mut Task, now: u64, actor: address) {
+        let was_completed = task.status == STATUS_COMPLETED;
+        task.status = STATUS_COMPLETED;
+        record_inactive_status(task, now);
+        if (!was_completed) {
+            event::emit(TaskCompleted {
+                task_id: object::id(task),
+                by: actor,
+                last_run_ms: task.last_run_ms,
+                completed_at_ms: now,
+            });
+        };
+    }
+
+    fun record_inactive_status(task: &mut Task, now: u64) {
+        if (task.inactive_since_ms == 0) {
+            task.inactive_since_ms = now;
+        };
+    }
+
+    fun clear_inactive_status(task: &mut Task) {
+        task.inactive_since_ms = 0;
     }
 
     fun compute_following_run_ms(task: &Task, scheduled_for_ms: u64, now: u64): u64 {

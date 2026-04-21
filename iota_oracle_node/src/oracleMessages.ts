@@ -174,6 +174,7 @@ export async function finalizeTaskWithCertificate(opts: {
       tx.moveCall({
         target: `${tasksPkg()}::oracle_tasks::finalize_task_with_certificate`,
         arguments: [
+          tx.object(taskRegistryId()),
           tx.object(opts.taskId),
           tx.pure(bcsVecU8(opts.resultBytes)),
           tx.pure(bcsVecU8(opts.multisigBytes)),

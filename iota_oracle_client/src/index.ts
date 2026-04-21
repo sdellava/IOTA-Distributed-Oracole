@@ -1287,7 +1287,7 @@ function makeScheduledTaskActionTx(args: {
     const [fundingCoin] = tx.splitCoins(tx.gas, [tx.pure(bcsU64(input.amount!))]);
     tx.moveCall({
       target,
-      arguments: [tx.object(input.taskId), fundingCoin],
+      arguments: [tx.object(registryId), tx.object(input.taskId), fundingCoin, tx.object(clockId)],
     });
     return { tx, target };
   }

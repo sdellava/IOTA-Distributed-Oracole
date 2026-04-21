@@ -85,7 +85,7 @@ function formatIotaAtomic(value: string | null | undefined): string {
 function statusClass(item: TaskScheduleItem): string {
   const label = item.statusLabel.toLowerCase();
   if (label === "active") return "is-on";
-  if (label === "ended" || label === "cancelled") return "is-off";
+  if (label === "completed" || label === "cancelled") return "is-off";
   return "is-warn";
 }
 
@@ -95,10 +95,14 @@ function taskStatusLabel(status: number): string {
       return "ACTIVE";
     case 2:
       return "SUSPENDED";
+    case 3:
+      return "DEPLETED";
     case 9:
       return "CANCELLED";
     case 10:
       return "ENDED";
+    case 11:
+      return "COMPLETED";
     default:
       return String(status || "-");
   }
@@ -582,7 +586,10 @@ export default function TaskSchedulesPage({
                   const isOwner = connectedAddress && normalizeAddress(item.creator) === connectedAddress;
                   const canShowActions = Boolean(currentAccount && (hasControllerCap || isOwner));
                   const isActive = item.statusLabel.toUpperCase() === "ACTIVE";
+                  const isEnded = item.statusLabel.toUpperCase() === "ENDED";
                   const isSuspended = item.statusLabel.toUpperCase() === "SUSPENDED";
+                  const isDepleted = item.statusLabel.toUpperCase() === "DEPLETED";
+                  const isCompleted = item.statusLabel.toUpperCase() === "COMPLETED";
                   const ownerCapId = controls.ownerCapIdsByTaskId[normalizeAddress(item.id)];
                   const busyPrefix = `${item.id}:`;
 
@@ -650,7 +657,7 @@ export default function TaskSchedulesPage({
                             <button
                               type="button"
                               className="scheduled-action-button"
-                              disabled={(!isOwner && !hasControllerCap) || !isActive || busyActionKey?.startsWith(busyPrefix)}
+                              disabled={(!isOwner && !hasControllerCap) || (!isActive && !isEnded && !isDepleted) || busyActionKey?.startsWith(busyPrefix)}
                               title={isOwner || hasControllerCap ? "Suspend this scheduled task" : "Owner or controller cap required"}
                               onClick={() =>
                                 void handleAction(
@@ -669,8 +676,8 @@ export default function TaskSchedulesPage({
                             <button
                               type="button"
                               className="scheduled-action-button"
-                              disabled={(!isOwner && !hasControllerCap) || !isSuspended || ((!isOwner && !controls.controllerCapId) || (isOwner && !ownerCapId && !hasControllerCap)) || busyActionKey?.startsWith(busyPrefix)}
-                              title={isOwner || hasControllerCap ? "Delete this scheduled task" : "Owner or controller cap required"}
+                              disabled={(!isOwner && !hasControllerCap) || (!isSuspended && !isCompleted) || ((!isOwner && !controls.controllerCapId) || (isOwner && !ownerCapId && !hasControllerCap)) || busyActionKey?.startsWith(busyPrefix)}
+                              title={isOwner || hasControllerCap ? "Delete this suspended or completed scheduled task" : "Owner or controller cap required"}
                               onClick={() =>
                                 void handleAction(
                                   item,
@@ -689,8 +696,8 @@ export default function TaskSchedulesPage({
                             <button
                               type="button"
                               className="scheduled-action-button"
-                              disabled={!isOwner || !isSuspended || busyActionKey?.startsWith(busyPrefix)}
-                              title={isOwner ? "Restart this scheduled task" : "Only the owner can restart this task"}
+                              disabled={!isOwner || (!isSuspended && !isDepleted) || busyActionKey?.startsWith(busyPrefix)}
+                              title={isOwner ? "Restart this suspended or depleted scheduled task" : "Only the owner can restart this task"}
                               onClick={() =>
                                 void handleAction(
                                   item,
