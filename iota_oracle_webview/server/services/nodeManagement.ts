@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Stefano Della Valle
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
+import { toB64 } from "@iota/bcs";
 import { IotaClient } from "@iota/iota-sdk/client";
 import { Transaction } from "@iota/iota-sdk/transactions";
 import { getRuntimeConfig, type OracleNetwork } from "../config.js";
@@ -114,8 +115,9 @@ function gasBudget(): number {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 50_000_000;
 }
 
-function serializeTransactionForWallet(tx: Transaction): string {
-  return tx.serialize();
+async function serializeTransactionForWallet(tx: Transaction, client: IotaClient): Promise<string> {
+  const bytes = await tx.build({ client });
+  return toB64(bytes);
 }
 
 async function getStateFields(client: IotaClient, stateId: string): Promise<Record<string, unknown>> {
@@ -225,7 +227,7 @@ export async function prepareNodeManagementForWallet(
     mode: "prepare-node-management-webview",
     sender: normalizedSender,
     nodeAddress: node.address,
-    serializedTransaction: serializeTransactionForWallet(tx),
+    serializedTransaction: await serializeTransactionForWallet(tx, client),
     gasBudget: String(gasBudget()),
     acceptedTemplateIds: uniqueTemplateIds.map(String),
     target:
@@ -269,7 +271,7 @@ export async function prepareProposalApprovalForWallet(
     sender: normalizedSender,
     proposalId: String(proposalId),
     templateId: String(templateId),
-    serializedTransaction: serializeTransactionForWallet(tx),
+    serializedTransaction: await serializeTransactionForWallet(tx, new IotaClient({ url: runtime.rpcUrl })),
     gasBudget: String(gasBudget()),
     target: `${runtime.oracleSystemPackageId}::systemState::approve_task_template_proposal`,
   };

@@ -4,7 +4,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useCurrentAccount, useSignAndExecuteTransaction } from "@iota/dapp-kit";
 import { IotaClient, type ChainType } from "@iota/iota-sdk/client";
-import { Transaction } from "@iota/iota-sdk/transactions";
 import {
   prepareNodeManagementWallet,
   prepareProposalApprovalWallet,
@@ -237,9 +236,8 @@ export default function NodeManagementPage({ activeNetwork, status, onChanged }:
     setNotice(null);
     try {
       const prepared = await prepareNodeManagementWallet(selectedTemplateIds, currentAccount.address, activeNetwork);
-      const transaction = Transaction.from(prepared.serializedTransaction);
       const execution = await signAndExecuteTransaction({
-        transaction,
+        transaction: prepared.serializedTransaction,
         chain: CHAIN_BY_NETWORK[activeNetwork],
       });
       const digest = String((execution as any)?.digest ?? "").trim();
@@ -273,9 +271,8 @@ export default function NodeManagementPage({ activeNetwork, status, onChanged }:
         currentAccount.address,
         activeNetwork,
       );
-      const transaction = Transaction.from(prepared.serializedTransaction);
       const execution = await signAndExecuteTransaction({
-        transaction,
+        transaction: prepared.serializedTransaction,
         chain: CHAIN_BY_NETWORK[activeNetwork],
       });
       const digest = String((execution as any)?.digest ?? "").trim();

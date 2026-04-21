@@ -47,6 +47,10 @@ async function buildClientEnv(network?: OracleNetwork): Promise<NodeJS.ProcessEn
     runtimeOverrides.ORACLE_SYSTEM_STATE_ID = runtime.oracleStateId;
   }
 
+  if (runtime.oracleNodeRegistryId) {
+    runtimeOverrides.ORACLE_NODE_REGISTRY_ID = runtime.oracleNodeRegistryId;
+  }
+
   if (runtime.oracleTreasuryId) {
     runtimeOverrides.ORACLE_TREASURY_ID = runtime.oracleTreasuryId;
     runtimeOverrides.ORACLE_TREASURY_OBJECT_ID = runtime.oracleTreasuryId;

@@ -91,6 +91,7 @@ export function getRuntimeConfig(network = activeNetwork) {
     oracleTasksPackageId: pickNetworkValue(selected, "ORACLE_TASKS_PACKAGE_ID"),
     oracleSystemPackageId: pickNetworkValue(selected, "ORACLE_SYSTEM_PACKAGE_ID"),
     oracleStateId: pickNetworkValue(selected, "ORACLE_STATE_ID", pickNetworkValue(selected, "ORACLE_SYSTEM_STATE_ID", pickNetworkValue(selected, "ORACLE_STATUS_ID"))),
+    oracleNodeRegistryId: pickNetworkValue(selected, "ORACLE_NODE_REGISTRY_ID"),
     oracleTreasuryId: pickNetworkValue(selected, "ORACLE_TREASURY_ID", pickNetworkValue(selected, "ORACLE_TREASURY_OBJECT_ID")),
     oracleTaskRegistryId: pickNetworkValue(selected, "ORACLE_TASK_REGISTRY_ID"),
     oracleTaskSchedulerQueueId: pickNetworkValue(selected, "ORACLE_TASK_SCHEDULER_QUEUE_ID"),

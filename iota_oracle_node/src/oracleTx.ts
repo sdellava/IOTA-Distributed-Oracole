@@ -9,6 +9,7 @@ import { bcsVecU8, bcsAddress, bcsVecU64, bcsU64 } from "./bcs";
 import { envByNetwork } from "./config/env";
 import { resolveNodeRegistryId } from "./services/nodeRegistry";
 import { readRegisteredOracleNodeByAddr } from "./services/schedulerReader";
+import { loadPersistedAcceptedTemplateIds, savePersistedAcceptedTemplateIds } from "./templateState";
 import { signAndExecuteWithLockRetry } from "./txRetry.js";
 
 function mustEnv(key: string): string {
@@ -178,7 +179,7 @@ async function expectedDelegatedCapType(client: IotaClient, systemPkg: string): 
       module: "systemState",
       function: "register_oracle_node",
     });
-    return normalizedStructTag(normalized?.parameters?.[2]);
+    return normalizedStructTag(normalized?.parameters?.[3]);
   } catch {
     return null;
   }
@@ -217,6 +218,7 @@ export async function registerOracleNode(opts: {
   oracleKeypair: Ed25519Keypair;
   oracleAddr: string;
   oraclePubkeyRaw32: Uint8Array;
+  nodeId?: string;
   acceptedTemplateIds?: number[];
 }): Promise<string> {
   const { client, oracleKeypair, oracleAddr, oraclePubkeyRaw32 } = opts;
@@ -225,10 +227,11 @@ export async function registerOracleNode(opts: {
   const nodeRegistryId = await resolveNodeRegistryId(client, stateId);
   const pkg = await resolveSystemPackageId(client, stateId, getSystemPackageId());
   const currentNode = await readRegisteredOracleNodeByAddr(client, oracleAddr, stateId);
+  const persistedAcceptedTemplateIds = opts.nodeId ? loadPersistedAcceptedTemplateIds(opts.nodeId) : [];
   const effectiveAcceptedTemplateIds = (
     opts.acceptedTemplateIds != null
       ? opts.acceptedTemplateIds
-      : currentNode?.acceptedTemplateIds ?? []
+      : currentNode?.acceptedTemplateIds ?? persistedAcceptedTemplateIds
   )
     .map((n) => Math.floor(Number(n)))
     .filter((n) => Number.isFinite(n) && n >= 0);
@@ -241,7 +244,10 @@ export async function registerOracleNode(opts: {
     const signerAddress = signer.getPublicKey().toIotaAddress().toLowerCase();
     const delegatedCapTypeMarker = "::DelegatedControllerCap";
     const expectedCapType =
-      (await expectedDelegatedCapType(client, pkg)) ?? `${pkg}::systemState::DelegatedControllerCap`;
+      (await expectedDelegatedCapType(client, pkg)) ??
+      (envByNetwork("ORACLE_VALIDATOR_CAPS_PACKAGE_ID")
+        ? `${envByNetwork("ORACLE_VALIDATOR_CAPS_PACKAGE_ID")}::validator_caps::DelegatedControllerCap`
+        : `${pkg}::systemState::DelegatedControllerCap`);
 
     let delegatedCapId = optEnvByNetwork("DELEGATED_CONTROLLER_CAP_ID");
 
@@ -262,7 +268,7 @@ export async function registerOracleNode(opts: {
     }
     if (expectedCapType && capInfo.type.toLowerCase() !== expectedCapType.toLowerCase()) {
       throw new Error(
-        `DelegatedControllerCap type mismatch: got ${capInfo.type}, expected ${expectedCapType}. Mint/use a delegated cap from ORACLE_SYSTEM_PACKAGE_ID=${pkg}.`,
+        `DelegatedControllerCap type mismatch: got ${capInfo.type}, expected ${expectedCapType}. Mint/use a delegated cap from ORACLE_VALIDATOR_CAPS_PACKAGE_ID or from the package referenced by register_oracle_node.`,
       );
     }
     if (expectedCapType && !expectedCapType.endsWith(delegatedCapTypeMarker)) {
@@ -312,6 +318,7 @@ export async function registerOracleNode(opts: {
       throw new Error(`register_oracle_node failed on-chain: ${immediateReason}`);
     }
     await assertTxSuccess(client, String(res.digest), "register_oracle_node");
+    if (opts.nodeId) savePersistedAcceptedTemplateIds(opts.nodeId, effectiveAcceptedTemplateIds);
     return res.digest as string;
   }
 
@@ -341,6 +348,7 @@ export async function registerOracleNode(opts: {
     throw new Error(`register_oracle_node_dev failed on-chain: ${immediateReason}`);
   }
   await assertTxSuccess(client, String(res.digest), "register_oracle_node_dev");
+  if (opts.nodeId) savePersistedAcceptedTemplateIds(opts.nodeId, effectiveAcceptedTemplateIds);
   return res.digest as string;
 }
 

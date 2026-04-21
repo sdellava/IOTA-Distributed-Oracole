@@ -28,11 +28,15 @@
     "type": "STORAGE",
     "template_id": 4,
     "is_enabled": 1,
+    "base_price_iota": 0,
+    "scheduler_fee_iota": 21323200,
     "max_input_bytes": 8192,
     "max_output_bytes": 10485760,
     "included_download_bytes": 10485760,
+    "price_per_download_byte_iota": 0,
     "allow_storage": 1,
     "min_retention_days": 1,
-    "max_retention_days": 365
+    "max_retention_days": 365,
+    "price_per_retention_day_iota": 871490
   }
 }

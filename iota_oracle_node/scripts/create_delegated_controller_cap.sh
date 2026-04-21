@@ -8,7 +8,7 @@ NETWORK=""
 VALIDATOR_ADDRESS=""
 NODE_ADDRESS=""
 VALIDATOR_CAP_ID=""
-SYSTEM_PKG="${SYSTEM_PKG:-}"
+DELEGATED_PACKAGE="${DELEGATED_PACKAGE:-${VALIDATOR_CAPS_PKG:-}}"
 GAS_BUDGET="${GAS_BUDGET:-50000000}"
 DRY_RUN=0
 
@@ -21,7 +21,7 @@ Interactive flow:
   2) asks validator address (tx sender / cap owner)
   3) asks node address (recipient)
   4) switches iota env + validator address
-  4) calls systemState::mint_delegated_controller_cap
+  4) calls validator_caps::mint_delegated_controller_cap
 
 Usage:
   ./scripts/create_delegated_controller_cap.sh [options]
@@ -31,7 +31,8 @@ Options:
   --validator-address <0x...> validator owner address (used for switch)
   --node-address <0x...>      recipient address for the delegated cap
   --validator-cap-id <id>     optional UnverifiedValidatorOperationCap object id
-  --system-pkg <id>           optional system package id (default from .env)
+  --delegated-package <id>    delegated controller cap package id (default from .env)
+  --system-pkg <id>           deprecated alias for --delegated-package
   --gas-budget <u64>          gas budget (default: 50000000)
   --dry-run                   build/simulate tx without executing
   --env-file <path>           env file (default: ./ .env)
@@ -61,10 +62,15 @@ while [[ $# -gt 0 ]]; do
       [[ $# -gt 0 ]] || { echo "[error] missing value for --validator-cap-id" >&2; usage; exit 1; }
       VALIDATOR_CAP_ID="$1"
       ;;
+    --delegated-package|--validator-caps-pkg)
+      shift
+      [[ $# -gt 0 ]] || { echo "[error] missing value for --delegated-package" >&2; usage; exit 1; }
+      DELEGATED_PACKAGE="$1"
+      ;;
     --system-pkg)
       shift
       [[ $# -gt 0 ]] || { echo "[error] missing value for --system-pkg" >&2; usage; exit 1; }
-      SYSTEM_PKG="$1"
+      DELEGATED_PACKAGE="$1"
       ;;
     --gas-budget)
       shift
@@ -132,6 +138,7 @@ get_prefixed_env() {
 
 command -v iota >/dev/null 2>&1 || { echo "[error] iota CLI not found" >&2; exit 1; }
 command -v node >/dev/null 2>&1 || { echo "[error] node not found" >&2; exit 1; }
+command -v python3 >/dev/null 2>&1 || { echo "[error] python3 not found" >&2; exit 1; }
 
 if [[ -z "$NETWORK" ]]; then
   read -r -p "Network (devnet|testnet|mainnet): " NETWORK
@@ -155,17 +162,17 @@ fi
 NODE_ADDRESS="$(echo "$NODE_ADDRESS" | tr '[:upper:]' '[:lower:]')"
 
 NET_PREFIX="$(echo "$NETWORK" | tr '[:lower:]' '[:upper:]')"
-if [[ -z "$SYSTEM_PKG" ]]; then
-  SYSTEM_PKG="$(get_prefixed_env ORACLE_SYSTEM_PACKAGE_ID)"
+if [[ -z "$DELEGATED_PACKAGE" ]]; then
+  DELEGATED_PACKAGE="$(get_prefixed_env ORACLE_VALIDATOR_CAPS_PACKAGE_ID)"
 fi
-[[ -n "$SYSTEM_PKG" ]] || { echo "[error] missing ORACLE_SYSTEM_PACKAGE_ID (or --system-pkg)" >&2; exit 1; }
+[[ -n "$DELEGATED_PACKAGE" ]] || { echo "[error] missing ORACLE_VALIDATOR_CAPS_PACKAGE_ID (or --delegated-package)" >&2; exit 1; }
 [[ "$GAS_BUDGET" =~ ^[0-9]+$ ]] || { echo "[error] --gas-budget must be numeric" >&2; exit 1; }
 
 echo "[info] project: $PROJECT_DIR"
 echo "[info] network: $NETWORK"
 echo "[info] validator address: $VALIDATOR_ADDRESS"
 echo "[info] recipient node address: $NODE_ADDRESS"
-echo "[info] system package: $SYSTEM_PKG"
+echo "[info] delegated package: $DELEGATED_PACKAGE"
 
 echo "[info] switching env..."
 iota client switch --env "$NETWORK" >/dev/null
@@ -228,53 +235,121 @@ VALIDATOR_CAP_ID="$(echo "$VALIDATOR_CAP_ID" | tr '[:upper:]' '[:lower:]')"
 echo "[info] validator cap id: $VALIDATOR_CAP_ID"
 echo "[info] creating delegated controller cap..."
 
+upsert_env_value() {
+  local env_file="$1"
+  local key="$2"
+  local value="$3"
+
+  [[ -n "$env_file" && -f "$env_file" ]] || return 0
+
+  python3 - "$env_file" "$key" "$value" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+key = sys.argv[2]
+value = sys.argv[3]
+text = path.read_text(encoding="utf-8", errors="ignore")
+lines = text.splitlines()
+pattern = re.compile(rf"^{re.escape(key)}=.*$")
+new_line = f"{key}={value}"
+
+for idx, line in enumerate(lines):
+    if pattern.match(line):
+        lines[idx] = new_line
+        break
+else:
+    lines.append(new_line)
+
+path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+PY
+}
+
 run_mint_call() {
   local recipient_arg="$1"
   if [[ "$DRY_RUN" -eq 1 ]]; then
     iota client call \
-      --package "$SYSTEM_PKG" \
-      --module systemState \
+      --package "$DELEGATED_PACKAGE" \
+      --module validator_caps \
       --function mint_delegated_controller_cap \
       --args "$VALIDATOR_CAP_ID" "$recipient_arg" \
       --gas-budget "$GAS_BUDGET" \
       --dry-run
   else
     iota client call \
-      --package "$SYSTEM_PKG" \
-      --module systemState \
+      --package "$DELEGATED_PACKAGE" \
+      --module validator_caps \
       --function mint_delegated_controller_cap \
       --args "$VALIDATOR_CAP_ID" "$recipient_arg" \
       --gas-budget "$GAS_BUDGET"
   fi
 }
 
-if ! run_mint_call "$NODE_ADDRESS"; then
+MINT_OUTPUT=""
+if ! MINT_OUTPUT="$(run_mint_call "$NODE_ADDRESS" 2>&1)"; then
+  echo "$MINT_OUTPUT"
   echo "[warn] iota client call with plain node address failed, retrying with quoted address..."
-  run_mint_call "\"${NODE_ADDRESS}\""
+  MINT_OUTPUT="$(run_mint_call "\"${NODE_ADDRESS}\"" 2>&1)"
 fi
+echo "$MINT_OUTPUT"
 
 echo ""
 echo "[ok] delegated cap mint transaction submitted."
-echo "[info] switching active address to node to list delegated caps..."
-iota client switch --address "$NODE_ADDRESS" >/dev/null
-echo "[info] delegated caps now owned by ${NODE_ADDRESS}:"
-iota client objects --json | node -e "
-  const fs = require('fs');
-  const typeTarget = '${SYSTEM_PKG}::systemState::DelegatedControllerCap';
-  const arr = JSON.parse(fs.readFileSync(0, 'utf8'));
-  const caps = [];
-  for (const e of (Array.isArray(arr) ? arr : [])) {
-    const d = e?.data ?? e;
-    if (String(d?.type ?? '') === typeTarget) {
-      caps.push({ id: String(d?.objectId ?? ''), version: Number(d?.version ?? 0) });
-    }
+
+DELEGATED_CAP_ID="$(
+  python3 - "$DELEGATED_PACKAGE" "$MINT_OUTPUT" <<'PY'
+import re
+import sys
+
+delegated_package = sys.argv[1]
+text = sys.argv[2]
+pattern = re.compile(
+    r"ObjectID:\s*(0x[a-fA-F0-9]+).*?ObjectType:\s*"
+    + re.escape(delegated_package)
+    + r"::validator_caps::DelegatedControllerCap",
+    re.S,
+)
+match = pattern.search(text)
+if match:
+    print(match.group(1))
+PY
+)"
+
+[[ -n "$DELEGATED_CAP_ID" ]] || {
+  echo "[error] could not determine delegated cap id from transaction output" >&2
+  exit 1
+}
+
+CAP_OBJECT_JSON="$(iota client object "$DELEGATED_CAP_ID" --json 2>/dev/null || true)"
+CAP_OWNER=""
+if [[ -n "$CAP_OBJECT_JSON" ]]; then
+  CAP_OWNER="$(
+    python3 - "$CAP_OBJECT_JSON" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+owner = data.get("owner", {})
+if isinstance(owner, dict):
+    print(owner.get("AddressOwner", ""))
+PY
+  )"
+fi
+
+if [[ -n "$CAP_OWNER" ]]; then
+  [[ "$CAP_OWNER" == "$NODE_ADDRESS" ]] || {
+    echo "[error] delegated cap owner mismatch: expected ${NODE_ADDRESS}, found ${CAP_OWNER}" >&2
+    exit 1
   }
-  caps.sort((a, b) => b.version - a.version);
-  if (!caps.length) {
-    console.log('  (none found)');
-    process.exit(0);
-  }
-  for (const c of caps) console.log('  - ' + c.id + ' (version=' + c.version + ')');
-  console.log('');
-  console.log('Latest candidate DELEGATED_CONTROLLER_CAP_ID=' + caps[0].id);
-"
+  echo "[info] delegated cap owner verified: ${CAP_OWNER}"
+else
+  echo "[warn] could not verify delegated cap owner via object lookup; continuing because mint transaction succeeded"
+fi
+
+echo "Latest candidate DELEGATED_CONTROLLER_CAP_ID=${DELEGATED_CAP_ID}"
+
+if [[ "$DRY_RUN" -eq 0 && -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
+  upsert_env_value "$ENV_FILE" "DELEGATED_CONTROLLER_CAP_ID" "$DELEGATED_CAP_ID"
+  echo "[updated] ${ENV_FILE}"
+fi

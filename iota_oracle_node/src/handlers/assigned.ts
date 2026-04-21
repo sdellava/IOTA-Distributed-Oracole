@@ -10,6 +10,7 @@ import { assertCommitteeMultisigAddress, buildMultiSigPublicKey } from "../multi
 import { loadPubkeysByAddrB64 } from "../services/pubkeys";
 import { readRegisteredOracleNodeByAddr } from "../services/schedulerReader";
 import { loadTaskBundle, isTaskFreshForNode, taskCreatedAtMs } from "../services/taskObjects";
+import { savePersistedAcceptedTemplateIds } from "../templateState";
 import { moveToArray, moveToString } from "../utils/move";
 import {
   abortTaskWithCertificate,
@@ -510,6 +511,10 @@ export async function processAssigned(
   const varianceMax = Number(configFields.variance_max ?? 0);
   const myNode = await readRegisteredOracleNodeByAddr(client, myAddr);
   const acceptedTemplateIds = myNode?.acceptedTemplateIds ?? [];
+  if (myNode) {
+    ctx.acceptedTemplateIds = acceptedTemplateIds;
+    savePersistedAcceptedTemplateIds(nodeId, acceptedTemplateIds);
+  }
 
   if (!acceptsTemplate(templateId, acceptedTemplateIds)) {
     console.log(

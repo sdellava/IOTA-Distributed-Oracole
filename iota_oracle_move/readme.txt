@@ -1,5 +1,26 @@
 bash register_oracle_nodes_dev.sh
 
+Testnet deploy/update flow:
+
+bash testnet/deploy_testnet_kit.sh
+bash testnet/update_testnet_envs.sh
+
+# One-time cap delegation on testnet
+export VALIDATOR_CAPS_PKG="$TESTNET_ORACLE_VALIDATOR_CAPS_PACKAGE_ID"
+export NODE1_VALIDATOR_CAP_ID="0x..."
+export NODE2_VALIDATOR_CAP_ID="0x..."
+export NODE3_VALIDATOR_CAP_ID="0x..."
+bash mint_testnet_delegated_controller_caps.sh
+
+# Register nodes on testnet with existing delegated caps
+export SYSTEM_PKG="$TESTNET_ORACLE_SYSTEM_PACKAGE_ID"
+export STATE_ID="$TESTNET_ORACLE_STATE_ID"
+export NODE_REGISTRY_ID="$TESTNET_ORACLE_NODE_REGISTRY_ID"
+export NODE1_DELEGATED_CONTROLLER_CAP_ID="0x..."
+export NODE2_DELEGATED_CONTROLLER_CAP_ID="0x..."
+export NODE3_DELEGATED_CONTROLLER_CAP_ID="0x..."
+bash register_oracle_nodes_testnet.sh
+
 # This is the address that owns the Oracle controller cap
 export CONTROLLER_ADDRESS_OR_ALIAS=0xad71e9f72902bbfd0cbbc3f1d482cae8fbe1606849a539eaf4c2c14b7febd238
 bash setup_oracle_task_templates.sh

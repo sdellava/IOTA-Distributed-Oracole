@@ -28,6 +28,7 @@ import { processMediationStarted } from "./handlers/mediationStarted";
 import { startMonitorServer, type MonitorRuntimeState } from "./monitor";
 import type { NodeContext } from "./nodeContext";
 import { startSchedulerWorker } from "./services/schedulerWorker";
+import { loadPersistedAcceptedTemplateIds } from "./templateState";
 import { sleep } from "./utils/sleep";
 
 function buildContext(): NodeContext {
@@ -37,13 +38,14 @@ function buildContext(): NodeContext {
   const myAddr = identity.address.toLowerCase();
   const pollMs = optInt("EVENT_POLL_MS", 1200);
   const startupMs = Date.now();
+  const acceptedTemplateIds = loadPersistedAcceptedTemplateIds(nodeId);
 
   return {
     client,
     identity,
     nodeId,
     myAddr,
-    acceptedTemplateIds: [],
+    acceptedTemplateIds,
     pollMs,
     startupMs,
     taskAssignedType: defaultEventType("TASK_ASSIGNED_EVENT_TYPE", "oracle_tasks::TaskRunSubmitted"),
@@ -62,6 +64,7 @@ async function registerNode(ctx: NodeContext): Promise<string | null> {
       oracleKeypair: ctx.identity.keypair,
       oracleAddr: ctx.identity.address,
       oraclePubkeyRaw32: ctx.identity.publicKeyBytes,
+      nodeId: ctx.nodeId,
     });
     if (digest) console.log(`[node ${ctx.nodeId}] registered tx=${digest}`);
     return digest ?? null;
@@ -116,6 +119,9 @@ function installShutdownHooks(
 function logStartup(ctx: NodeContext): void {
   console.log(`[node ${ctx.nodeId}] address=${ctx.identity.address}`);
   console.log(`[node ${ctx.nodeId}] supported templates source=on-chain registry`);
+  console.log(
+    `[node ${ctx.nodeId}] persisted accepted templates fallback=${ctx.acceptedTemplateIds.join(",") || "<none>"}`,
+  );
   console.log(`[node ${ctx.nodeId}] scheduler loop=enabled for all nodes (role resolved on-chain each round)`);
   console.log(`[node ${ctx.nodeId}] listening assigned tasks: ${ctx.taskAssignedType}`);
   console.log(`[node ${ctx.nodeId}] listening data requests: ${ctx.dataReqType}`);
@@ -205,6 +211,7 @@ async function main() {
         runtimeState.registration.txDigest = await registerNode(ctx);
         runtimeState.registration.succeeded = true;
         runtimeState.registration.lastError = null;
+        ctx.acceptedTemplateIds = loadPersistedAcceptedTemplateIds(ctx.nodeId);
         break;
       } catch (e: any) {
         const msg = String(e?.message ?? e);

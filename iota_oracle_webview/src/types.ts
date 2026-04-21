@@ -248,6 +248,7 @@ export type ScheduledTaskActionRequest = {
   taskId: string;
   useSupervisor?: boolean;
   controllerCapId?: string;
+  ownerCapId?: string;
   amountIota?: string;
   amountNanoIota?: string;
 };

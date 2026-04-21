@@ -3,14 +3,13 @@
 
 module iota_oracle_system_state::systemState {
     use iota_system::iota_system::IotaSystemState;
-    use iota_system::validator_cap::UnverifiedValidatorOperationCap;
-    use iota::address;
     use iota::coin::{Self as coin, Coin};
     use iota::dynamic_field;
     use iota::clock::Clock;
     use iota::event;
     use iota::iota::IOTA;
-    use std::bcs;
+    use iota_oracle_validator_caps::validator_caps;
+    use iota_oracle_validator_caps::validator_caps::DelegatedControllerCap;
 
     const ENotInCommittee: u64 = 1;
     const ENotFound: u64 = 3;
@@ -31,16 +30,14 @@ module iota_oracle_system_state::systemState {
     const EProposalNotFound: u64 = 67;
     const EValidatorCapAlreadyRegistered: u64 = 68;
     const EDelegatedCapInUse: u64 = 69;
-    const ESchedulerTemplateReserved: u64 = 70;
     const EUnprunedEpoch: u64 = 18446744073709551615;
-
-    const SCHEDULER_TEMPLATE_ID: u64 = 0;
 
     const PROPOSAL_KIND_NONE: u8 = 0;
     const PROPOSAL_KIND_TEMPLATE_UPSERT: u8 = 1;
     const PROPOSAL_KIND_TEMPLATE_REMOVE: u8 = 2;
 
     public struct OracleNode has copy, drop, store {
+        node_id: u64,
         validator: address,
         addr: address,
         pubkey: vector<u8>,
@@ -104,12 +101,18 @@ module iota_oracle_system_state::systemState {
         price_per_retention_day_iota: u64,
     }
 
+    public struct NodeRegistry has key, store {
+        id: object::UID,
+        oracle_nodes: vector<OracleNode>,
+        next_oracle_node_id: u64,
+        last_committee_prune_epoch: u64,
+    }
+
     // Renamed from Status -> State
     public struct State has key, store {
         id: object::UID,
         network: vector<u8>,
-        oracle_nodes: vector<OracleNode>,
-        last_committee_prune_epoch: u64,
+        node_registry_id: object::ID,
 
         // config economica globale minima
         system_fee_bps: u64,
@@ -126,11 +129,6 @@ module iota_oracle_system_state::systemState {
     }
 
     public struct ControllerCap has key, store { id: object::UID }
-    public struct DelegatedControllerCap has key, store {
-        id: object::UID,
-        validator_cap_id: object::ID,
-        validator_address: address,
-    }
 
     public struct TaskTemplateProposalCreated has copy, drop {
         proposal_id: u64,
@@ -177,19 +175,21 @@ module iota_oracle_system_state::systemState {
         amount: u64,
     }
 
-    public struct ControllerCapMinted has copy, drop {
-        by: address,
-        recipient: address,
-    }
-
     fun init(ctx: &mut TxContext) {
         let sender = iota::tx_context::sender(ctx);
+
+        let node_registry = NodeRegistry {
+            id: object::new(ctx),
+            oracle_nodes: vector::empty(),
+            next_oracle_node_id: 1,
+            last_committee_prune_epoch: EUnprunedEpoch,
+        };
+        let node_registry_id = object::id(&node_registry);
 
         let st = State {
             id: object::new(ctx),
             network: b"testnet",
-            oracle_nodes: vector::empty(),
-            last_committee_prune_epoch: EUnprunedEpoch,
+            node_registry_id,
 
             system_fee_bps: 500,
             min_payment: 0,
@@ -198,6 +198,7 @@ module iota_oracle_system_state::systemState {
             template_proposals: vector::empty(),
         };
         transfer::share_object(st);
+        transfer::share_object(node_registry);
 
         let treasury = OracleTreasury { id: object::new(ctx) };
         transfer::share_object(treasury);
@@ -218,46 +219,16 @@ module iota_oracle_system_state::systemState {
         st.min_payment = min_payment;
     }
 
-    public entry fun mint_delegated_controller_cap(
-        validator_cap: &UnverifiedValidatorOperationCap,
-        recipient: address,
-        ctx: &mut TxContext
-    ) {
-        let validator_address = validator_address_from_cap(validator_cap);
-        let delegated = DelegatedControllerCap {
-            id: object::new(ctx),
-            validator_cap_id: object::id(validator_cap),
-            validator_address,
-        };
-        transfer::public_transfer(delegated, recipient);
-    }
-
-    public entry fun mint_supervisor_controller_cap(
-        _cap: &ControllerCap,
-        recipient: address,
-        ctx: &mut TxContext
-    ) {
-        let by = tx_context::sender(ctx);
-        let cap = ControllerCap { id: object::new(ctx) };
-        transfer::public_transfer(cap, recipient);
-        event::emit(ControllerCapMinted { by, recipient });
-    }
-
     public entry fun delete_delegated_controller_cap(
-        st: &State,
+        node_registry: &NodeRegistry,
         delegated_cap: DelegatedControllerCap
     ) {
         let delegated_cap_id = object::id(&delegated_cap);
         assert!(
-            !has_registered_delegated_cap(st, delegated_cap_id),
+            !has_registered_delegated_cap(node_registry, delegated_cap_id),
             EDelegatedCapInUse
         );
-        let DelegatedControllerCap {
-            id,
-            validator_cap_id: _,
-            validator_address: _,
-        } = delegated_cap;
-        object::delete(id);
+        validator_caps::delete_delegated_controller_cap(delegated_cap);
     }
 
     // =========================================================
@@ -266,6 +237,7 @@ module iota_oracle_system_state::systemState {
 
     public entry fun propose_task_template_upsert(
         _cap: &ControllerCap,
+        node_registry: &NodeRegistry,
         st: &mut State,
         _clock: &Clock,
         _proposal_timeout_ms: u64,
@@ -284,8 +256,7 @@ module iota_oracle_system_state::systemState {
         price_per_retention_day_iota: u64,
         ctx: &mut TxContext
     ) {
-        assert!(template_id != SCHEDULER_TEMPLATE_ID, ESchedulerTemplateReserved);
-        let electorate = vector::length(&st.oracle_nodes);
+        let electorate = vector::length(&node_registry.oracle_nodes);
         assert!(electorate > 0, ENoOracleNodesRegistered);
 
         let pid = st.template_proposal_id + 1;
@@ -323,13 +294,14 @@ module iota_oracle_system_state::systemState {
 
     public entry fun propose_task_template_remove(
         _cap: &ControllerCap,
+        node_registry: &NodeRegistry,
         st: &mut State,
         _clock: &Clock,
         _proposal_timeout_ms: u64,
         template_id: u64,
         ctx: &mut TxContext
     ) {
-        let electorate = vector::length(&st.oracle_nodes);
+        let electorate = vector::length(&node_registry.oracle_nodes);
         assert!(electorate > 0, ENoOracleNodesRegistered);
 
         let pid = st.template_proposal_id + 1;
@@ -366,13 +338,14 @@ module iota_oracle_system_state::systemState {
     }
 
     public entry fun approve_task_template_proposal(
+        node_registry: &NodeRegistry,
         st: &mut State,
         _clock: &Clock,
         proposal_id: u64,
         ctx: &mut TxContext
     ) {
         let sender = iota::tx_context::sender(ctx);
-        assert!(has_node_ref(st, sender), ENotFound);
+        assert!(has_node_ref(node_registry, sender), ENotFound);
 
         let idx = find_proposal_index(st, proposal_id);
         assert!(idx < vector::length(&st.template_proposals), EProposalNotFound);
@@ -573,7 +546,8 @@ module iota_oracle_system_state::systemState {
     // =========================================================
 
     public entry fun register_oracle_node(
-        st: &mut State,
+        node_registry: &mut NodeRegistry,
+        st: &State,
         system: &mut IotaSystemState,
         delegated_cap: &DelegatedControllerCap,
         oracle_addr: address,
@@ -584,14 +558,15 @@ module iota_oracle_system_state::systemState {
         // On devnet the controller cap is intentionally optional, so this
         // production path is disabled.
         assert!(!is_devnet(st), EInvalidNetworkMode);
-        prune_oracle_nodes_if_epoch_changed(st, system, ctx);
+        prune_oracle_nodes_if_epoch_changed(node_registry, st, system, ctx);
         let sender = iota::tx_context::sender(ctx);
         assert!(sender == oracle_addr, EOracleSenderMismatch);
         let validator = validator_address_from_delegated_cap(system, delegated_cap);
         let delegated_cap_id = object::id(delegated_cap);
         let validator_cap_id = validator_cap_id_from_delegated_cap(delegated_cap);
         upsert_oracle_node(
-            st,
+            node_registry,
+            false,
             validator,
             oracle_addr,
             pubkey,
@@ -602,17 +577,17 @@ module iota_oracle_system_state::systemState {
     }
 
     public entry fun register_oracle_node_dev(
-        st: &mut State,
+        node_registry: &mut NodeRegistry,
         oracle_addr: address,
         pubkey: vector<u8>,
         accepted_template_ids: vector<u64>,
         ctx: &mut TxContext
     ) {
-        assert!(is_devnet(st), EInvalidNetworkMode);
         let sender = iota::tx_context::sender(ctx);
-        let fallback_cap_id = object::id(st);
+        let fallback_cap_id = object::id(node_registry);
         upsert_oracle_node(
-            st,
+            node_registry,
+            true,
             sender,
             oracle_addr,
             pubkey,
@@ -623,18 +598,20 @@ module iota_oracle_system_state::systemState {
     }
     
 
-    public entry fun unregister_oracle_node(st: &mut State, ctx: &mut TxContext) {
+    public entry fun unregister_oracle_node(node_registry: &mut NodeRegistry, ctx: &mut TxContext) {
         let sender = iota::tx_context::sender(ctx);
-        let removed = remove_node(st, sender);
+        let removed = remove_node(node_registry, sender);
         assert!(removed, ENotFound);
     }
 
-    public entry fun unregister_oracle_node_dev(st: &mut State, ctx: &mut TxContext) {
-        unregister_oracle_node(st, ctx);
+    public entry fun unregister_oracle_node_dev(node_registry: &mut NodeRegistry, ctx: &mut TxContext) {
+        unregister_oracle_node(node_registry, ctx);
     }
 
-    public fun oracle_nodes(st: &State): &vector<OracleNode> { &st.oracle_nodes }
-    public fun last_committee_prune_epoch(st: &State): u64 { st.last_committee_prune_epoch }
+    public fun node_registry_id(st: &State): object::ID { st.node_registry_id }
+    public fun oracle_nodes(node_registry: &NodeRegistry): &vector<OracleNode> { &node_registry.oracle_nodes }
+    public fun last_committee_prune_epoch(node_registry: &NodeRegistry): u64 { node_registry.last_committee_prune_epoch }
+    public fun oracle_node_id(n: &OracleNode): u64 { n.node_id }
     public fun oracle_node_addr(n: &OracleNode): address { n.addr }
     public fun oracle_node_accepts_template(n: &OracleNode, template_id: u64): bool {
         contains_u64(&n.accepted_template_ids, template_id)
@@ -779,24 +756,25 @@ module iota_oracle_system_state::systemState {
     }
 
     public fun prune_oracle_nodes_if_epoch_changed(
-        st: &mut State,
+        node_registry: &mut NodeRegistry,
+        st: &State,
         system: &mut IotaSystemState,
         ctx: &TxContext,
     ) {
         if (is_devnet(st)) return;
 
         let current_epoch = ctx.epoch();
-        if (st.last_committee_prune_epoch == current_epoch) return;
+        if (node_registry.last_committee_prune_epoch == current_epoch) return;
 
         let committee = iota_system::iota_system::committee_validator_addresses(system);
-        prune_non_committee_oracle_nodes(st, &committee);
-        st.last_committee_prune_epoch = current_epoch;
+        prune_non_committee_oracle_nodes(node_registry, &committee);
+        node_registry.last_committee_prune_epoch = current_epoch;
     }
 
-    fun has_node_ref(st: &State, a: address): bool {
+    fun has_node_ref(node_registry: &NodeRegistry, a: address): bool {
         let mut i = 0;
-        while (i < vector::length(&st.oracle_nodes)) {
-            let n = vector::borrow(&st.oracle_nodes, i);
+        while (i < vector::length(&node_registry.oracle_nodes)) {
+            let n = vector::borrow(&node_registry.oracle_nodes, i);
             if (n.addr == a) return true;
             i = i + 1;
         };
@@ -804,7 +782,8 @@ module iota_oracle_system_state::systemState {
     }
 
     fun upsert_oracle_node(
-        st: &mut State,
+        node_registry: &mut NodeRegistry,
+        devnet_mode: bool,
         validator: address,
         oracle_addr: address,
         pubkey: vector<u8>,
@@ -813,19 +792,20 @@ module iota_oracle_system_state::systemState {
         validator_cap_id: object::ID,
     ) {
         let mut i = 0;
-        while (i < vector::length(&st.oracle_nodes)) {
-            let n = vector::borrow(&st.oracle_nodes, i);
+        while (i < vector::length(&node_registry.oracle_nodes)) {
+            let n = vector::borrow(&node_registry.oracle_nodes, i);
 
             if (n.addr == oracle_addr && n.validator != validator) abort EOracleAddrTaken;
-            if (!is_devnet(st) && n.validator_controller_cap_id == validator_cap_id && n.addr != oracle_addr) {
+            if (!devnet_mode && n.validator_controller_cap_id == validator_cap_id && n.addr != oracle_addr) {
                 abort EValidatorCapAlreadyRegistered
             };
 
             if (
-                (!is_devnet(st) && n.validator_controller_cap_id == validator_cap_id) ||
-                (is_devnet(st) && n.addr == oracle_addr)
+                (!devnet_mode && n.validator_controller_cap_id == validator_cap_id) ||
+                (devnet_mode && n.addr == oracle_addr)
             ) {
-                let n_mut = vector::borrow_mut(&mut st.oracle_nodes, i);
+                let n_mut = vector::borrow_mut(&mut node_registry.oracle_nodes, i);
+                n_mut.validator = validator;
                 n_mut.addr = oracle_addr;
                 n_mut.pubkey = pubkey;
                 n_mut.accepted_template_ids = accepted_template_ids;
@@ -837,7 +817,10 @@ module iota_oracle_system_state::systemState {
             i = i + 1;
         };
 
-        vector::push_back(&mut st.oracle_nodes, OracleNode {
+        let node_id = node_registry.next_oracle_node_id;
+        node_registry.next_oracle_node_id = node_id + 1;
+        vector::push_back(&mut node_registry.oracle_nodes, OracleNode {
+            node_id,
             validator,
             addr: oracle_addr,
             pubkey,
@@ -847,24 +830,24 @@ module iota_oracle_system_state::systemState {
         });
     }
 
-    fun prune_non_committee_oracle_nodes(st: &mut State, committee: &vector<address>) {
+    fun prune_non_committee_oracle_nodes(node_registry: &mut NodeRegistry, committee: &vector<address>) {
         let mut i = 0;
-        while (i < vector::length(&st.oracle_nodes)) {
-            let validator = vector::borrow(&st.oracle_nodes, i).validator;
+        while (i < vector::length(&node_registry.oracle_nodes)) {
+            let validator = vector::borrow(&node_registry.oracle_nodes, i).validator;
             if (!contains_addr(committee, validator)) {
-                remove_node_at(st, i);
+                remove_node_at(node_registry, i);
             } else {
                 i = i + 1;
             };
         };
     }
 
-    fun remove_node(st: &mut State, a: address): bool {
+    fun remove_node(node_registry: &mut NodeRegistry, a: address): bool {
         let mut i = 0;
-        while (i < vector::length(&st.oracle_nodes)) {
-            let n = vector::borrow(&st.oracle_nodes, i);
+        while (i < vector::length(&node_registry.oracle_nodes)) {
+            let n = vector::borrow(&node_registry.oracle_nodes, i);
             if (n.addr == a) {
-                remove_node_at(st, i);
+                remove_node_at(node_registry, i);
                 return true
             };
             i = i + 1;
@@ -872,13 +855,13 @@ module iota_oracle_system_state::systemState {
         false
     }
 
-    fun remove_node_at(st: &mut State, idx: u64) {
-        let last = vector::length(&st.oracle_nodes) - 1;
+    fun remove_node_at(node_registry: &mut NodeRegistry, idx: u64) {
+        let last = vector::length(&node_registry.oracle_nodes) - 1;
         if (idx != last) {
-            let tmp = *vector::borrow(&st.oracle_nodes, last);
-            *vector::borrow_mut(&mut st.oracle_nodes, idx) = tmp;
+            let tmp = *vector::borrow(&node_registry.oracle_nodes, last);
+            *vector::borrow_mut(&mut node_registry.oracle_nodes, idx) = tmp;
         };
-        vector::pop_back(&mut st.oracle_nodes);
+        vector::pop_back(&mut node_registry.oracle_nodes);
     }
 
     fun contains_addr(v: &vector<address>, a: address): bool {
@@ -918,47 +901,34 @@ module iota_oracle_system_state::systemState {
     }
 
     fun validator_cap_id_from_delegated_cap(cap: &DelegatedControllerCap): object::ID {
-        cap.validator_cap_id
+        validator_caps::validator_cap_id(cap)
     }
 
     fun validator_address_from_delegated_cap(
         system: &mut IotaSystemState,
         delegated_cap: &DelegatedControllerCap,
     ): address {
-        let delegated_validator = delegated_cap.validator_address;
+        let delegated_validator = validator_caps::validator_address(delegated_cap);
         let committee = iota_system::iota_system::committee_validator_addresses(system);
         if (contains_addr(&committee, delegated_validator)) return delegated_validator;
         abort ENotInCommittee
     }
 
-    fun has_registered_delegated_cap(st: &State, delegated_cap_id: object::ID): bool {
+    fun has_registered_delegated_cap(node_registry: &NodeRegistry, delegated_cap_id: object::ID): bool {
         let mut i = 0;
-        while (i < vector::length(&st.oracle_nodes)) {
-            let n = vector::borrow(&st.oracle_nodes, i);
+        while (i < vector::length(&node_registry.oracle_nodes)) {
+            let n = vector::borrow(&node_registry.oracle_nodes, i);
             if (n.delegated_controller_cap_id == delegated_cap_id) return true;
             i = i + 1;
         };
         false
     }
 
-    fun validator_address_from_cap(cap: &UnverifiedValidatorOperationCap): address {
-        let bytes = bcs::to_bytes(cap);
-        let n = vector::length(&bytes);
-        let addr_len = address::length();
-        let start = n - addr_len;
-        let mut out = vector::empty<u8>();
-        let mut i = start;
-        while (i < n) {
-            vector::push_back(&mut out, *vector::borrow(&bytes, i));
-            i = i + 1;
-        };
-        address::from_bytes(out)
-    }
-
     fun is_devnet(st: &State): bool {
         let devnet = b"devnet";
         bytes_eq(&st.network, &devnet)
     }
+
 
     fun bytes_eq(a: &vector<u8>, b: &vector<u8>): bool {
         if (vector::length(a) != vector::length(b)) return false;

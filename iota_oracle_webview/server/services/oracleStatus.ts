@@ -643,7 +643,7 @@ async function getObjectContent(client: IotaClient, objectId: string, warnings: 
 
 function parseRegisteredNodes(content: unknown): RegisteredOracleNode[] {
   const stateFields = extractFields(content) ?? {};
-  const oracleNodes = Array.isArray(stateFields.oracle_nodes) ? stateFields.oracle_nodes : [];
+  const oracleNodes = toArray(stateFields.oracle_nodes);
   const stateId = toObjectId(stateFields.id);
 
   const out: RegisteredOracleNode[] = [];
@@ -710,10 +710,11 @@ function toNodeActivity(
   events: OracleEventItem[],
   activeThresholdMs: number,
   registeredNodes: RegisteredOracleNode[],
+  registryWasRead = false,
 ): NodeActivity[] {
   const map = new Map<string, NodeActivity>();
   const allowed = new Set(registeredNodes.map((node) => normalizeAddress(node.address)).filter(Boolean));
-  const restrictToRegistered = allowed.size > 0;
+  const restrictToRegistered = registryWasRead || allowed.size > 0;
 
   for (const node of registeredNodes) {
     const address = normalizeAddress(node.address);
@@ -913,7 +914,8 @@ export async function getOracleStatus(network?: string): Promise<OracleStatusRes
 
   const stateContent = runtime.oracleStateId ? await getStateObjectContent(client, runtime.oracleStateId, warnings) : null;
   const nodeRegistryContent = runtime.oracleStateId ? await getNodeRegistryContent(client, runtime.oracleStateId, warnings) : null;
-  const registeredNodesRaw = nodeRegistryContent ? parseRegisteredNodes(nodeRegistryContent) : [];
+  const hasReadableNodeRegistry = nodeRegistryContent != null;
+  const registeredNodesRaw = hasReadableNodeRegistry ? parseRegisteredNodes(nodeRegistryContent) : [];
   const pendingTemplateProposals = stateContent ? parsePendingTemplateProposals(stateContent) : [];
   const registeredNodes = await enrichRegisteredNodesWithValidatorInfo(client, registeredNodesRaw, warnings);
   const registeredNodeAddresses = registeredNodes.map((node) => node.address);
@@ -948,7 +950,12 @@ export async function getOracleStatus(network?: string): Promise<OracleStatusRes
   }
 
   const combined = [...taskEvents, ...messageEvents].sort((a, b) => Number(b.timestampMs ?? "0") - Number(a.timestampMs ?? "0"));
-  const effectiveRegisteredNodes = registeredNodeAddresses.length > 0 ? registeredNodeAddresses : [...new Set(config.oracleNodeAddresses.map(normalizeAddress).filter(Boolean))];
+  const configuredNodeAddresses = [...new Set(config.oracleNodeAddresses.map(normalizeAddress).filter(Boolean))];
+  const effectiveRegisteredNodes = hasReadableNodeRegistry
+    ? registeredNodeAddresses
+    : registeredNodeAddresses.length > 0
+      ? registeredNodeAddresses
+      : configuredNodeAddresses;
   const nodeActivity = toNodeActivity(
     combined,
     activeThresholdMs,
@@ -960,6 +967,7 @@ export async function getOracleStatus(network?: string): Promise<OracleStatusRes
       validatorId: validatorInfoByAddress.get(normalizeAddress(address))?.validatorId ?? null,
       validatorName: validatorInfoByAddress.get(normalizeAddress(address))?.validatorName ?? null,
     })),
+    hasReadableNodeRegistry,
   ).map((node) => ({
     ...node,
     acceptedTasks: acceptedTasksByAddress.get(normalizeAddress(node.sender)) ?? [],

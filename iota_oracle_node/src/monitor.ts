@@ -65,7 +65,7 @@ export function startMonitorServer(ctx: NodeContext, state: MonitorRuntimeState)
         address: ctx.identity.address,
         acceptedTemplateIds: {
           source: "on-chain",
-          configuredEnvFallback: ctx.acceptedTemplateIds,
+          persistedLocalFallback: ctx.acceptedTemplateIds,
         },
         pollMs: ctx.pollMs,
         startupMs: ctx.startupMs,

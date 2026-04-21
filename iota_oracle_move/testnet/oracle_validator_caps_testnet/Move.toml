@@ -1,14 +1,12 @@
-﻿[package]
-name = "iota_oracle_system_state"
+[package]
+name = "iota_oracle_validator_caps"
 version = "0.0.1"
 edition = "2024.beta"
-published-at = "0xb275ae736fb18b04a2885f35fb7afbd9857e71ca299e271c3c6304b9ac28448a"
-# license = "SPDX-License-Identifier: AGPLv3"
-# authors = [""]
+published-at = "0x313bc83359c4e8599518c948de2e2bf5f493f0cdb163afe2c18af96b54747ae3"
 
 [dependencies]
 Iota = { git = "https://github.com/iotaledger/iota.git", subdir = "crates/iota-framework/packages/iota-framework", rev = "7e49c58b826b34c8e2b61842ef13c8de35a0aee8" }
 IotaSystem = { git = "https://github.com/iotaledger/iota.git", subdir = "crates/iota-framework/packages/iota-system", rev = "7e49c58b826b34c8e2b61842ef13c8de35a0aee8" }
 
 [addresses]
-iota_oracle_system_state = "0xb275ae736fb18b04a2885f35fb7afbd9857e71ca299e271c3c6304b9ac28448a"
+iota_oracle_validator_caps = "0x313bc83359c4e8599518c948de2e2bf5f493f0cdb163afe2c18af96b54747ae3"

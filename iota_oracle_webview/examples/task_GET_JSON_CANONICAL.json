@@ -30,11 +30,15 @@
     "type": "GET_JSON_CANONICAL",
     "template_id": 10,
     "is_enabled": 1,
+    "base_price_iota": 1000000000,
+    "scheduler_fee_iota": 21323200,
     "max_input_bytes": 8192,
     "max_output_bytes": 8192,
     "included_download_bytes": 8192,
+    "price_per_download_byte_iota": 0,
     "allow_storage": 0,
     "min_retention_days": 0,
-    "max_retention_days": 0
+    "max_retention_days": 0,
+    "price_per_retention_day_iota": 0
   }
 }

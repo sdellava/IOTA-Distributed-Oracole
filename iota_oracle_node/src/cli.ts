@@ -113,6 +113,7 @@ async function cmdSetAcceptedTemplates(argv: string[]) {
     oracleKeypair: identity.keypair,
     oracleAddr: identity.address,
     oraclePubkeyRaw32: identity.publicKeyBytes,
+    nodeId,
     acceptedTemplateIds,
   });
 

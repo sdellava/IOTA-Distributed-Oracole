@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Stefano Della Valle
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
-module iota_oracle_tasks::oracle_scheduled_tasks {
+module iota_oracle_scheduler::oracle_scheduled_tasks {
     use iota::balance::{Self as balance, Balance};
     use iota::clock::{Clock, timestamp_ms};
     use iota::coin::{Self as coin, Coin};
@@ -15,8 +15,6 @@ module iota_oracle_tasks::oracle_scheduled_tasks {
     use iota_oracle_tasks::oracle_tasks;
 
     const SCHEDULER_TEMPLATE_ID: u64 = 0;
-    const SCHEDULE_ALIGNMENT_MS: u64 = 60000;
-    const SCHEDULER_START_OFFSET_MS: u64 = 2000;
     const MIN_INTERVAL_MS: u64 = 300000;
     const ROUND_TIMEOUT_MS: u64 = 60000;
 
@@ -38,7 +36,6 @@ module iota_oracle_tasks::oracle_scheduled_tasks {
     const EUnfreezeRequiresFrozenState: u64 = 1010;
     const ENotHeadScheduler: u64 = 1011;
     const ERoundStillOwnedByHead: u64 = 1012;
-    const EInvalidScheduleAlignment: u64 = 1013;
 
     public struct ScheduledTaskRegistry has key, store {
         id: object::UID,
@@ -318,10 +315,8 @@ module iota_oracle_tasks::oracle_scheduled_tasks {
         ctx: &mut TxContext
     ) {
         assert!(template_id != SCHEDULER_TEMPLATE_ID, EInvalidTaskTemplate);
+        assert!(count_scheduler_nodes(st) > 0, ENoSchedulerNodes);
         assert!(interval_ms >= MIN_INTERVAL_MS, EInvalidInterval);
-        assert!(is_minute_aligned(start_schedule_ms), EInvalidScheduleAlignment);
-        assert!(is_minute_aligned(interval_ms), EInvalidScheduleAlignment);
-        assert!(end_schedule_ms == 0 || is_minute_aligned(end_schedule_ms), EInvalidScheduleAlignment);
         assert!(end_schedule_ms == 0 || start_schedule_ms <= end_schedule_ms, EInvalidScheduleWindow);
         let (_, _, _) = systemState::validate_task_request_and_get_payment_split(
             st,
@@ -573,9 +568,6 @@ module iota_oracle_tasks::oracle_scheduled_tasks {
     }
 
     public fun scheduler_nodes(queue: &SchedulerQueue): &vector<address> { &queue.nodes }
-    public fun scheduler_template_id(): u64 { SCHEDULER_TEMPLATE_ID }
-    public fun schedule_alignment_ms(): u64 { SCHEDULE_ALIGNMENT_MS }
-    public fun scheduler_start_offset_ms(): u64 { SCHEDULER_START_OFFSET_MS }
     public fun scheduler_head(queue: &SchedulerQueue): address {
         if (vector::length(&queue.nodes) == 0) @0x0 else *vector::borrow(&queue.nodes, 0)
     }
@@ -629,6 +621,20 @@ module iota_oracle_tasks::oracle_scheduled_tasks {
         false
     }
 
+    fun count_scheduler_nodes(st: &systemState::State): u64 {
+        let nodes_ref = systemState::oracle_nodes(st);
+        let mut count = 0;
+        let mut i = 0;
+        while (i < vector::length(nodes_ref)) {
+            let node = vector::borrow(nodes_ref, i);
+            if (systemState::oracle_node_accepts_template(node, SCHEDULER_TEMPLATE_ID)) {
+                count = count + 1;
+            };
+            i = i + 1;
+        };
+        count
+    }
+
     fun maybe_mark_ended(task: &mut ScheduledTask, now: u64) {
         if (task.status == STATUS_CANCELLED || task.status == STATUS_ENDED) return;
         if (task.end_schedule_ms == 0) return;
@@ -647,10 +653,6 @@ module iota_oracle_tasks::oracle_scheduled_tasks {
             next = next + interval_ms;
         };
         next
-    }
-
-    fun is_minute_aligned(value_ms: u64): bool {
-        value_ms % SCHEDULE_ALIGNMENT_MS == 0
     }
 
     fun rotate_head_to_tail(nodes: &mut vector<address>) {

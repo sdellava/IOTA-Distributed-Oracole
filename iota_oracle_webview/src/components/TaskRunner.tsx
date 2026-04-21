@@ -4,7 +4,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCurrentAccount, useSignAndExecuteTransaction } from '@iota/dapp-kit';
 import { IotaClient, type ChainType } from '@iota/iota-sdk/client';
-import { Transaction } from '@iota/iota-sdk/transactions';
 import { fetchExampleContent, prepareWalletTask, prepareWalletTaskSchedule } from '../lib/api';
 import { resolveApiBaseUrl } from '../lib/apiBase';
 import { validateTaskMultisig } from '../lib/multisigValidation';
@@ -22,6 +21,7 @@ type Props = {
   registeredNodes: RegisteredOracleNode[];
   onExecuted: () => void;
   onTemplateIdChange?: (templateId: string) => void;
+  onOpenScheduledTasks?: () => void;
 };
 
 type TaskStatusKind = 'submitted' | 'pending' | 'finalized' | 'no_consensus' | 'failed' | 'error';
@@ -855,6 +855,9 @@ function formatUserFacingError(error: unknown): string {
   if (/Insufficient IOTA for address/i.test(message)) {
     return 'Error: Insufficient IOTA';
   }
+  if (/Template\s+\d+\s+not found under state/i.test(message)) {
+    return 'The selected task template is not available on the active network. Reload an on-chain example for this network or update the template_id in your JSON.';
+  }
   if (/must be aligned to the start of a minute/i.test(message) || /EInvalidScheduleAlignment/i.test(message)) {
     return 'Schedule times must be aligned to minute boundaries. Use seconds 00 for start, end, and interval.';
   }
@@ -872,7 +875,14 @@ function formatUserFacingError(error: unknown): string {
   return message;
 }
 
-export default function TaskRunner({ examples, activeNetwork, registeredNodes, onExecuted, onTemplateIdChange }: Props) {
+export default function TaskRunner({
+  examples,
+  activeNetwork,
+  registeredNodes,
+  onExecuted,
+  onTemplateIdChange,
+  onOpenScheduledTasks,
+}: Props) {
   const [taskText, setTaskText] = useState<string>('{}');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<WalletRunResult | null>(null);
@@ -1427,8 +1437,10 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
         currentAccount.address,
         activeNetwork,
       );
-      const transaction = Transaction.from(prepared.serializedTransaction);
-      const execution = await signAndExecuteTransaction({ transaction, chain });
+      const execution = await signAndExecuteTransaction({
+        transaction: prepared.serializedTransaction,
+        chain,
+      });
       const digest = String(execution?.digest ?? '').trim();
       const confirmedExecution = await fetchExecutionForDigest(networkClient, digest, execution);
       const taskId = extractCreatedTaskId(confirmedExecution) || extractCreatedTaskId(execution) || null;
@@ -1581,6 +1593,13 @@ export default function TaskRunner({ examples, activeNetwork, registeredNodes, o
                 Budget: <span className="mono">{taskScheduleResult.prepared.initialFunds}</span> nano-IOTA
               </div>
             </div>
+            <button
+              type="button"
+              className="task-summary-card task-summary-card-button task-summary-card-button-primary"
+              onClick={onOpenScheduledTasks}
+            >
+              <span className="task-summary-card-button-text">Go to schedule list</span>
+            </button>
           </div>
 
           <div className="template-details-card">

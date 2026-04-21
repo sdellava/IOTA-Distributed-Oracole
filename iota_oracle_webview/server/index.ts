@@ -201,6 +201,8 @@ type TaskRunSummary = {
   next_run_ms: number | null;
 };
 
+const TASK_STREAM_POLL_MS = 4_000;
+
 async function fetchTaskResults(
   client: IotaClient,
   taskId: string,
@@ -429,6 +431,140 @@ function buildRunHistory(
   return [...byRun.values()].sort((a, b) => b.run_index - a.run_index);
 }
 
+function pickFirst(...values: unknown[]) {
+  for (const value of values) {
+    if (value !== undefined && value !== null) return value;
+  }
+  return null;
+}
+
+function collectArrayItems(value: any, out: any[]): void {
+  if (value == null) return;
+  if (Array.isArray(value)) {
+    for (const item of value) collectArrayItems(item, out);
+    return;
+  }
+  if (typeof value !== "object") {
+    out.push(value);
+    return;
+  }
+
+  const record = value as Record<string, any>;
+  const nestedFields = asRecord(record.fields);
+  if (nestedFields && nestedFields !== record) collectArrayItems(nestedFields, out);
+
+  for (const key of ["items", "contents", "vec", "value", "fields", "data"]) {
+    if (key in record) collectArrayItems(record[key], out);
+  }
+}
+
+function nestedArray(value: any): any[] {
+  const out: any[] = [];
+  collectArrayItems(value, out);
+  return out;
+}
+
+function nestedTextArray(value: any): string[] {
+  const out: string[] = [];
+  for (const item of nestedArray(value)) {
+    const normalized = normalizeAddress(moveObjectIdToString(item) || String(item ?? ""));
+    if (normalized) out.push(normalized);
+  }
+  return out.filter((item, index) => out.indexOf(item) === index);
+}
+
+async function fetchTaskSnapshot(taskId: string, network?: OracleNetwork) {
+  const runtime = getRuntimeConfig(network);
+  const client = new IotaClient({ url: runtime.rpcUrl });
+
+  const response = await client.getObject({
+    id: taskId,
+    options: {
+      showType: true,
+      showOwner: true,
+      showContent: true,
+      showDisplay: true,
+    },
+  });
+
+  const data = response?.data as any;
+  if (!data) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+
+  const fields = extractFields(data.content) ?? {};
+  const taskType = String(data.type ?? "");
+  const taskPackageId = taskType.split("::")[0] || runtime.oracleTasksPackageId || "";
+  const latestResultSeq = numberFromUnknown(fields.latest_result_seq) ?? 0;
+  const results =
+    latestResultSeq > 0 && runtime.oracleTasksPackageId
+      ? await fetchTaskResults(client, taskId, runtime.oracleTasksPackageId)
+      : [];
+  const [taskEvents, messageEvents] = taskPackageId
+    ? await Promise.all([
+        queryTaskEventsByModule(client, taskPackageId, config.oracleTaskModule, taskId).catch(() => []),
+        queryTaskEventsByModule(client, taskPackageId, config.oracleMessageModule, taskId).catch(() => []),
+      ])
+    : [[], []];
+  const allEvents = [...taskEvents, ...messageEvents].sort(
+    (a, b) => Number(a.timestampMs ?? 0) - Number(b.timestampMs ?? 0),
+  );
+  const run_history = buildRunHistory(allEvents, results, fields);
+  const latestResultFields = results[0]?.raw ?? {};
+
+  const task = {
+    objectId: data.objectId,
+    version: data.version,
+    digest: data.digest,
+    type: data.type,
+    owner: data.owner ?? null,
+    task_id: data.objectId,
+    template_id: pickFirst(fields.template_id, fields.config?.fields?.template_id),
+    assigned_nodes: nestedTextArray(
+      pickFirst(fields.assigned_nodes, fields.runtime?.fields?.assigned_nodes, fields.consensus?.fields?.assigned_nodes),
+    ),
+    status: pickFirst(fields.status, fields.runtime?.fields?.status),
+    execution_state: pickFirst(fields.execution_state, fields.runtime?.fields?.execution_state),
+    active_round: pickFirst(fields.active_round, fields.runtime?.fields?.active_round),
+    state: taskCompatState(fields),
+    quorum_k: Number(
+      pickFirst(fields.quorum_k, fields.config?.fields?.quorum_k, fields.consensus?.fields?.quorum_k, 0),
+    ),
+    multisig_addr: pickFirst(latestResultFields.multisig_addr, fields.multisig_addr, fields.certificate?.fields?.multisig_addr),
+    multisig_bytes: pickFirst(latestResultFields.multisig_bytes, fields.multisig_bytes, fields.certificate?.fields?.multisig_bytes),
+    certificate_blob: pickFirst(
+      latestResultFields.certificate_blob,
+      fields.certificate_blob,
+      fields.certificate?.fields?.certificate_blob,
+    ),
+    certificate_signers: nestedTextArray(
+      pickFirst(latestResultFields.certificate_signers, fields.certificate_signers, fields.certificate?.fields?.certificate_signers),
+    ),
+    result: pickFirst(latestResultFields.result, fields.result, fields.runtime?.fields?.result),
+    result_hash: pickFirst(latestResultFields.result_hash, fields.result_hash, fields.runtime?.fields?.result_hash),
+    result_bytes: pickFirst(
+      latestResultFields.result,
+      latestResultFields.result_bytes,
+      fields.result_bytes,
+      fields.runtime?.fields?.result_bytes,
+    ),
+    reason_code: pickFirst(latestResultFields.reason_code, 0),
+    latest_result_seq: pickFirst(fields.latest_result_seq, fields.runtime?.fields?.latest_result_seq),
+    result_order: nestedArray(pickFirst(fields.result_order, fields.runtime?.fields?.result_order)),
+    latest_result: latestResultFields,
+    results,
+    run_history,
+    raw: fields,
+  };
+
+  return {
+    taskId,
+    packageId: taskPackageId,
+    task,
+    events: allEvents,
+  };
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "iota_oracle_webview", time: new Date().toISOString() });
 });
@@ -525,125 +661,13 @@ app.get("/api/task/:taskId", async (req, res) => {
       return;
     }
 
-    const runtime = getRuntimeConfig(network as OracleNetwork | undefined);
-    const client = new IotaClient({ url: runtime.rpcUrl });
-
-    const response = await client.getObject({
-      id: taskId,
-      options: {
-        showType: true,
-        showOwner: true,
-        showContent: true,
-        showDisplay: true,
-      },
-    });
-
-    const data = response?.data as any;
-    if (!data) {
-      res.status(404).json({ error: `Task not found: ${taskId}` });
+    const snapshot = await fetchTaskSnapshot(taskId, network as OracleNetwork | undefined);
+    res.json(snapshot.task);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Task not found:")) {
+      sendApiError(res, 404, error);
       return;
     }
-
-    const fields = extractFields(data.content) ?? {};
-    const taskType = String(data.type ?? "");
-    const taskPackageId = taskType.split("::")[0] || runtime.oracleTasksPackageId || "";
-    const latestResultSeq = numberFromUnknown(fields.latest_result_seq) ?? 0;
-    const results =
-      latestResultSeq > 0 && runtime.oracleTasksPackageId
-        ? await fetchTaskResults(client, taskId, runtime.oracleTasksPackageId)
-        : [];
-    const [taskEvents, messageEvents] = taskPackageId
-      ? await Promise.all([
-          queryTaskEventsByModule(client, taskPackageId, config.oracleTaskModule, taskId).catch(() => []),
-          queryTaskEventsByModule(client, taskPackageId, config.oracleMessageModule, taskId).catch(() => []),
-        ])
-      : [[], []];
-    const allEvents = [...taskEvents, ...messageEvents].sort(
-      (a, b) => Number(a.timestampMs ?? 0) - Number(b.timestampMs ?? 0),
-    );
-    const run_history = buildRunHistory(allEvents, results, fields);
-    const latestResultFields = results[0]?.raw ?? {};
-
-    function pick(...values: unknown[]) {
-      for (const v of values) {
-        if (v !== undefined && v !== null) return v;
-      }
-      return null;
-    }
-
-    function collectArrayItems(value: any, out: any[]): void {
-      if (value == null) return;
-      if (Array.isArray(value)) {
-        for (const item of value) collectArrayItems(item, out);
-        return;
-      }
-      if (typeof value !== "object") {
-        out.push(value);
-        return;
-      }
-
-      const record = value as Record<string, any>;
-      const nestedFields = asRecord(record.fields);
-      if (nestedFields && nestedFields !== record) collectArrayItems(nestedFields, out);
-
-      for (const key of ["items", "contents", "vec", "value", "fields", "data"]) {
-        if (key in record) collectArrayItems(record[key], out);
-      }
-    }
-
-    function asArray(value: any): any[] {
-      const out: any[] = [];
-      collectArrayItems(value, out);
-      return out;
-    }
-
-    function asTextArray(value: any): string[] {
-      const out: string[] = [];
-      for (const item of asArray(value)) {
-        const normalized = normalizeAddress(moveObjectIdToString(item) || String(item ?? ""));
-        if (normalized) out.push(normalized);
-      }
-      return out.filter((item, index) => out.indexOf(item) === index);
-    }
-
-    const normalized = {
-      objectId: data.objectId,
-      version: data.version,
-      digest: data.digest,
-      type: data.type,
-      owner: data.owner ?? null,
-      task_id: data.objectId,
-      template_id: pick(fields.template_id, fields.config?.fields?.template_id),
-      assigned_nodes: asTextArray(
-        pick(fields.assigned_nodes, fields.runtime?.fields?.assigned_nodes, fields.consensus?.fields?.assigned_nodes),
-      ),
-      status: pick(fields.status, fields.runtime?.fields?.status),
-      execution_state: pick(fields.execution_state, fields.runtime?.fields?.execution_state),
-      active_round: pick(fields.active_round, fields.runtime?.fields?.active_round),
-      state: taskCompatState(fields),
-      quorum_k: Number(
-        pick(fields.quorum_k, fields.config?.fields?.quorum_k, fields.consensus?.fields?.quorum_k, 0),
-      ),
-      multisig_addr: pick(latestResultFields.multisig_addr, fields.multisig_addr, fields.certificate?.fields?.multisig_addr),
-      multisig_bytes: pick(latestResultFields.multisig_bytes, fields.multisig_bytes, fields.certificate?.fields?.multisig_bytes),
-      certificate_blob: pick(latestResultFields.certificate_blob, fields.certificate_blob, fields.certificate?.fields?.certificate_blob),
-      certificate_signers: asTextArray(
-        pick(latestResultFields.certificate_signers, fields.certificate_signers, fields.certificate?.fields?.certificate_signers),
-      ),
-      result: pick(latestResultFields.result, fields.result, fields.runtime?.fields?.result),
-      result_hash: pick(latestResultFields.result_hash, fields.result_hash, fields.runtime?.fields?.result_hash),
-      result_bytes: pick(latestResultFields.result, latestResultFields.result_bytes, fields.result_bytes, fields.runtime?.fields?.result_bytes),
-      reason_code: pick(latestResultFields.reason_code, 0),
-      latest_result_seq: pick(fields.latest_result_seq, fields.runtime?.fields?.latest_result_seq),
-      result_order: asArray(pick(fields.result_order, fields.runtime?.fields?.result_order)),
-      latest_result: latestResultFields,
-      results,
-      run_history,
-      raw: fields,
-    };
-
-    res.json(normalized);
-  } catch (error) {
     sendApiError(res, 500, error);
   }
 });
@@ -657,34 +681,79 @@ app.get("/api/task/:taskId/events", async (req, res) => {
       return;
     }
 
-    const runtime = getRuntimeConfig(network as OracleNetwork | undefined);
-    const client = new IotaClient({ url: runtime.rpcUrl });
-
-    const taskObj: any = await client.getObject({
-      id: taskId,
-      options: { showType: true },
-    });
-
-    const taskType = String(taskObj?.data?.type ?? "");
-    const taskPackageId = taskType.split("::")[0] || runtime.oracleTasksPackageId;
-
-    const [taskEvents, messageEvents] = await Promise.all([
-      queryTaskEventsByModule(client, taskPackageId, config.oracleTaskModule, taskId),
-      queryTaskEventsByModule(client, taskPackageId, config.oracleMessageModule, taskId).catch(() => []),
-    ]);
-
-    const events = [...taskEvents, ...messageEvents].sort(
-      (a, b) => Number(a.timestampMs ?? 0) - Number(b.timestampMs ?? 0),
-    );
-
+    const snapshot = await fetchTaskSnapshot(taskId, network as OracleNetwork | undefined);
     res.json({
       taskId,
-      packageId: taskPackageId,
-      events,
+      packageId: snapshot.packageId,
+      events: snapshot.events,
     });
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Task not found:")) {
+      sendApiError(res, 404, error);
+      return;
+    }
     sendApiError(res, 500, error);
   }
+});
+
+app.get("/api/task/:taskId/stream", async (req, res) => {
+  const taskId = String(req.params.taskId ?? "").trim();
+  const network = typeof req.query.network === "string" ? req.query.network : undefined;
+
+  if (!taskId) {
+    res.status(400).json({ error: "Missing taskId" });
+    return;
+  }
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders?.();
+
+  let closed = false;
+  let timer: NodeJS.Timeout | null = null;
+  let lastSnapshotSignature = "";
+
+  const sendEvent = (eventName: string, payload: unknown) => {
+    if (closed) return;
+    res.write(`event: ${eventName}\n`);
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  const scheduleNextPoll = () => {
+    if (closed) return;
+    timer = setTimeout(() => {
+      void pollSnapshot();
+    }, TASK_STREAM_POLL_MS);
+  };
+
+  const pollSnapshot = async () => {
+    try {
+      const snapshot = await fetchTaskSnapshot(taskId, network as OracleNetwork | undefined);
+      const signature = JSON.stringify(snapshot);
+
+      if (signature !== lastSnapshotSignature) {
+        lastSnapshotSignature = signature;
+        sendEvent("snapshot", snapshot);
+      } else {
+        res.write(": keep-alive\n\n");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      sendEvent("error", { error: message });
+    } finally {
+      scheduleNextPoll();
+    }
+  };
+
+  sendEvent("ready", { ok: true, taskId, network: network ?? getActiveNetwork() });
+  void pollSnapshot();
+
+  req.on("close", () => {
+    closed = true;
+    if (timer) clearTimeout(timer);
+    res.end();
+  });
 });
 
 app.post("/api/tasks/prepare-wallet", async (req, res) => {

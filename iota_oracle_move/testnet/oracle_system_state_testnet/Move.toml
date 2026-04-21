@@ -1,0 +1,13 @@
+[package]
+name = "iota_oracle_system_state"
+version = "0.0.1"
+edition = "2024.beta"
+published-at = "0xf1657184409ed206d7304d6319cfcda9cbe9669da388bea3c9fb35b6e0a53ec1"
+# license = "SPDX-License-Identifier: AGPLv3"
+# authors = [""]
+
+[dependencies]
+iota_oracle_validator_caps = { local = "../oracle_validator_caps_testnet" }
+
+[addresses]
+iota_oracle_system_state = "0xf1657184409ed206d7304d6319cfcda9cbe9669da388bea3c9fb35b6e0a53ec1"

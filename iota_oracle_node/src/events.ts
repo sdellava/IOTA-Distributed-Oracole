@@ -15,6 +15,30 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function formatErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+function nestedCauseMessage(error: unknown): string {
+  if (!error || typeof error !== "object") return "";
+  const cause = (error as any).cause;
+  return cause instanceof Error ? cause.message : String(cause ?? "");
+}
+
+function isTransientRpcError(error: unknown): boolean {
+  const message = `${formatErrorMessage(error)} ${nestedCauseMessage(error)}`.toLowerCase();
+  return (
+    message.includes("fetch failed") ||
+    message.includes("econnreset") ||
+    message.includes("connect timeout") ||
+    message.includes("headers timeout") ||
+    message.includes("socket hang up") ||
+    message.includes("network") ||
+    message.includes("und_err")
+  );
+}
+
 export function decodeVecU8(v: unknown): Uint8Array {
   if (v == null) return new Uint8Array();
   if (v instanceof Uint8Array) return v;
@@ -72,14 +96,28 @@ async function pollEvents(opts: {
   const { client, moveEventType, pollMs, minTimestampMs, onEvent } = opts;
   let cursor: any = null;
   const seen = new Set<string>();
+  let consecutiveFailures = 0;
 
   for (;;) {
-    const page = await client.queryEvents({
-      query: { MoveEventType: moveEventType },
-      cursor: cursor ?? null,
-      limit: 50,
-      order: "ascending",
-    } as any);
+    let page: any;
+    try {
+      page = await client.queryEvents({
+        query: { MoveEventType: moveEventType },
+        cursor: cursor ?? null,
+        limit: 50,
+        order: "ascending",
+      } as any);
+      consecutiveFailures = 0;
+    } catch (error) {
+      consecutiveFailures += 1;
+      const waitMs = Math.min(15_000, pollMs * Math.max(2, consecutiveFailures));
+      const suffix = isTransientRpcError(error) ? " transient RPC error" : " polling error";
+      console.warn(
+        `[events] ${moveEventType}${suffix}; retry in ${waitMs} ms (attempt ${consecutiveFailures}): ${formatErrorMessage(error)}`,
+      );
+      await sleep(waitMs);
+      continue;
+    }
 
     for (const ev of page.data ?? []) {
       const evTs = Number((ev as any)?.timestampMs ?? 0);
@@ -92,7 +130,13 @@ async function pollEvents(opts: {
         const first = seen.values().next().value;
         if (first) seen.delete(first);
       }
-      await onEvent(ev);
+      try {
+        await onEvent(ev);
+      } catch (error) {
+        console.warn(
+          `[events] handler failed for ${moveEventType} event ${key}: ${formatErrorMessage(error)}`,
+        );
+      }
     }
 
     if (page.hasNextPage) {

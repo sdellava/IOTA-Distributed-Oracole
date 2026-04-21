@@ -1,6 +1,7 @@
 import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
+import { toB64 } from "@iota/bcs";
 import { Transaction } from "@iota/iota-sdk/transactions";
 
 import { iotaClient } from "./iota";
@@ -142,6 +143,7 @@ type ScheduledTaskActionInput = {
   taskId: string;
   useSupervisor?: boolean;
   controllerCapId?: string;
+  ownerCapId?: string;
   amount?: bigint;
 };
 
@@ -156,6 +158,7 @@ type PreparedScheduledTaskActionWalletTransaction = {
   amount: string | null;
   useSupervisor: boolean;
   controllerCapId: string | null;
+  ownerCapId: string | null;
   target: string;
 };
 
@@ -1185,10 +1188,15 @@ function normalizeScheduledTaskActionInput(input: any): ScheduledTaskActionInput
     input.mode === "supervisor";
 
   if (action === "suspend" || action === "reactivate" || action === "delete") {
+    const ownerCapRaw = input.ownerCapId ?? input.owner_cap_id;
     return {
       action,
       taskId,
       useSupervisor,
+      ownerCapId:
+        !useSupervisor && ownerCapRaw != null && String(ownerCapRaw).trim()
+          ? normalizeObjectId(ownerCapRaw, "ownerCapId")
+          : undefined,
       controllerCapId: useSupervisor
         ? normalizeObjectId(input.controllerCapId ?? input.controller_cap_id, "controllerCapId")
         : undefined,
@@ -1245,10 +1253,14 @@ function makeScheduledTaskActionTx(args: {
   }
 
   if (input.action === "reactivate") {
-    const target = `${tasksPkg}::oracle_tasks::reactivate_task_by_owner`;
+    const target = input.useSupervisor
+      ? `${tasksPkg}::oracle_tasks::reactivate_task_by_cap`
+      : `${tasksPkg}::oracle_tasks::reactivate_task_by_owner`;
     tx.moveCall({
       target,
-      arguments: [tx.object(registryId), tx.object(input.taskId), tx.object(clockId)],
+      arguments: input.useSupervisor
+        ? [tx.object(registryId), tx.object(input.controllerCapId!), tx.object(input.taskId), tx.object(clockId)]
+        : [tx.object(registryId), tx.object(input.taskId), tx.object(clockId)],
     });
     return { tx, target };
   }
@@ -1256,12 +1268,16 @@ function makeScheduledTaskActionTx(args: {
   if (input.action === "delete") {
     const target = input.useSupervisor
       ? `${tasksPkg}::oracle_tasks::delete_task_by_supervisor`
-      : `${tasksPkg}::oracle_tasks::delete_task_by_owner`;
+      : input.ownerCapId
+        ? `${tasksPkg}::oracle_tasks::delete_task_by_owner_cap`
+        : `${tasksPkg}::oracle_tasks::delete_task_by_owner`;
     tx.moveCall({
       target,
       arguments: input.useSupervisor
         ? [tx.object(registryId), tx.object(input.controllerCapId!), tx.object(input.taskId)]
-        : [tx.object(registryId), tx.object(input.taskId)],
+        : input.ownerCapId
+          ? [tx.object(registryId), tx.object(input.ownerCapId), tx.object(input.taskId)]
+          : [tx.object(registryId), tx.object(input.taskId)],
     });
     return { tx, target };
   }
@@ -1371,12 +1387,9 @@ async function executeCreateTask(
   throw lastError;
 }
 
-function serializeTransactionForWallet(tx: Transaction): string {
-  const maybeSerialize = (tx as any)?.serialize;
-  if (typeof maybeSerialize !== "function") {
-    throw new Error("Current @iota/iota-sdk Transaction.serialize() is not available");
-  }
-  return String(maybeSerialize.call(tx));
+async function serializeTransactionForWallet(tx: Transaction, client: AnyClient): Promise<string> {
+  const bytes = await tx.build({ client });
+  return toB64(bytes);
 }
 
 async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?: string) {
@@ -1505,7 +1518,7 @@ async function runPrepareTaskScheduleWebview(
     ok: true,
     mode: "prepare-task-schedule-webview",
     sender: normalizedSender,
-    serializedTransaction: serializeTransactionForWallet(tx),
+    serializedTransaction: await serializeTransactionForWallet(tx, client),
     gasBudget: plan.gasBudget.toString(),
     initialFunds: schedule.initialFunds.toString(),
     requiredPerRun: plan.requiredPerRun.toString(),
@@ -1570,11 +1583,12 @@ async function runPrepareScheduledTaskActionWebview(
     sender: normalizedSender,
     action: actionInput.action,
     taskId: actionInput.taskId,
-    serializedTransaction: serializeTransactionForWallet(txPlan.tx),
+    serializedTransaction: await serializeTransactionForWallet(txPlan.tx, iotaClient() as AnyClient),
     gasBudget: String(asBigInt(process.env.GAS_BUDGET ?? "50000000", 50_000_000n)),
     amount: actionInput.amount == null ? null : actionInput.amount.toString(),
     useSupervisor: actionInput.useSupervisor === true,
     controllerCapId: actionInput.controllerCapId ?? null,
+    ownerCapId: actionInput.ownerCapId ?? null,
     target: txPlan.target,
   };
 
@@ -1601,7 +1615,7 @@ async function runPrepareWebview(taskArg: string | undefined, sender: string | u
     mode: "prepare-webview",
     sender: normalizedSender,
     variant,
-    serializedTransaction: serializeTransactionForWallet(tx),
+    serializedTransaction: await serializeTransactionForWallet(tx, client),
     gasBudget: plan.gasBudget.toString(),
     requiredPayment: plan.requiredPayment.toString(),
     requiredPerRun: plan.requiredPerRun.toString(),

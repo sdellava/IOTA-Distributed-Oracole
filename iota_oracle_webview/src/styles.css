@@ -615,6 +615,27 @@ th {
   margin-bottom: 12px;
 }
 
+.task-schedules-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.task-schedules-filter-button {
+  width: auto;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--theme-input-bg, #0f1730);
+  color: var(--theme-text, #ebeff8);
+  border: 1px solid var(--theme-input-border, rgba(143, 162, 208, 0.18));
+}
+
+.task-schedules-filter-button.is-active {
+  background: var(--theme-primary-bg, #121e3d);
+  color: var(--theme-primary-contrast-text, #d8e2f7);
+}
+
 .scheduled-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1001,7 +1022,7 @@ th {
 
 .task-summary-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -1018,6 +1039,42 @@ th {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.task-summary-card-button {
+  display: flex;
+  width: 100%;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.task-summary-card-button:hover {
+  border-color: var(--theme-primary-bg, #2563f5);
+  background: rgba(37, 99, 245, 0.06);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(37, 99, 245, 0.1);
+}
+
+.task-summary-card-button-primary {
+  border-color: var(--theme-primary-bg, #2563f5);
+  background: var(--theme-primary-bg, #2563f5);
+}
+
+.task-summary-card-button-primary:hover {
+  border-color: var(--theme-primary-hover-bg, var(--theme-primary-bg, #2563f5));
+  background: var(--theme-primary-hover-bg, var(--theme-primary-bg, #2563f5));
+  box-shadow: 0 10px 24px rgba(37, 99, 245, 0.2);
+}
+
+.task-summary-card-button-text {
+  color: var(--theme-primary-contrast-text, #ffffff);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.25;
 }
 
 .summary-value {
@@ -1376,6 +1433,21 @@ th {
 .validate-task-button:hover {
   background: var(--theme-primary-hover-bg, var(--theme-primary-bg, #2563f5));
   border-color: var(--theme-primary-hover-bg, var(--theme-primary-bg, #2563f5));
+}
+
+.validate-live-status {
+  margin: -6px 0 20px;
+  font-size: 13px;
+  color: var(--theme-muted-text, #66758c);
+}
+
+.validate-live-status-live {
+  color: #157347;
+}
+
+.validate-live-status-connecting,
+.validate-live-status-reconnecting {
+  color: #9a6700;
 }
 
 .wallet-submit-button {

@@ -411,7 +411,7 @@ export default function App() {
                         <Divider />
                         <RcMenuItem key="scheduled">Scheduled task list</RcMenuItem>
                         <Divider />
-                        <RcMenuItem key="validate">Validate a task</RcMenuItem>
+                        <RcMenuItem key="validate">View or validate a task</RcMenuItem>
                         <Divider />
                         <RcMenuItem key="node-management">Node management</RcMenuItem>
                         <Divider />
@@ -505,6 +505,7 @@ export default function App() {
               registeredNodes={status?.registeredNodes ?? []}
               onExecuted={() => void refreshStatus(activeNetwork)}
               onTemplateIdChange={setSelectedTemplateId}
+              onOpenScheduledTasks={() => setPageMode("scheduled")}
             />
 
           <section className="card card-spaced">

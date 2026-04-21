@@ -20,6 +20,7 @@ import {
   readTaskSchedulerQueue,
 } from "../services/schedulerReader";
 import { loadTaskBundle } from "../services/taskObjects";
+import { savePersistedAcceptedTemplateIds } from "../templateState";
 import { moveToArray, moveToString } from "../utils/move";
 
 function schedulerLeaseMs(): number {
@@ -131,6 +132,8 @@ export async function processSchedulerRound(ctx: NodeContext): Promise<void> {
     console.log(`[scheduler ${ctx.nodeId}] skip round: node not registered on-chain`);
     return;
   }
+  ctx.acceptedTemplateIds = currentNode.acceptedTemplateIds;
+  savePersistedAcceptedTemplateIds(ctx.nodeId, currentNode.acceptedTemplateIds);
   if (!supportsScheduler(currentNode.acceptedTemplateIds)) {
     console.log(
       `[scheduler ${ctx.nodeId}] skip round: scheduler role not enabled on-chain accepted=${currentNode.acceptedTemplateIds.join(",") || "<none>"}`,

@@ -28,14 +28,19 @@ type Props = {
   activeNetwork: OracleNetwork;
 };
 
+type StreamStatus = "idle" | "connecting" | "live" | "reconnecting";
+
 export default function ValidateTaskPage({ initialTaskId = "", activeNetwork }: Props) {
   const [taskId, setTaskId] = useState("");
+  const [validatedTaskId, setValidatedTaskId] = useState("");
   const [task, setTask] = useState<any | null>(null);
   const [registeredNodes, setRegisteredNodes] = useState<RegisteredNode[]>([]);
   const [taskEvents, setTaskEvents] = useState<TaskEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [streamStatus, setStreamStatus] = useState<StreamStatus>("idle");
   const lastAutoValidatedIdRef = useRef("");
+  const streamRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
     void loadRegisteredNodes();
@@ -59,21 +64,15 @@ export default function ValidateTaskPage({ initialTaskId = "", activeNetwork }: 
     }
   }
 
-  async function handleValidate() {
-    const normalizedTaskId = taskId.trim();
-    if (!normalizedTaskId) {
-      setError("Insert a task id.");
-      setTask(null);
-      setTaskEvents([]);
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-    setTask(null);
-    setTaskEvents([]);
-
+  async function fetchTaskSnapshot(normalizedTaskId: string, resetState = true): Promise<boolean> {
     try {
+      if (resetState) {
+        setLoading(true);
+        setError("");
+        setTask(null);
+        setTaskEvents([]);
+      }
+
       const taskRes = await fetch(
         `${API_BASE}/api/task/${encodeURIComponent(normalizedTaskId)}?network=${encodeURIComponent(activeNetwork)}`,
       );
@@ -106,11 +105,32 @@ export default function ValidateTaskPage({ initialTaskId = "", activeNetwork }: 
 
       setTask(taskData);
       setTaskEvents(Array.isArray(eventsData?.events) ? eventsData.events : []);
+      setValidatedTaskId(normalizedTaskId);
+      setStreamStatus((current) => (current === "idle" ? "connecting" : current));
+      setError("");
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setValidatedTaskId("");
+      setStreamStatus("idle");
+      return false;
     } finally {
-      setLoading(false);
+      if (resetState) setLoading(false);
     }
+  }
+
+  async function handleValidate() {
+    const normalizedTaskId = taskId.trim();
+    if (!normalizedTaskId) {
+      setError("Insert a task id.");
+      setTask(null);
+      setTaskEvents([]);
+      setValidatedTaskId("");
+      setStreamStatus("idle");
+      return;
+    }
+
+    await fetchTaskSnapshot(normalizedTaskId, true);
   }
 
   useEffect(() => {
@@ -122,6 +142,70 @@ export default function ValidateTaskPage({ initialTaskId = "", activeNetwork }: 
     lastAutoValidatedIdRef.current = normalizedInitialTaskId;
     void handleValidate();
   }, [initialTaskId, taskId, loading]);
+
+  useEffect(() => {
+    if (!validatedTaskId) {
+      setStreamStatus("idle");
+      if (streamRef.current) {
+        streamRef.current.close();
+        streamRef.current = null;
+      }
+      return;
+    }
+
+    const source = new EventSource(
+      `${API_BASE}/api/task/${encodeURIComponent(validatedTaskId)}/stream?network=${encodeURIComponent(activeNetwork)}`,
+    );
+    streamRef.current = source;
+    setStreamStatus("connecting");
+
+    source.onopen = () => {
+      setStreamStatus("live");
+    };
+
+    source.addEventListener("snapshot", (event) => {
+      try {
+        const payload = JSON.parse((event as MessageEvent<string>).data);
+        setTask(payload?.task ?? null);
+        setTaskEvents(Array.isArray(payload?.events) ? payload.events : []);
+        setError("");
+        setStreamStatus("live");
+      } catch (streamError) {
+        console.error(streamError);
+      }
+    });
+
+    source.addEventListener("error", (event) => {
+      try {
+        const payload = JSON.parse((event as MessageEvent<string>).data);
+        if (payload?.error) setError(String(payload.error));
+      } catch (streamError) {
+        console.error(streamError);
+      }
+    });
+
+    source.onerror = () => {
+      setStreamStatus("reconnecting");
+    };
+
+    return () => {
+      source.close();
+      if (streamRef.current === source) {
+        streamRef.current = null;
+      }
+    };
+  }, [activeNetwork, validatedTaskId]);
+
+  const liveStatusLabel =
+    streamStatus === "live"
+      ? "Live updates active"
+      : streamStatus === "reconnecting"
+        ? "Reconnecting to live updates..."
+        : streamStatus === "connecting"
+          ? "Connecting to live updates..."
+          : validatedTaskId
+            ? "Live updates paused"
+            : "Waiting for a task id";
 
   return (
     <section className="card">
@@ -145,6 +229,8 @@ export default function ValidateTaskPage({ initialTaskId = "", activeNetwork }: 
           {loading ? "Loading..." : "Validate"}
         </button>
       </div>
+
+      <div className={`validate-live-status validate-live-status-${streamStatus}`}>{liveStatusLabel}</div>
 
       {error ? <div className="alert alert-error">{error}</div> : null}
 

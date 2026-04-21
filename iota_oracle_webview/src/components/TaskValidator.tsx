@@ -299,6 +299,17 @@ function previewHex(value: unknown, chars = 16): string {
   return hex.length > chars ? `${hex.slice(0, chars)}...` : hex;
 }
 
+function singleLinePreview(value: unknown, maxLength = 80): string {
+  const pretty = prettyResultText(value) ?? maybeDecodeText(value);
+  if (pretty) {
+    const compact = pretty.replace(/\s+/g, " ").trim();
+    return compact.length > maxLength ? `${compact.slice(0, maxLength)}...` : compact;
+  }
+
+  const hex = previewHex(value, maxLength);
+  return hex || "";
+}
+
 function describeReasonCode(reasonCode: number): { label: string; description: string; tone: EventTone } {
   switch (reasonCode) {
     case 1:
@@ -878,6 +889,57 @@ export default function TaskValidator({ task, registeredNodes, events = [] }: Pr
     [selectedResult, task?.result, task?.result_bytes],
   );
 
+  const signerOutputPreviewByAddress = useMemo(() => {
+    const byAddress = new Map<string, { preview: string; timestamp: number }>();
+    const selectedProducedAt = fieldNumber({ value: selectedResult?.produced_at_ms }, "value");
+
+    for (const evt of events ?? []) {
+      const raw = asRecord(evt.parsedJson);
+      if (!raw || eventTypeName(evt.type) !== "OracleMessage") continue;
+
+      const kind = fieldNumber(raw, "kind", "message_kind");
+      if (kind !== 3) continue;
+
+      const sender = normalizeAddress(fieldString(raw, "sender") || evt.sender || "");
+      if (!sender) continue;
+
+      const timestamp = fieldNumber({ value: evt.timestampMs }, "value") ?? 0;
+      if (selectedProducedAt != null && selectedProducedAt > 0 && timestamp > selectedProducedAt) continue;
+
+      const preview = singleLinePreview(raw.payload, 96);
+      if (!preview) continue;
+
+      const current = byAddress.get(sender);
+      if (!current || timestamp >= current.timestamp) {
+        byAddress.set(sender, { preview, timestamp });
+      }
+    }
+
+    if (byAddress.size > 0 || selectedProducedAt == null || selectedProducedAt <= 0) return byAddress;
+
+    for (const evt of events ?? []) {
+      const raw = asRecord(evt.parsedJson);
+      if (!raw || eventTypeName(evt.type) !== "OracleMessage") continue;
+
+      const kind = fieldNumber(raw, "kind", "message_kind");
+      if (kind !== 3) continue;
+
+      const sender = normalizeAddress(fieldString(raw, "sender") || evt.sender || "");
+      if (!sender) continue;
+
+      const timestamp = fieldNumber({ value: evt.timestampMs }, "value") ?? 0;
+      const preview = singleLinePreview(raw.payload, 96);
+      if (!preview) continue;
+
+      const current = byAddress.get(sender);
+      if (!current || timestamp >= current.timestamp) {
+        byAddress.set(sender, { preview, timestamp });
+      }
+    }
+
+    return byAddress;
+  }, [events, selectedResult?.produced_at_ms]);
+
   const explainedEvents = useMemo(
     () => (events ?? []).map((evt) => explainEvent(evt, task, registeredNodes)),
     [events, task, registeredNodes],
@@ -901,7 +963,9 @@ export default function TaskValidator({ task, registeredNodes, events = [] }: Pr
             <tr>
               <td>Address validation</td>
               <td>
-                {validation.addressStatus === "match"
+                {!validation.storedAddress && !validation.derivedAddress
+                  ? "-"
+                  : validation.addressStatus === "match"
                   ? "VALID"
                   : validation.addressStatus === "stored_is_signer"
                     ? "WARNING - stored multisig_addr matches a signer address, not the derived multisig address"
@@ -923,7 +987,7 @@ export default function TaskValidator({ task, registeredNodes, events = [] }: Pr
                       ? "INVALID - signer outside assigned node set"
                       : validation.certificateStatus === "duplicate_signer"
                         ? "INVALID - duplicate signer"
-                        : "INVALID - empty signer set"}
+                        : "-"}
               </td>
             </tr>
             <tr>
@@ -1093,6 +1157,7 @@ export default function TaskValidator({ task, registeredNodes, events = [] }: Pr
               <th>Signer</th>
               <th>Found</th>
               <th>Address</th>
+              <th>Output preview</th>
               <th>Pubkey</th>
               <th>Error</th>
             </tr>
@@ -1100,20 +1165,28 @@ export default function TaskValidator({ task, registeredNodes, events = [] }: Pr
           <tbody>
             {validation.signerRows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="empty">
+                <td colSpan={6} className="empty">
                   No certificate signers
                 </td>
               </tr>
             ) : (
-              validation.signerRows.map((row: any) => (
-                <tr key={row.signerId}>
-                  <td>{row.signerId}</td>
-                  <td>{row.found ? "YES" : "NO"}</td>
-                  <td>{row.address || "-"}</td>
-                  <td>{row.pubkeyBase64 || "-"}</td>
-                  <td>{row.error || "-"}</td>
-                </tr>
-              ))
+              validation.signerRows.map((row: any) => {
+                const previewKey = normalizeAddress(row.address || row.signerId);
+                const outputPreview = signerOutputPreviewByAddress.get(previewKey)?.preview || "-";
+
+                return (
+                  <tr key={row.signerId}>
+                    <td>{row.signerId}</td>
+                    <td>{row.found ? "YES" : "NO"}</td>
+                    <td>{row.address || "-"}</td>
+                    <td title={outputPreview} className="mono">
+                      {outputPreview}
+                    </td>
+                    <td>{row.pubkeyBase64 || "-"}</td>
+                    <td>{row.error || "-"}</td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
