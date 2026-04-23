@@ -136,7 +136,18 @@ cd "${PROJECT_DIR}"
 for line in "${SELECTED_LINES[@]}"; do
   PROPOSAL_ID="$(printf "%s" "$line" | cut -f1)"
   TEMPLATE_ID="$(printf "%s" "$line" | cut -f2)"
-  npm run cli -- accept-template-proposal --node "${NODE_ID}" --proposal-id "${PROPOSAL_ID}" --template-id "${TEMPLATE_ID}"
+  if OUTPUT="$(npm run cli -- accept-template-proposal --node "${NODE_ID}" --proposal-id "${PROPOSAL_ID}" --template-id "${TEMPLATE_ID}" 2>&1)"; then
+    printf "%s\n" "$OUTPUT"
+    continue
+  fi
+
+  printf "%s\n" "$OUTPUT" >&2
+  if printf "%s" "$OUTPUT" | grep -Eq 'Abort Code: 63|EAlreadyApproved'; then
+    echo "[warn] proposal_id=${PROPOSAL_ID} template_id=${TEMPLATE_ID} was already approved by node ${NODE_ID}; skipping." >&2
+    continue
+  fi
+
+  exit 1
 done
 
 echo ""

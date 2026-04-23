@@ -61,7 +61,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PROPOSER_SCRIPT="${SCRIPT_DIR}/propose_template_from_json.sh"
 REPO_ROOT="$(cd "${PROJECT_DIR}/.." && pwd)"
-DEVNET_SYSTEM_STATE_REPORT="${REPO_ROOT}/move/devnet/oracle_system_state_devnet/devnet_system_state.txt"
 
 [[ -f "$PROPOSER_SCRIPT" ]] || { echo "[error] proposer script not found: $PROPOSER_SCRIPT" >&2; exit 1; }
 
@@ -121,6 +120,24 @@ get_prefixed_env() {
   printf "%s" "${!key:-}"
 }
 
+network_system_state_report() {
+  case "$NETWORK" in
+    devnet) printf "%s" "${REPO_ROOT}/move/devnet/oracle_system_state_devnet/devnet_system_state.txt" ;;
+    testnet) printf "%s" "${REPO_ROOT}/move/testnet/oracle_system_state_testnet/testnet_system_state.txt" ;;
+    *) return 1 ;;
+  esac
+}
+
+sync_iota_cli_env() {
+  command -v iota >/dev/null 2>&1 || { echo "[error] iota CLI not found" >&2; exit 1; }
+  local active_env=""
+  active_env="$(iota client active-env 2>/dev/null | tr -d '\r' | xargs || true)"
+  if [[ "$active_env" != "$NETWORK" ]]; then
+    echo "[info] switching iota client env: ${active_env:-<unset>} -> ${NETWORK}"
+    iota client switch --env "$NETWORK" >/dev/null
+  fi
+}
+
 controller_cap_id_from_report() {
   local report_file="$1"
   [[ -f "$report_file" ]] || return 1
@@ -165,9 +182,11 @@ fi
 [[ -n "$CONTROLLER_ADDRESS_OR_ALIAS" ]] || { echo "[error] missing controller address/alias in env and active-address unavailable" >&2; exit 1; }
 
 EXPECTED_CONTROLLER_CAP_TYPE="${SYSTEM_PKG}::systemState::ControllerCap"
+REPORT_FILE="$(network_system_state_report || true)"
+sync_iota_cli_env
 CURRENT_CONTROLLER_CAP_TYPE="$(read_object_type "${CONTROLLER_CAP_ID}" || true)"
 if [[ "$CURRENT_CONTROLLER_CAP_TYPE" != "$EXPECTED_CONTROLLER_CAP_TYPE" ]]; then
-  REPORT_CONTROLLER_CAP_ID="$(controller_cap_id_from_report "$DEVNET_SYSTEM_STATE_REPORT" || true)"
+  REPORT_CONTROLLER_CAP_ID="$(controller_cap_id_from_report "$REPORT_FILE" || true)"
   if [[ -n "$REPORT_CONTROLLER_CAP_ID" ]]; then
     REPORT_CONTROLLER_CAP_TYPE="$(read_object_type "${REPORT_CONTROLLER_CAP_ID}" || true)"
     if [[ "$REPORT_CONTROLLER_CAP_TYPE" == "$EXPECTED_CONTROLLER_CAP_TYPE" ]]; then
@@ -180,7 +199,7 @@ fi
 
 [[ "$(read_object_type "${CONTROLLER_CAP_ID}" || true)" == "$EXPECTED_CONTROLLER_CAP_TYPE" ]] || {
   echo "[error] CONTROLLER_CAP_ID=${CONTROLLER_CAP_ID} is not ${EXPECTED_CONTROLLER_CAP_TYPE}" >&2
-  echo "[error] rerun update_devnet_envs.sh or fix the .env manually." >&2
+  echo "[error] rerun update_${NETWORK}_envs.sh or fix the .env manually." >&2
   exit 1
 }
 

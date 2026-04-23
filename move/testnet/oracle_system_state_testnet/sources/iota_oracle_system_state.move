@@ -806,6 +806,9 @@ module iota_oracle_system_state::systemState {
             if (!devnet_mode && n.validator_controller_cap_id == validator_cap_id && n.addr != oracle_addr) {
                 abort EValidatorCapAlreadyRegistered
             };
+            if (!devnet_mode && n.delegated_controller_cap_id == delegated_cap_id && n.addr != oracle_addr) {
+                abort EDelegatedCapInUse
+            };
 
             if (
                 (!devnet_mode && n.validator_controller_cap_id == validator_cap_id) ||

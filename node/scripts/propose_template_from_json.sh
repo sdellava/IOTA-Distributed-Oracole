@@ -124,7 +124,6 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 REPO_ROOT="$(cd "${PROJECT_DIR}/.." && pwd)"
-DEVNET_SYSTEM_STATE_REPORT="${REPO_ROOT}/move/devnet/oracle_system_state_devnet/devnet_system_state.txt"
 
 if [[ -z "$ENV_FILE" && -f "${PROJECT_DIR}/.env" ]]; then
   ENV_FILE="${PROJECT_DIR}/.env"
@@ -177,6 +176,14 @@ get_prefixed_env() {
   printf "%s" "${!key:-}"
 }
 
+network_system_state_report() {
+  case "$NETWORK" in
+    devnet) printf "%s" "${REPO_ROOT}/move/devnet/oracle_system_state_devnet/devnet_system_state.txt" ;;
+    testnet) printf "%s" "${REPO_ROOT}/move/testnet/oracle_system_state_testnet/testnet_system_state.txt" ;;
+    *) return 1 ;;
+  esac
+}
+
 if [[ -z "$SYSTEM_PKG" ]]; then
   SYSTEM_PKG="$(get_prefixed_env ORACLE_SYSTEM_PACKAGE_ID)"
 fi
@@ -214,6 +221,15 @@ fi
 command -v iota >/dev/null 2>&1 || { echo "[error] iota CLI not found" >&2; exit 1; }
 command -v node >/dev/null 2>&1 || { echo "[error] node not found" >&2; exit 1; }
 
+sync_iota_cli_env() {
+  local active_env=""
+  active_env="$(iota client active-env 2>/dev/null | tr -d '\r' | xargs || true)"
+  if [[ -n "$NETWORK" && "$active_env" != "$NETWORK" ]]; then
+    echo "[info] switching iota client env: ${active_env:-<unset>} -> ${NETWORK}" >&2
+    iota client switch --env "$NETWORK" >/dev/null
+  fi
+}
+
 controller_cap_id_from_report() {
   local report_file="$1"
   [[ -f "$report_file" ]] || return 1
@@ -231,6 +247,7 @@ read_object_type() {
     | node -e '
 const fs = require("fs");
 const txt = fs.readFileSync(0, "utf8");
+if (!txt.trim().startsWith("{")) process.exit(0);
 const data = JSON.parse(txt);
 const type = data?.data?.type ?? data?.type ?? data?.content?.type ?? "";
 if (type) process.stdout.write(String(type));
@@ -242,6 +259,9 @@ validate_or_resolve_controller_cap() {
   local expected_type="${SYSTEM_PKG}::systemState::ControllerCap"
   local resolved_id="$current_id"
   local current_type=""
+  local report_file=""
+
+  report_file="$(network_system_state_report || true)"
 
   if [[ -n "$resolved_id" ]]; then
     current_type="$(read_object_type "$resolved_id" || true)"
@@ -253,7 +273,7 @@ validate_or_resolve_controller_cap() {
   fi
 
   local report_id=""
-  report_id="$(controller_cap_id_from_report "$DEVNET_SYSTEM_STATE_REPORT" || true)"
+  report_id="$(controller_cap_id_from_report "$report_file" || true)"
   if [[ -n "$report_id" ]]; then
     local report_type=""
     report_type="$(read_object_type "$report_id" || true)"
@@ -274,11 +294,12 @@ validate_or_resolve_controller_cap() {
   if [[ -n "$report_id" ]]; then
     echo "[error] publish report candidate exists but could not be validated: ${report_id}" >&2
   fi
-  echo "[error] update CONTROLLER_CAP_ID in your .env or rerun update_devnet_envs.sh." >&2
+  echo "[error] update CONTROLLER_CAP_ID in your .env or rerun update_${NETWORK:-current}_envs.sh." >&2
   exit 1
 }
 
 FULL_JSON_PATH="$(cd "$(dirname "$TEMPLATE_JSON")" && pwd)/$(basename "$TEMPLATE_JSON")"
+sync_iota_cli_env
 CONTROLLER_CAP_ID="$(validate_or_resolve_controller_cap "$CONTROLLER_CAP_ID")"
 
 current_proposal_counter() {
@@ -307,6 +328,7 @@ template_status() {
   if [[ -n "$NETWORK" ]]; then
     args+=(--network "$NETWORK")
   fi
+  args+=(--state-id "$STATE_ID")
   local output=""
   local attempt=1
   local max_attempts=3
@@ -399,8 +421,12 @@ read -r TEMPLATE_ID TASK_TYPE IS_ENABLED BASE_PRICE SCHEDULER_FEE MAX_INPUT MAX_
 if [[ "$ALLOW_DUPLICATE" -ne 1 ]]; then
   STATUS="$(template_status "$TEMPLATE_ID")"
   if [[ "$STATUS" == "approved" ]]; then
-    echo "[skip] template_id=${TEMPLATE_ID} already approved. Use --allow-duplicate to force."
-    exit 0
+    if [[ "$NETWORK" == "devnet" ]]; then
+      echo "[warn] template_id=${TEMPLATE_ID} appears already approved on state_id=${STATE_ID}, but devnet duplicate checks are advisory. Continuing."
+    else
+      echo "[skip] template_id=${TEMPLATE_ID} already approved. Use --allow-duplicate to force."
+      exit 0
+    fi
   fi
   if [[ "$STATUS" == "pending" ]]; then
     echo "[skip] template_id=${TEMPLATE_ID} already pending for upsert. Use --allow-duplicate to force."

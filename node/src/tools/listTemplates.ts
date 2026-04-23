@@ -40,6 +40,7 @@ function parseArgs(argv: string[]) {
   const raw = argv.slice(2);
   const flags = new Set<string>();
   let network: OracleNetwork | null = null;
+  let stateId: string | null = null;
 
   for (let i = 0; i < raw.length; i += 1) {
     const token = String(raw[i] ?? "").trim();
@@ -63,6 +64,21 @@ function parseArgs(argv: string[]) {
       continue;
     }
 
+    if (normalized === "--state-id") {
+      const next = String(raw[i + 1] ?? "").trim();
+      if (!next) throw new Error("Missing value for --state-id");
+      i += 1;
+      stateId = next;
+      continue;
+    }
+
+    if (normalized.startsWith("--state-id=")) {
+      const next = token.slice("--state-id=".length).trim();
+      if (!next) throw new Error("Missing value for --state-id");
+      stateId = next;
+      continue;
+    }
+
     flags.add(normalized);
   }
 
@@ -72,6 +88,7 @@ function parseArgs(argv: string[]) {
     json: flags.has("--json"),
     help: flags.has("--help") || flags.has("-h"),
     network,
+    stateId,
   };
 }
 
@@ -175,8 +192,8 @@ async function withRetry<T>(label: string, fn: () => Promise<T>, maxAttempts = 3
   throw lastError;
 }
 
-async function getStateFields() {
-  const stateId = getStateId();
+async function getStateFields(stateIdOverride?: string | null) {
+  const stateId = String(stateIdOverride ?? "").trim() || getStateId();
   const client = iotaClient();
   const res: any = await withRetry("getObject(state)", () =>
     client.getObject({
@@ -287,10 +304,11 @@ function getPendingProposals(fields: Record<string, unknown>): PendingProposal[]
 
 function printHelp() {
   console.log(`Usage:
-  npm exec tsx src/tools/listTemplates.ts [--network devnet|testnet|mainnet] [--pending] [--pending-only] [--json]
+  npm exec tsx src/tools/listTemplates.ts [--network devnet|testnet|mainnet] [--state-id 0x...] [--pending] [--pending-only] [--json]
 
 Options:
   --network      Force network for env resolution (sets IOTA_NETWORK for this process)
+  --state-id     Override the oracle state object id to inspect
   --pending       Also show pending template proposals
   --pending-only  Show only pending proposal details
   --json          Print JSON output
@@ -308,7 +326,7 @@ async function main() {
     process.env.IOTA_NETWORK = args.network;
   }
 
-  const { client, stateId, fields } = await getStateFields();
+  const { client, stateId, fields } = await getStateFields(args.stateId);
   const pending = getPendingProposals(fields);
   const approved = await listTemplateDynamicFields(client, stateId);
   const resolvedNetwork = normalizeNetwork(String(process.env.IOTA_NETWORK ?? "")) ?? "mainnet";
