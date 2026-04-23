@@ -1,0 +1,53 @@
+{
+  "template_id": 11,
+  "type": "GET_HTML_STRIP_DYNAMIC",
+  "requested_nodes": 3,
+  "request": {
+    "method": "GET",
+    "url": "https://www.example.com/",
+    "headers": {
+      "accept": "text/html,*/*"
+    }
+  },
+  "normalization": {
+    "kind": "html_text",
+    "stripScripts": true,
+    "stripStyles": true,
+    "stripComments": true,
+    "removeSelectors": ["script", "style", "noscript", "header", "footer", "nav"],
+    "dropTextPatterns": [
+      "\\b\\d{1,2}:\\d{2}(:\\d{2})?\\b",
+      "\\b\\d{4}-\\d{2}-\\d{2}(T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z)?\\b",
+      "\\bLast\\s+updated\\b.*",
+      "\\bUpdated\\b.*"
+    ],
+    "trim": true,
+    "collapseWhitespace": true,
+    "lineEnding": "lf"
+  },
+  "consensus": {
+    "mode": "exact_hash",
+    "quorum": {
+      "type": "pct",
+      "value": 0.6
+    }
+  },
+  "timeouts": {
+    "step1Ms": 15000
+  },
+  "template": {
+    "type": "GET_HTML_STRIP_DYNAMIC",
+    "template_id": 11,
+    "is_enabled": 1,
+    "base_price_iota": 1000000000,
+    "scheduler_fee_iota": 21323200,
+    "max_input_bytes": 8192,
+    "max_output_bytes": 8192,
+    "included_download_bytes": 8192,
+    "price_per_download_byte_iota": 0,
+    "allow_storage": 0,
+    "min_retention_days": 0,
+    "max_retention_days": 0,
+    "price_per_retention_day_iota": 0
+  }
+}

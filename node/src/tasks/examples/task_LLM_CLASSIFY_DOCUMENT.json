@@ -1,0 +1,90 @@
+{
+  "template_id": 6,
+  "type": "LLM_CLASSIFY_DOCUMENT",
+  "requested_nodes": 3,
+  "source": {
+    "kind": "document_url",
+    "mimeType": "application/pdf",
+    "url": "https://raw.githubusercontent.com/invoice-x/invoice2data/master/tests/compare/AmazonWebServices.pdf",
+    "pdf": {
+      "pageRange": [1, 1],
+      "extractText": true,
+      "ocrFallback": false
+    }
+  },
+  "llm": {
+    "task": "classify_document",
+    "temperature": 0,
+    "top_p": 1,
+    "max_output_tokens": 150,
+    "rules": {
+      "return_json_only": true
+    },
+    "labels": [
+      "commercial_invoice",
+      "bill_of_lading",
+      "certificate_of_analysis",
+      "technical_specification",
+      "warranty",
+      "shipping_document",
+      "generic"
+    ],
+    "output_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document_class", "is_blank_template", "language"],
+      "properties": {
+        "document_class": {
+          "type": "string",
+          "enum": [
+            "commercial_invoice",
+            "bill_of_lading",
+            "certificate_of_analysis",
+            "technical_specification",
+            "warranty",
+            "shipping_document",
+            "generic"
+          ]
+        },
+        "is_blank_template": {
+          "type": "boolean"
+        },
+        "language": {
+          "type": "string",
+          "enum": ["en", "it", "de", "fr", "es", "unknown"]
+        }
+      }
+    }
+  },
+  "normalization": {
+    "kind": "json",
+    "canonical": true,
+    "dropNulls": false,
+    "sortArrays": true
+  },
+  "consensus": {
+    "mode": "exact_hash",
+    "quorum": {
+      "type": "pct",
+      "value": 0.6
+    }
+  },
+  "timeouts": {
+    "step1Ms": 20000
+  },
+  "template": {
+    "type": "LLM_CLASSIFY_DOCUMENT",
+    "template_id": 6,
+    "is_enabled": 1,
+    "base_price_iota": 1000000000,
+    "scheduler_fee_iota": 21323200,
+    "max_input_bytes": 8192,
+    "max_output_bytes": 8192,
+    "included_download_bytes": 8192,
+    "price_per_download_byte_iota": 0,
+    "allow_storage": 0,
+    "min_retention_days": 0,
+    "max_retention_days": 0,
+    "price_per_retention_day_iota": 0
+  }
+}

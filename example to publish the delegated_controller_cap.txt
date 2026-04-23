@@ -1,5 +1,5 @@
-bash ./iota_oracle_node/scripts/create_delegated_controller_cap.sh \
+bash ./node/scripts/create_delegated_controller_cap.sh \
   --network testnet \
   --validator-address 0x13f11b0548895a8514324f9f3c07c8f50725491f30c39d374ee7952a74cf9585 \
-  --node-address 0xed4526b7124624d08ca484af220aecfc45e37158734650a1d13f4b93dd1b0728 \
+  --node-address 0x4ae18622938825fd16b09bfec317c485159f2f5224c2f0f2daa66f19997f7552 \
   --validator-cap-id 0xf21a123d59e610336b78e8e644d58864faa8d9cd9942202c7e1d0911375eab79

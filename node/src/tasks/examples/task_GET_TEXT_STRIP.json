@@ -1,0 +1,43 @@
+{
+  "template_id": 9,
+  "type": "GET_TEXT_STRIP",
+  "requested_nodes": 3,
+  "request": {
+    "method": "GET",
+    "url": "https://www.w3.org/TR/2003/REC-PNG-20031110/iso_8859-1.txt",
+    "headers": {
+      "accept": "text/plain,*/*"
+    }
+  },
+  "normalization": {
+    "kind": "text",
+    "trim": true,
+    "collapseWhitespace": true,
+    "lineEnding": "lf"
+  },
+  "consensus": {
+    "mode": "exact_hash",
+    "quorum": {
+      "type": "pct",
+      "value": 0.6
+    }
+  },
+  "timeouts": {
+    "step1Ms": 10000
+  },
+  "template": {
+    "type": "GET_TEXT_STRIP",
+    "template_id": 9,
+    "is_enabled": 1,
+    "base_price_iota": 1000000000,
+    "scheduler_fee_iota": 21323200,
+    "max_input_bytes": 8192,
+    "max_output_bytes": 8192,
+    "included_download_bytes": 8192,
+    "price_per_download_byte_iota": 0,
+    "allow_storage": 0,
+    "min_retention_days": 0,
+    "max_retention_days": 0,
+    "price_per_retention_day_iota": 0
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "template_id": 7,
+  "type": "LLM_RISK_SCORE",
+  "requested_nodes": 3,
+  "source": {
+    "kind": "document_url",
+    "mimeType": "application/pdf",
+    "url": "https://www.gsa.gov/cdnstatic/SF_1103.pdf",
+    "pdf": {
+      "pageRange": [1, 1],
+      "extractText": true,
+      "ocrFallback": false
+    }
+  },
+  "llm": {
+    "task": "risk_score",
+    "temperature": 0,
+    "top_p": 1,
+    "max_output_tokens": 80,
+    "rules": {
+      "return_json_only": true,
+      "score_min": 0,
+      "score_max": 10000,
+      "score_definition": "0 means operationally complete and low-risk, 10000 means incomplete or unusable for processing",
+      "output_must_contain_only_score": true
+    },
+    "output_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["risk_score_bps"],
+      "properties": {
+        "risk_score_bps": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        }
+      }
+    }
+  },
+  "normalization": {
+    "kind": "json",
+    "canonical": true,
+    "dropNulls": false,
+    "sortArrays": true
+  },
+  "consensus": {
+    "mode": "exact_hash",
+    "quorum": {
+      "type": "pct",
+      "value": 0.6
+    },
+    "numericPath": "risk_score_bps"
+  },
+  "mediation": {
+    "mode": "mean_u64",
+    "varianceMax": 1200,
+    "numericPath": "risk_score_bps"
+  },
+  "timeouts": {
+    "step1Ms": 20000
+  },
+  "template": {
+    "type": "LLM_RISK_SCORE",
+    "template_id": 7,
+    "is_enabled": 1,
+    "base_price_iota": 1000000000,
+    "scheduler_fee_iota": 21323200,
+    "max_input_bytes": 8192,
+    "max_output_bytes": 8192,
+    "included_download_bytes": 8192,
+    "price_per_download_byte_iota": 0,
+    "allow_storage": 0,
+    "min_retention_days": 0,
+    "max_retention_days": 0,
+    "price_per_retention_day_iota": 0
+  }
+}

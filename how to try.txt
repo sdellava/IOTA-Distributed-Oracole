@@ -1,17 +1,17 @@
 open a new terminal and execute:
-cd ./iota_oracle_node
+cd ./node
 npm run dev -- --node 1
 
 open a new terminal and execute:
-cd ./iota_oracle_node
+cd ./node
 npm run dev -- --node 2
 
 open a new terminal and execute:
-cd ./iota_oracle_node
+cd ./node
 npm run dev -- --node 3
 
 open a new terminal and execute:
-cd ./iota_oracle_client
+cd ./client
 npm run create -- .\examples\task_2nodes.json
 
 npm run create -- .\examples\task_GET_HTML_STRIP_DYNAMIC.json

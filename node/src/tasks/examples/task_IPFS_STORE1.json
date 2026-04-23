@@ -1,0 +1,42 @@
+{
+  "template_id": 4,
+  "type": "STORAGE",
+  "requested_nodes": 3,
+  "retention_days": 30,
+  "source": {
+    "kind": "url",
+    "url": "https://bifrangi.it/wp-content/uploads/2021/03/DNV-GL.pdf",
+    "method": "GET",
+    "headers": {
+      "Accept": "application/pdf,*/*",
+      "User-Agent": "Mozilla/5.0"
+    }
+  },
+  "fileName": "DNV-GL.pdf.pdf",
+  "mimeType": "application/pdf",
+  "consensus": {
+    "mode": "exact_hash",
+    "quorum": {
+      "type": "pct",
+      "value": 0.6
+    }
+  },
+  "timeouts": {
+    "step1Ms": 30000
+  },
+  "template": {
+    "type": "STORAGE",
+    "template_id": 4,
+    "is_enabled": 1,
+    "base_price_iota": 0,
+    "scheduler_fee_iota": 21323200,
+    "max_input_bytes": 8192,
+    "max_output_bytes": 10485760,
+    "included_download_bytes": 10485760,
+    "price_per_download_byte_iota": 0,
+    "allow_storage": 1,
+    "min_retention_days": 30,
+    "max_retention_days": 365,
+    "price_per_retention_day_iota": 347034
+  }
+}
