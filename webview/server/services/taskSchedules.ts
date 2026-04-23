@@ -46,10 +46,14 @@ function statusLabel(status: number): string {
       return "ACTIVE";
     case 2:
       return "SUSPENDED";
+    case 3:
+      return "DEPLETED";
     case 9:
       return "CANCELLED";
     case 10:
       return "ENDED";
+    case 11:
+      return "COMPLETED";
     default:
       return String(status || "-");
   }

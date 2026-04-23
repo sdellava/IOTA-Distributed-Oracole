@@ -1394,6 +1394,15 @@ async function serializeTransactionForWallet(tx: Transaction, client: AnyClient)
 }
 
 async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?: string) {
+  return prepareCreateTaskPlanWithOptions(client, sender, taskArg, { skipBalanceCheck: false });
+}
+
+async function prepareCreateTaskPlanWithOptions(
+  client: AnyClient,
+  sender: string,
+  taskArg: string | undefined,
+  options: { skipBalanceCheck: boolean },
+) {
   const tasksPkg = getTasksPackageId();
   const systemPkg = getSystemPackageId();
   const registryId = getTaskRegistryId();
@@ -1429,7 +1438,7 @@ async function prepareCreateTaskPlan(client: AnyClient, sender: string, taskArg?
   const balance = await fetchIotaBalance(client, sender);
   const treasuryBalanceBefore = await fetchTreasuryBalance(client, treasuryId, systemPkg);
   const needed = requiredPerRun + gasBudget;
-  if (balance < needed) {
+  if (!options.skipBalanceCheck && balance < needed) {
     throw new Error(
       `Insufficient IOTA for address ${sender}: balance=${balance.toString()} required_per_run=${requiredPerRun.toString()} gas_budget=${gasBudget.toString()} total_needed=${needed.toString()}`,
     );
@@ -1489,7 +1498,7 @@ async function runPrepareTaskScheduleWebview(
   }
 
   const client = iotaClient() as AnyClient;
-  const plan = await prepareCreateTaskPlan(client, normalizedSender, taskArg);
+  const plan = await prepareCreateTaskPlanWithOptions(client, normalizedSender, taskArg, { skipBalanceCheck: true });
   const schedule = normalizeScheduleInput(
     loadJsonArg(
       scheduleArg,
@@ -1603,7 +1612,7 @@ async function runPrepareWebview(taskArg: string | undefined, sender: string | u
   }
 
   const client = iotaClient() as AnyClient;
-  const plan = await prepareCreateTaskPlan(client, normalizedSender, taskArg);
+  const plan = await prepareCreateTaskPlanWithOptions(client, normalizedSender, taskArg, { skipBalanceCheck: true });
   const orderedNames = await pickCreateTaskVariant(client, normalizedSender, plan.builders);
   const variant = orderedNames[0];
   if (!variant) throw new Error("Unable to determine a create_task variant for webview preparation");

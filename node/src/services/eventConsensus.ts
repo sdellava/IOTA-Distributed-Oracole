@@ -59,10 +59,11 @@ export async function waitForCommitQuorum(opts: {
 }
 
 export async function waitForRevealResolution(opts: {
-  client: IotaClient; taskId: string; round: number; assignedNodes: string[]; quorumK: number; waitMs: number; pollMs: number; minTimestampMs?: number;
+  client: IotaClient; taskId: string; round: number; assignedNodes: string[]; quorumK: number; waitMs: number; pollMs: number; minTimestampMs?: number; extraCollectMs?: number;
 }) {
   const until = Date.now() + opts.waitMs;
   const assigned = new Set(opts.assignedNodes.map((x) => x.toLowerCase()));
+  let quorumReachedAt = 0;
   while (Date.now() < until) {
     const msgs = await readOracleMessages(opts.client, opts.taskId, opts.round, { minTimestampMs: opts.minTimestampMs });
     const reveals = msgs.filter((m) => m.kind === MSG_REVEAL && assigned.has(m.sender));
@@ -81,7 +82,11 @@ export async function waitForRevealResolution(opts: {
       if (!winner || g.messages.length > winner.messages.length) winner = g;
     }
     if (winner && winner.messages.length >= opts.quorumK) {
-      return { ok: true, resultHashHex: winner.hash, reveals: bySender, supporters: winner.messages.map((m) => m.sender), winnerPayload: winner.messages[0].payload };
+      if (!quorumReachedAt) quorumReachedAt = Date.now();
+      const extraCollectMs = Math.max(0, opts.extraCollectMs ?? 0);
+      if (winner.messages.length >= assigned.size || Date.now() >= quorumReachedAt + extraCollectMs) {
+        return { ok: true, resultHashHex: winner.hash, reveals: bySender, supporters: winner.messages.map((m) => m.sender), winnerPayload: winner.messages[0].payload };
+      }
     }
     if (bySender.size >= assigned.size) {
       return { ok: false, reason: 'no_quorum' as const, reveals: bySender };

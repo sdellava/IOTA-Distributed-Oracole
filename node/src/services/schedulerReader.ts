@@ -154,7 +154,7 @@ export async function listDueTasks(
   for (const id of ids) {
     try {
       const task = await readTask(client, id);
-      if (task.status !== 1) continue;
+      if (task.status !== 1 && task.status !== 10) continue;
       if (task.nextRunMs <= 0 || task.nextRunMs > nowMs) continue;
       out.push(task);
     } catch (e: any) {

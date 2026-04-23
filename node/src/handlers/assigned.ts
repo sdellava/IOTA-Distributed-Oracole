@@ -254,7 +254,17 @@ export async function runConsensusRound(
   });
   console.log(`[node ${nodeId}] reveal published tx=${tx3}`);
 
-  const reveal = await waitForRevealResolution({ client, taskId, round, assignedNodes, quorumK, waitMs, pollMs, minTimestampMs: runStartedAtMs });
+  const reveal = await waitForRevealResolution({
+    client,
+    taskId,
+    round,
+    assignedNodes,
+    quorumK,
+    waitMs,
+    pollMs,
+    minTimestampMs: runStartedAtMs,
+    extraCollectMs: optInt("REVEAL_EXTRA_COLLECT_MS", 2_500),
+  });
   if (!reveal.ok) {
     console.log(`[node ${nodeId}] no winning reveal: ${reveal.reason}`);
     let mediationStarted = false;

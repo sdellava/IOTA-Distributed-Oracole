@@ -83,6 +83,8 @@ function formatIotaAtomic(value: string | null | undefined): string {
 }
 
 function statusClass(item: TaskScheduleItem): string {
+  const hasUpcomingRun = Number(item.nextRunMs || "0") > 0;
+  if (item.status === 10 && hasUpcomingRun) return "is-on";
   const label = item.statusLabel.toLowerCase();
   if (label === "active") return "is-on";
   if (label === "completed" || label === "cancelled") return "is-off";
@@ -181,8 +183,16 @@ function balanceToString(value: unknown): string {
   return "0";
 }
 
-function hasTerminalScheduleStatus(status: number): boolean {
-  return status === 9 || status === 10;
+function hasTerminalScheduleStatus(item: TaskScheduleItem): boolean {
+  const hasUpcomingRun = Number(item.nextRunMs || "0") > 0;
+  if (item.status === 10) return !hasUpcomingRun;
+  return item.status === 9 || item.status === 11;
+}
+
+function displayStatusLabel(item: TaskScheduleItem): string {
+  const hasUpcomingRun = Number(item.nextRunMs || "0") > 0;
+  if (item.status === 10 && hasUpcomingRun) return "SCHEDULED";
+  return item.statusLabel;
 }
 
 function taskItemFromObject(taskId: string, object: any): TaskScheduleItem | null {
@@ -589,6 +599,7 @@ export default function TaskSchedulesPage({
                 {items.map((item) => {
                   const isOwner = connectedAddress && normalizeAddress(item.creator) === connectedAddress;
                   const canShowActions = Boolean(currentAccount && (hasControllerCap || isOwner));
+                  const isTerminal = hasTerminalScheduleStatus(item);
                   const isActive = item.statusLabel.toUpperCase() === "ACTIVE";
                   const isEnded = item.statusLabel.toUpperCase() === "ENDED";
                   const isSuspended = item.statusLabel.toUpperCase() === "SUSPENDED";
@@ -624,7 +635,7 @@ export default function TaskSchedulesPage({
                         <div className="summary-hint">Start {formatMs(item.startScheduleMs)}</div>
                       </td>
                       <td data-label="Status">
-                        <span className={`template-status-badge ${statusClass(item)}`}>{item.statusLabel}</span>
+                        <span className={`template-status-badge ${statusClass(item)}`}>{displayStatusLabel(item)}</span>
                       </td>
                       <td data-label="Template" className="mono">
                         {item.templateId || "-"}
@@ -633,7 +644,7 @@ export default function TaskSchedulesPage({
                         {item.runCount || "0"}
                       </td>
                       <td data-label="Next run">
-                        <div>{hasTerminalScheduleStatus(item.status) ? "-" : formatMs(item.nextRunMs)}</div>
+                        <div>{isTerminal ? "-" : formatMs(item.nextRunMs)}</div>
                         <div className="summary-hint">Last {formatMs(item.lastRunMs)}</div>
                       </td>
                       <td data-label="Interval">{formatIntervalMs(item.intervalMs)}</td>
