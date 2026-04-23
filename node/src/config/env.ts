@@ -7,11 +7,20 @@ export function mustEnv(key: string): string {
   return v;
 }
 
+export function normalizeNetwork(raw: string | undefined | null): "devnet" | "testnet" | "mainnet" | "localnet" | "" {
+  const net = String(raw ?? "").trim().toLowerCase();
+  if (net === "dev" || net === "devnet") return "devnet";
+  if (net === "local" || net === "localnet") return "localnet";
+  if (net === "test" || net === "testnet") return "testnet";
+  if (net === "main" || net === "mainnet") return "mainnet";
+  return "";
+}
+
 export function networkPrefix(): "DEVNET" | "TESTNET" | "MAINNET" | "" {
-  const net = (process.env.IOTA_NETWORK ?? "").trim().toLowerCase();
-  if (net === "dev" || net === "devnet" || net === "local" || net === "localnet") return "DEVNET";
-  if (net === "test" || net === "testnet") return "TESTNET";
-  if (net === "main" || net === "mainnet") return "MAINNET";
+  const net = normalizeNetwork(process.env.IOTA_NETWORK);
+  if (net === "devnet" || net === "localnet") return "DEVNET";
+  if (net === "testnet") return "TESTNET";
+  if (net === "mainnet") return "MAINNET";
   return "";
 }
 
@@ -26,25 +35,25 @@ export function envByNetwork(baseKey: string): string | undefined {
   return undefined;
 }
 
+export function mustEnvByNetwork(baseKey: string, ...fallbackKeys: string[]): string {
+  const candidateKeys = [baseKey, ...fallbackKeys];
+  for (const key of candidateKeys) {
+    const value = envByNetwork(key);
+    if (value) return value;
+  }
+  throw new Error(`Missing env ${candidateKeys.join(" / ")}`);
+}
+
 export function getTasksPackageId(): string {
-  return envByNetwork("ORACLE_TASKS_PACKAGE_ID") || mustEnv("ORACLE_PACKAGE_ID");
+  return mustEnvByNetwork("ORACLE_TASKS_PACKAGE_ID", "ORACLE_PACKAGE_ID");
 }
 
 export function getSystemPackageId(): string {
-  return (
-    envByNetwork("ORACLE_SYSTEM_PACKAGE_ID") ||
-    envByNetwork("ORACLE_PACKAGE_ID") ||
-    mustEnv("ORACLE_PACKAGE_ID")
-  );
+  return mustEnvByNetwork("ORACLE_SYSTEM_PACKAGE_ID", "ORACLE_PACKAGE_ID");
 }
 
 export function getStateId(): string {
-  return (
-    envByNetwork("ORACLE_STATE_ID") ||
-    envByNetwork("ORACLE_STATUS_ID") ||
-    envByNetwork("ORACLE_SYSTEM_STATE_ID") ||
-    mustEnv("ORACLE_STATE_ID")
-  );
+  return mustEnvByNetwork("ORACLE_STATE_ID", "ORACLE_STATUS_ID", "ORACLE_SYSTEM_STATE_ID");
 }
 
 export function getConfiguredNodeRegistryId(): string | undefined {
@@ -52,11 +61,7 @@ export function getConfiguredNodeRegistryId(): string | undefined {
 }
 
 export function getTreasuryId(): string {
-  return (
-    envByNetwork("ORACLE_TREASURY_ID") ||
-    envByNetwork("ORACLE_TREASURY_OBJECT_ID") ||
-    mustEnv("ORACLE_TREASURY_ID")
-  );
+  return mustEnvByNetwork("ORACLE_TREASURY_ID", "ORACLE_TREASURY_OBJECT_ID");
 }
 
 export function getRandomId(): string {
@@ -68,11 +73,11 @@ export function getClockId(): string {
 }
 
 export function getTaskSchedulerQueueId(): string {
-  return envByNetwork("ORACLE_TASK_SCHEDULER_QUEUE_ID") || mustEnv("ORACLE_TASK_SCHEDULER_QUEUE_ID");
+  return mustEnvByNetwork("ORACLE_TASK_SCHEDULER_QUEUE_ID");
 }
 
 export function getTaskRegistryId(): string {
-  return envByNetwork("ORACLE_TASK_REGISTRY_ID") || mustEnv("ORACLE_TASK_REGISTRY_ID");
+  return mustEnvByNetwork("ORACLE_TASK_REGISTRY_ID");
 }
 
 export function defaultEventType(envKey: string, suffix: string): string {

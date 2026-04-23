@@ -44,6 +44,16 @@ function hasScopedNetworkConfig(key: string): boolean {
   );
 }
 
+function hasRuntimeConfig(network: OracleNetwork): boolean {
+  const tasksPackageId = pickNetworkValue(network, "ORACLE_TASKS_PACKAGE_ID");
+  const systemPackageId = pickNetworkValue(network, "ORACLE_SYSTEM_PACKAGE_ID");
+  const stateId =
+    pickNetworkValue(network, "ORACLE_STATE_ID") ||
+    pickNetworkValue(network, "ORACLE_SYSTEM_STATE_ID") ||
+    pickNetworkValue(network, "ORACLE_STATUS_ID");
+  return Boolean(tasksPackageId && systemPackageId && stateId);
+}
+
 const rootDir = process.cwd();
 const clientDir = path.resolve(rootDir, process.env.ORACLE_CLIENT_DIR ?? "../iota_oracle_client");
 const examplesDirRaw = process.env.ORACLE_EXAMPLES_DIR?.trim() || process.env.ORACLE_CLIENT_EXAMPLES_DIR?.trim() || "examples";
@@ -54,9 +64,18 @@ const supportedNetworks = (toList(process.env.VITE_SUPPORTED_NETWORKS) as Oracle
   .filter((n, i, arr) => arr.indexOf(n) === i);
 if (supportedNetworks.length === 0) supportedNetworks.push("mainnet", "testnet", "devnet");
 
-const configuredDefault = normalizeNetwork(process.env.WEBVIEW_DEFAULT_NETWORK ?? process.env.VITE_DEFAULT_NETWORK ?? "mainnet");
-let activeNetwork: OracleNetwork = supportedNetworks.includes(configuredDefault) ? configuredDefault : "mainnet";
-if (!supportedNetworks.includes(activeNetwork)) activeNetwork = supportedNetworks[0]!;
+const envPreferred = normalizeNetwork(process.env.IOTA_NETWORK);
+const configuredDefault = normalizeNetwork(
+  process.env.WEBVIEW_DEFAULT_NETWORK ?? process.env.VITE_DEFAULT_NETWORK ?? "mainnet",
+);
+const preferredOrder = [envPreferred, configuredDefault].filter(
+  (network, index, arr): network is OracleNetwork => Boolean(network) && arr.indexOf(network) === index,
+);
+const firstConfiguredNetwork = supportedNetworks.find((network) => hasRuntimeConfig(network));
+let activeNetwork: OracleNetwork =
+  preferredOrder.find((network) => supportedNetworks.includes(network) && hasRuntimeConfig(network)) ??
+  firstConfiguredNetwork ??
+  (supportedNetworks.includes(configuredDefault) ? configuredDefault : supportedNetworks[0]!);
 
 function pickNetworkValue(network: OracleNetwork, key: string, fallback = ""): string {
   const scopedKey = `${networkPrefix(network)}_${key}`;

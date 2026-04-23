@@ -3,14 +3,20 @@
 
 const CMC_IOTA_SOURCE_URL = "https://coinmarketcap.com/currencies/iota/";
 const CMC_PUBLIC_QUOTE_URL = "https://api.coinmarketcap.com/data-api/v3/cryptocurrency/quote/latest?id=1720";
+const USD_EUR_RATE_URL = "https://api.frankfurter.app/latest?from=USD&to=EUR";
 const DEFAULT_CACHE_TTL_MS = 60_000;
+const DEFAULT_USD_TO_EUR_FALLBACK = 0.92;
 
 export type IotaMarketPrice = {
   symbol: "IOTA";
   quoteCurrency: "USD";
   usdPrice: number;
+  eurPrice: number;
+  usdToEurRate: number;
   sourceName: "CoinMarketCap";
   sourceUrl: string;
+  fxSourceName: string;
+  fxSourceUrl: string;
   fetchedAtIso: string;
   cacheTtlMs: number;
 };
@@ -59,29 +65,58 @@ function extractUsdPriceFromPayload(payload: unknown): number | null {
 }
 
 async function fetchIotaPriceFromCoinMarketCap(ttlMs: number): Promise<IotaMarketPrice> {
-  const response = await fetch(CMC_PUBLIC_QUOTE_URL, {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-    },
-  });
+  const [priceResponse, fxResponse] = await Promise.allSettled([
+    fetch(CMC_PUBLIC_QUOTE_URL, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    }),
+    fetch(USD_EUR_RATE_URL, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    }),
+  ]);
 
-  if (!response.ok) {
-    throw new Error(`CoinMarketCap request failed: HTTP ${response.status}`);
+  if (priceResponse.status !== "fulfilled") {
+    throw new Error(`CoinMarketCap request failed: ${String(priceResponse.reason)}`);
   }
 
-  const payload = await response.json();
+  if (!priceResponse.value.ok) {
+    throw new Error(`CoinMarketCap request failed: HTTP ${priceResponse.value.status}`);
+  }
+
+  const payload = await priceResponse.value.json();
   const usdPrice = extractUsdPriceFromPayload(payload);
   if (usdPrice == null) {
     throw new Error("CoinMarketCap response does not contain a valid IOTA/USD price.");
+  }
+
+  let usdToEurRate =
+    Number(process.env.USD_EUR_FALLBACK_RATE ?? DEFAULT_USD_TO_EUR_FALLBACK) || DEFAULT_USD_TO_EUR_FALLBACK;
+  let fxSourceName = "Fallback";
+
+  if (fxResponse.status === "fulfilled" && fxResponse.value.ok) {
+    const fxPayload = (await fxResponse.value.json()) as { rates?: { EUR?: unknown } };
+    const parsedFx = asFiniteNumber(fxPayload?.rates?.EUR);
+    if (parsedFx != null) {
+      usdToEurRate = parsedFx;
+      fxSourceName = "Frankfurter";
+    }
   }
 
   return {
     symbol: "IOTA",
     quoteCurrency: "USD",
     usdPrice,
+    eurPrice: usdPrice * usdToEurRate,
+    usdToEurRate,
     sourceName: "CoinMarketCap",
     sourceUrl: CMC_IOTA_SOURCE_URL,
+    fxSourceName,
+    fxSourceUrl: USD_EUR_RATE_URL,
     fetchedAtIso: new Date().toISOString(),
     cacheTtlMs: ttlMs,
   };

@@ -178,6 +178,7 @@ module iota_oracle_scheduler::oracle_scheduled_tasks {
     public entry fun reconcile_scheduler_queue(
         queue: &mut SchedulerQueue,
         st: &systemState::State,
+        node_registry: &systemState::NodeRegistry,
         ctx: &mut TxContext
     ) {
         let mut next_nodes = vector::empty<address>();
@@ -185,13 +186,13 @@ module iota_oracle_scheduler::oracle_scheduled_tasks {
         let mut i = 0;
         while (i < vector::length(existing_ref)) {
             let addr = *vector::borrow(existing_ref, i);
-            if (node_supports_scheduler(st, addr) && !contains_address(&next_nodes, addr)) {
+            if (node_supports_scheduler(node_registry, addr) && !contains_address(&next_nodes, addr)) {
                 vector::push_back(&mut next_nodes, addr);
             };
             i = i + 1;
         };
 
-        let nodes_ref = systemState::oracle_nodes(st);
+        let nodes_ref = systemState::oracle_nodes(node_registry);
         let mut j = 0;
         while (j < vector::length(nodes_ref)) {
             let node = vector::borrow(nodes_ref, j);
@@ -216,11 +217,12 @@ module iota_oracle_scheduler::oracle_scheduled_tasks {
     public entry fun start_scheduler_round(
         queue: &mut SchedulerQueue,
         st: &systemState::State,
+        node_registry: &systemState::NodeRegistry,
         clock: &Clock,
         ctx: &mut TxContext
     ) {
         let now = timestamp_ms(clock);
-        reconcile_queue_internal(queue, st);
+        reconcile_queue_internal(queue, node_registry);
         assert!(vector::length(&queue.nodes) > 0, ENoSchedulerNodes);
         let sender = tx_context::sender(ctx);
         assert!(*vector::borrow(&queue.nodes, 0) == sender, ENotHeadScheduler);
@@ -237,11 +239,12 @@ module iota_oracle_scheduler::oracle_scheduled_tasks {
     public entry fun advance_scheduler_queue(
         queue: &mut SchedulerQueue,
         st: &systemState::State,
+        node_registry: &systemState::NodeRegistry,
         clock: &Clock,
         ctx: &mut TxContext
     ) {
         let now = timestamp_ms(clock);
-        reconcile_queue_internal(queue, st);
+        reconcile_queue_internal(queue, node_registry);
         assert!(vector::length(&queue.nodes) > 0, ENoSchedulerNodes);
 
         let sender = tx_context::sender(ctx);
@@ -255,7 +258,7 @@ module iota_oracle_scheduler::oracle_scheduled_tasks {
         };
 
         rotate_head_to_tail(&mut queue.nodes);
-        reconcile_queue_internal(queue, st);
+        reconcile_queue_internal(queue, node_registry);
         assert!(vector::length(&queue.nodes) > 0, ENoSchedulerNodes);
 
         queue.active_round_started_ms = now;
@@ -272,12 +275,13 @@ module iota_oracle_scheduler::oracle_scheduled_tasks {
     public entry fun complete_scheduler_round(
         queue: &mut SchedulerQueue,
         st: &systemState::State,
+        node_registry: &systemState::NodeRegistry,
         clock: &Clock,
         processed_tasks: u64,
         ctx: &mut TxContext
     ) {
         let now = timestamp_ms(clock);
-        reconcile_queue_internal(queue, st);
+        reconcile_queue_internal(queue, node_registry);
         assert!(vector::length(&queue.nodes) > 0, ENoSchedulerNodes);
         let sender = tx_context::sender(ctx);
         assert!(*vector::borrow(&queue.nodes, 0) == sender, ENotHeadScheduler);
@@ -285,7 +289,7 @@ module iota_oracle_scheduler::oracle_scheduled_tasks {
         queue.last_round_completed_ms = now;
         queue.active_round_started_ms = 0;
         rotate_head_to_tail(&mut queue.nodes);
-        reconcile_queue_internal(queue, st);
+        reconcile_queue_internal(queue, node_registry);
 
         event::emit(SchedulerRoundCompleted {
             by: sender,
@@ -299,6 +303,7 @@ module iota_oracle_scheduler::oracle_scheduled_tasks {
     public entry fun create_scheduled_task(
         registry: &mut ScheduledTaskRegistry,
         st: &systemState::State,
+        node_registry: &systemState::NodeRegistry,
         initial_funds: Coin<IOTA>,
         template_id: u64,
         requested_nodes: u64,
@@ -315,7 +320,7 @@ module iota_oracle_scheduler::oracle_scheduled_tasks {
         ctx: &mut TxContext
     ) {
         assert!(template_id != SCHEDULER_TEMPLATE_ID, EInvalidTaskTemplate);
-        assert!(count_scheduler_nodes(st) > 0, ENoSchedulerNodes);
+        assert!(count_scheduler_nodes(node_registry) > 0, ENoSchedulerNodes);
         assert!(interval_ms >= MIN_INTERVAL_MS, EInvalidInterval);
         assert!(end_schedule_ms == 0 || start_schedule_ms <= end_schedule_ms, EInvalidScheduleWindow);
         let (_, _, _) = systemState::validate_task_request_and_get_payment_split(
@@ -440,7 +445,9 @@ module iota_oracle_scheduler::oracle_scheduled_tasks {
     public entry fun submit_scheduled_task(
         queue: &SchedulerQueue,
         task: &mut ScheduledTask,
+        task_registry: &mut oracle_tasks::TaskRegistry,
         st: &mut systemState::State,
+        node_registry: &systemState::NodeRegistry,
         system: &mut IotaSystemState,
         treasury: &mut systemState::OracleTreasury,
         rnd: &Random,
@@ -476,13 +483,12 @@ module iota_oracle_scheduler::oracle_scheduled_tasks {
 
         let payment_balance = balance::split(&mut task.balance_iota, required_payment);
         let scheduled_for_ms = task.next_run_ms;
-        let created_task_id = oracle_tasks::create_task_internal(
+        let before_count = vector::length(oracle_tasks::registry_task_ids(task_registry));
+        oracle_tasks::create_task(
+            task_registry,
             st,
-            system,
-            treasury,
+            node_registry,
             coin::from_balance(payment_balance, ctx),
-            rnd,
-            clock,
             task.template_id,
             task.requested_nodes,
             task.quorum_k,
@@ -492,9 +498,14 @@ module iota_oracle_scheduler::oracle_scheduled_tasks {
             task.mediation_mode,
             task.variance_max,
             task.create_result_controller_cap,
-            task.creator,
+            0,
+            0,
+            0,
             ctx
         );
+        let after_ref = oracle_tasks::registry_task_ids(task_registry);
+        assert!(vector::length(after_ref) == before_count + 1, ETaskNotActive);
+        let created_task_id = *vector::borrow(after_ref, before_count);
 
         task.last_run_ms = now;
         task.last_scheduler_node = sender;
@@ -582,19 +593,19 @@ module iota_oracle_scheduler::oracle_scheduled_tasks {
     public fun creator(task: &ScheduledTask): address { task.creator }
     public fun balance_iota(task: &ScheduledTask): u64 { balance::value(&task.balance_iota) }
 
-    fun reconcile_queue_internal(queue: &mut SchedulerQueue, st: &systemState::State) {
+    fun reconcile_queue_internal(queue: &mut SchedulerQueue, node_registry: &systemState::NodeRegistry) {
         let mut next_nodes = vector::empty<address>();
         let existing_ref = &queue.nodes;
         let mut i = 0;
         while (i < vector::length(existing_ref)) {
             let addr = *vector::borrow(existing_ref, i);
-            if (node_supports_scheduler(st, addr) && !contains_address(&next_nodes, addr)) {
+            if (node_supports_scheduler(node_registry, addr) && !contains_address(&next_nodes, addr)) {
                 vector::push_back(&mut next_nodes, addr);
             };
             i = i + 1;
         };
 
-        let nodes_ref = systemState::oracle_nodes(st);
+        let nodes_ref = systemState::oracle_nodes(node_registry);
         let mut j = 0;
         while (j < vector::length(nodes_ref)) {
             let node = vector::borrow(nodes_ref, j);
@@ -610,8 +621,8 @@ module iota_oracle_scheduler::oracle_scheduled_tasks {
         queue.nodes = next_nodes;
     }
 
-    fun node_supports_scheduler(st: &systemState::State, addr: address): bool {
-        let nodes_ref = systemState::oracle_nodes(st);
+    fun node_supports_scheduler(node_registry: &systemState::NodeRegistry, addr: address): bool {
+        let nodes_ref = systemState::oracle_nodes(node_registry);
         let mut i = 0;
         while (i < vector::length(nodes_ref)) {
             let node = vector::borrow(nodes_ref, i);
@@ -623,8 +634,8 @@ module iota_oracle_scheduler::oracle_scheduled_tasks {
         false
     }
 
-    fun count_scheduler_nodes(st: &systemState::State): u64 {
-        let nodes_ref = systemState::oracle_nodes(st);
+    fun count_scheduler_nodes(node_registry: &systemState::NodeRegistry): u64 {
+        let nodes_ref = systemState::oracle_nodes(node_registry);
         let mut count = 0;
         let mut i = 0;
         while (i < vector::length(nodes_ref)) {

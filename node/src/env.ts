@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
 import * as path from "node:path";
+import { envByNetwork, getStateId, getSystemPackageId, getTasksPackageId, getTreasuryId, normalizeNetwork } from "./config/env.js";
 
 export type Network = "devnet" | "testnet" | "mainnet" | "localnet";
 
@@ -46,19 +47,19 @@ export interface Env {
 }
 
 export function loadEnv(): Env {
-  const network = (opt("IOTA_NETWORK", "devnet") as Network) ?? "devnet";
-  const oracleTasksPackageId = must("ORACLE_TASKS_PACKAGE_ID");
-  const oracleSystemPackageId = opt("ORACLE_SYSTEM_PACKAGE_ID", oracleTasksPackageId)!;
-  const oracleStateId = must("ORACLE_STATE_ID");
+  const network = ((normalizeNetwork(opt("IOTA_NETWORK", "devnet")) || "devnet") as Network) ?? "devnet";
+  const oracleTasksPackageId = getTasksPackageId();
+  const oracleSystemPackageId = getSystemPackageId();
+  const oracleStateId = getStateId();
   const messageEventType = opt("MESSAGE_EVENT_TYPE") || `${oracleTasksPackageId}::oracle_messages::OracleMessage`;
 
   return {
     network,
-    rpcUrl: opt("IOTA_RPC_URL"),
+    rpcUrl: opt("IOTA_RPC_URL") || envByNetwork("IOTA_RPC_URL"),
     oracleTasksPackageId,
     oracleSystemPackageId,
     oracleStateId,
-    oracleTreasuryId: opt("ORACLE_TREASURY_ID"),
+    oracleTreasuryId: getTreasuryId(),
     keyFile: opt("KEY_FILE", path.join(".", "keys", "oracle.key.json"))!,
     useFaucet: optBool("USE_FAUCET", false),
     pollMs: optInt("POLL_MS", 2000),

@@ -197,8 +197,12 @@ export type IotaMarketPriceResponse = {
   symbol: "IOTA";
   quoteCurrency: "USD";
   usdPrice: number;
+  eurPrice: number;
+  usdToEurRate: number;
   sourceName: "CoinMarketCap";
   sourceUrl: string;
+  fxSourceName: string;
+  fxSourceUrl: string;
   fetchedAtIso: string;
   cacheTtlMs: number;
 };

@@ -8,14 +8,15 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 VALIDATOR_CAPS_DIR="${SCRIPT_DIR}/oracle_validator_caps_testnet"
 SYSTEM_STATE_DIR="${SCRIPT_DIR}/oracle_system_state_testnet"
 TASKS_DIR="${SCRIPT_DIR}/oracle_tasks_testnet"
+SCHEDULER_DIR="${SCRIPT_DIR}/iota_task_scheduler_testnet"
 
 VALIDATOR_CAPS_TXT="${VALIDATOR_CAPS_DIR}/testnet_validator_caps.txt"
 SYSTEM_STATE_TXT="${SYSTEM_STATE_DIR}/testnet_system_state.txt"
 TASKS_TXT="${TASKS_DIR}/testnet_oracle_tasks.txt"
+SCHEDULER_TXT="${SCHEDULER_DIR}/testnet_scheduler.txt"
 
 TARGET_ENV="${TARGET_ENV:-testnet}"
 DEPLOY_ADDRESS="${DEPLOY_ADDRESS:-OID_Groundcontrol}"
-FORCE_REPUBLISH="${FORCE_REPUBLISH:-1}"
 VALIDATOR_CAPS_PKG="${VALIDATOR_CAPS_PKG:-}"
 
 require_cmd() {
@@ -46,6 +47,25 @@ PY
     return 1
   fi
   printf '%s\n' "$pkg_id"
+}
+
+extract_published_at() {
+  local move_toml="$1"
+  local pkg_id
+  pkg_id="$(
+    python3 - "$move_toml" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="ignore")
+match = re.search(r'(?m)^published-at = "(0x[a-fA-F0-9]+)"$', text)
+if match and match.group(1).lower() != "0x0":
+    print(match.group(1))
+PY
+  )"
+  pkg_id="$(printf '%s' "$pkg_id" | tr -d '[:space:]')"
+  [[ -n "$pkg_id" ]] && printf '%s\n' "$pkg_id"
 }
 
 update_move_toml_identity() {
@@ -123,9 +143,7 @@ publish_package() {
   echo "[publish] ${label}" >&2
   echo "[path] ${package_dir}" >&2
 
-  if [[ "${FORCE_REPUBLISH}" == "1" ]]; then
-    set_move_toml_unpublished "${move_toml}" "${address_name}"
-  fi
+  set_move_toml_unpublished "${move_toml}" "${address_name}"
 
   if ! (
     cd "$package_dir"
@@ -148,6 +166,7 @@ print_summary() {
   local validator_caps_pkg="$1"
   local system_state_pkg="$2"
   local tasks_pkg="$3"
+  local scheduler_pkg="$4"
 
   cat <<EOF
 
@@ -155,16 +174,19 @@ print_summary() {
   validator caps package: ${validator_caps_pkg}
   system_state package:   ${system_state_pkg}
   tasks package:          ${tasks_pkg}
+  scheduler package:      ${scheduler_pkg}
 
 [reports]
   ${VALIDATOR_CAPS_TXT}
   ${SYSTEM_STATE_TXT}
   ${TASKS_TXT}
+  ${SCHEDULER_TXT}
 
 [next env values]
   TESTNET_ORACLE_VALIDATOR_CAPS_PACKAGE_ID=${validator_caps_pkg}
   TESTNET_ORACLE_SYSTEM_PACKAGE_ID=${system_state_pkg}
   TESTNET_ORACLE_TASKS_PACKAGE_ID=${tasks_pkg}
+  TESTNET_ORACLE_SCHEDULER_PACKAGE_ID=${scheduler_pkg}
 EOF
 }
 
@@ -174,23 +196,29 @@ require_cmd python3
 [[ -d "$VALIDATOR_CAPS_DIR" ]] || { echo "[error] missing dir: $VALIDATOR_CAPS_DIR" >&2; exit 1; }
 [[ -d "$SYSTEM_STATE_DIR" ]] || { echo "[error] missing dir: $SYSTEM_STATE_DIR" >&2; exit 1; }
 [[ -d "$TASKS_DIR" ]] || { echo "[error] missing dir: $TASKS_DIR" >&2; exit 1; }
-if [[ -z "$VALIDATOR_CAPS_PKG" ]]; then
-  VALIDATOR_CAPS_PKG="$(extract_package_id "$VALIDATOR_CAPS_TXT")"
-fi
-[[ "$VALIDATOR_CAPS_PKG" =~ ^0x[0-9a-fA-F]+$ ]] || { echo "[error] invalid VALIDATOR_CAPS_PKG: $VALIDATOR_CAPS_PKG" >&2; exit 1; }
+[[ -d "$SCHEDULER_DIR" ]] || { echo "[error] missing dir: $SCHEDULER_DIR" >&2; exit 1; }
 
 switch_context
 
 echo "[info] active env: $(iota client active-env 2>/dev/null | tr -d '\n')"
 echo "[info] active address: $(iota client active-address 2>/dev/null | tr -d '\n')"
-echo "[info] force republish: ${FORCE_REPUBLISH}"
-echo "[info] reuse validator caps package: ${VALIDATOR_CAPS_PKG}"
+echo "[info] mode: reuse validator_caps, fresh publish for system_state/tasks/scheduler"
+
+if [[ -z "$VALIDATOR_CAPS_PKG" && -f "$VALIDATOR_CAPS_TXT" ]]; then
+  VALIDATOR_CAPS_PKG="$(extract_package_id "$VALIDATOR_CAPS_TXT" || true)"
+fi
+if [[ -z "$VALIDATOR_CAPS_PKG" ]]; then
+  VALIDATOR_CAPS_PKG="$(extract_published_at "${VALIDATOR_CAPS_DIR}/Move.toml" || true)"
+fi
+[[ "$VALIDATOR_CAPS_PKG" =~ ^0x[0-9a-fA-F]+$ ]] || {
+  echo "[error] could not resolve validator caps package id. Set VALIDATOR_CAPS_PKG or restore ${VALIDATOR_CAPS_TXT}." >&2
+  exit 1
+}
 
 SYSTEM_STATE_PKG=""
 TASKS_PKG=""
+SCHEDULER_PKG=""
 
-# Reuse the existing validator_caps package instead of republishing it, so
-# previously minted DelegatedControllerCap objects remain type-compatible.
 update_move_toml_identity "${VALIDATOR_CAPS_DIR}/Move.toml" "iota_oracle_validator_caps" "${VALIDATOR_CAPS_PKG}"
 cat >"${VALIDATOR_CAPS_TXT}" <<EOF
 [reuse]
@@ -201,5 +229,6 @@ EOF
 
 publish_package "$SYSTEM_STATE_DIR" "$SYSTEM_STATE_TXT" "iota_oracle_system_state" "system state" SYSTEM_STATE_PKG
 publish_package "$TASKS_DIR" "$TASKS_TXT" "iota_oracle_tasks" "oracle tasks" TASKS_PKG
+publish_package "$SCHEDULER_DIR" "$SCHEDULER_TXT" "iota_oracle_scheduler" "scheduler" SCHEDULER_PKG
 
-print_summary "$VALIDATOR_CAPS_PKG" "$SYSTEM_STATE_PKG" "$TASKS_PKG"
+print_summary "$VALIDATOR_CAPS_PKG" "$SYSTEM_STATE_PKG" "$TASKS_PKG" "$SCHEDULER_PKG"

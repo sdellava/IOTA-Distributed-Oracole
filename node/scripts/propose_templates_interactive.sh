@@ -6,6 +6,7 @@ trap 'echo "[error] line $LINENO: command failed: $BASH_COMMAND" >&2' ERR
 ENV_FILE=""
 NETWORK=""
 EXAMPLES_DIR=""
+ALLOW_DUPLICATE=0
 
 usage() {
   cat <<'EOF'
@@ -13,11 +14,12 @@ Interactive template proposer from JSON examples.
 Loads .env, lists JSON files under examples, asks which ones to propose.
 
 Usage:
-  ./scripts/propose_templates_interactive.sh [--network devnet|testnet|mainnet] [--env-file /path/.env] [--examples-dir /path/examples]
+  ./scripts/propose_templates_interactive.sh [--network devnet|testnet|mainnet] [--env-file /path/.env] [--examples-dir /path/examples] [--allow-duplicate]
 
 Examples:
   ./scripts/propose_templates_interactive.sh
   ./scripts/propose_templates_interactive.sh --network devnet
+  ./scripts/propose_templates_interactive.sh --network devnet --allow-duplicate
   ./scripts/propose_templates_interactive.sh --network testnet --env-file ./../.env
 EOF
 }
@@ -38,6 +40,9 @@ while [[ $# -gt 0 ]]; do
       shift
       [[ $# -gt 0 ]] || { echo "[error] missing value for --examples-dir" >&2; usage; exit 1; }
       EXAMPLES_DIR="$1"
+      ;;
+    --allow-duplicate)
+      ALLOW_DUPLICATE=1
       ;;
     -h|--help)
       usage
@@ -244,6 +249,11 @@ fi
 
 echo ""
 echo "[info] proposing ${#SELECTED_FILES[@]} template(s)..."
+PROPOSER_EXTRA_ARGS=()
+if [[ "$ALLOW_DUPLICATE" -eq 1 ]]; then
+  PROPOSER_EXTRA_ARGS+=(--allow-duplicate)
+fi
+
 for file in "${SELECTED_FILES[@]}"; do
   echo ""
   echo "============================================================"
@@ -258,6 +268,7 @@ for file in "${SELECTED_FILES[@]}"; do
     --state-id "$STATE_ID" \
     --node-registry-id "$NODE_REGISTRY_ID" \
     --controller-cap-id "$CONTROLLER_CAP_ID" \
+    "${PROPOSER_EXTRA_ARGS[@]}" \
     ${CLOCK_ID:+--clock-id "$CLOCK_ID"}
 done
 

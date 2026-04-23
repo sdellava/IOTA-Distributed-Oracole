@@ -11,13 +11,14 @@ import TaskRunner from "./components/TaskRunner";
 import { fetchExamples, fetchIotaMarketPrice, fetchNetworkConfig, fetchStatusForNetwork, updateActiveNetwork } from "./lib/api";
 import type { ExampleTask, IotaMarketPriceResponse, OracleNetwork, OracleStatus, OracleTemplateCost } from "./types";
 import NodeManagementPage from "./pages/NodeManagementPage";
+import TaskPricesPage from "./pages/TaskPricesPage";
 import ValidateTaskPage from "./pages/ValidateTaskPage";
 import TaskSchedulesPage from "./pages/TaskSchedulesPage";
 import TermsPage from "./pages/TermsPage";
 
 const REFRESH_MS = 10_000;
 
-type PageMode = "run" | "validate" | "scheduled" | "node-management" | "terms";
+type PageMode = "run" | "validate" | "scheduled" | "node-management" | "task-prices" | "terms";
 const FALLBACK_NETWORKS: OracleNetwork[] = ["mainnet", "testnet", "devnet"];
 
 function normalizeNetwork(value: string | null | undefined): OracleNetwork {
@@ -400,6 +401,7 @@ export default function App() {
                             key === "validate" ||
                             key === "scheduled" ||
                             key === "node-management" ||
+                            key === "task-prices" ||
                             key === "terms"
                           ) {
                             setPageMode(key);
@@ -414,6 +416,8 @@ export default function App() {
                         <RcMenuItem key="validate">View or validate a task</RcMenuItem>
                         <Divider />
                         <RcMenuItem key="node-management">Node management</RcMenuItem>
+                        <Divider />
+                        <RcMenuItem key="task-prices">Task prices</RcMenuItem>
                         <Divider />
                         <RcMenuItem key="terms">EULA</RcMenuItem>
                       </Menu>
@@ -657,6 +661,12 @@ export default function App() {
           activeNetwork={activeNetwork}
           status={status}
           onChanged={() => void refreshStatus(activeNetwork)}
+        />
+      ) : pageMode === "task-prices" ? (
+        <TaskPricesPage
+          templates={availableTemplates}
+          systemFeeBps={status?.costs.systemFeeBps}
+          iotaMarketPrice={iotaMarketPrice}
         />
       ) : pageMode === "terms" ? (
         <TermsPage />

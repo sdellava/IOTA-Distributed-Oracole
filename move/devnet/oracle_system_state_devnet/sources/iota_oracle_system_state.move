@@ -24,6 +24,7 @@ module iota_oracle_system_state::systemState {
     const EInputTooLarge: u64 = 43;
     const EInvalidRetentionDays: u64 = 44;
     const EDownloadTooLarge: u64 = 45;
+    const EInvalidRequestedNodes: u64 = 46;
 
     const EAlreadyApproved: u64 = 63;
     const ENoOracleNodesRegistered: u64 = 64;

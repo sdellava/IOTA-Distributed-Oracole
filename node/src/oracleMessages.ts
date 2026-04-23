@@ -7,6 +7,7 @@ import type { Ed25519Keypair } from '@iota/iota-sdk/keypairs/ed25519';
 
 import { bcsU64, bcsVecU8, bcsAddress, bcsU8, bcsVecAddress } from './bcs';
 import { signAndExecuteWithLockRetry } from './txRetry.js';
+import { getClockId, getTaskRegistryId, getTasksPackageId } from './config/env.js';
 
 export const MSG_COMMIT = 2;
 export const MSG_REVEAL = 3;
@@ -15,22 +16,16 @@ export const MSG_LEADER_INTENT = 5;
 export const MSG_ABORT_INTENT = 6;
 export const MSG_NO_COMMIT = 7;
 
-function mustEnv(key: string): string {
-  const v = process.env[key]?.trim();
-  if (!v) throw new Error(`Missing env: ${key}`);
-  return v;
-}
-
 function tasksPkg(): string {
-  return process.env.ORACLE_TASKS_PACKAGE_ID?.trim() || mustEnv('ORACLE_PACKAGE_ID');
+  return getTasksPackageId();
 }
 
 function clockId(): string {
-  return (process.env.IOTA_CLOCK_ID?.trim() || '0x6').trim() || '0x6';
+  return getClockId();
 }
 
 function taskRegistryId(): string {
-  return mustEnv('ORACLE_TASK_REGISTRY_ID');
+  return getTaskRegistryId();
 }
 
 function gasBudget(envKey: string, def: number): number {

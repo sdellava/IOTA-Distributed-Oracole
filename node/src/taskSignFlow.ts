@@ -16,15 +16,14 @@ import { assertCommitteeMultisigAddress, buildMultiSigPublicKey } from "./multis
 import { optInt } from "./nodeConfig";
 import { loadTaskBundle } from "./services/taskObjects";
 import { signAndExecuteWithLockRetry } from "./txRetry.js";
-
-function mustEnv(key: string): string {
-  const v = process.env[key]?.trim();
-  if (!v) throw new Error(`Missing env: ${key}`);
-  return v;
-}
+import { getClockId as getConfiguredClockId, getTasksPackageId as getConfiguredTasksPackageId } from "./config/env.js";
 
 function getTasksPackageId(): string {
-  return process.env.ORACLE_TASKS_PACKAGE_ID?.trim() || mustEnv("ORACLE_PACKAGE_ID");
+  return getConfiguredTasksPackageId();
+}
+
+function getClockId(): string {
+  return getConfiguredClockId();
 }
 
 function envIntAlias(primary: string, fallback: string, def: number): number {
@@ -51,10 +50,6 @@ function sha256Bytes(bytes: Uint8Array): Uint8Array {
 
 function toHex(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("hex");
-}
-
-function getClockId(): string {
-  return (process.env.IOTA_CLOCK_ID ?? process.env.CLOCK_OBJECT_ID ?? "0x6").trim();
 }
 
 function getMoveFields(resp: IotaObjectResponse): Record<string, any> | null {
