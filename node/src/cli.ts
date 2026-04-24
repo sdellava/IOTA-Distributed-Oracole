@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Stefano Della Valle
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
+import "dotenv/config";
+import "./bootstrap.js";
 import { iotaClient } from "./iota.js";
 import { loadOrCreateNodeIdentity } from "./keys.js";
 import { approveTaskTemplateProposal, registerOracleNode } from "./oracleTx.js";

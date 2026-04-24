@@ -109,11 +109,18 @@ webview_env = repo_root / "webview" / ".env"
 runtime_pairs = [
     ("IOTA_NETWORK", "testnet"),
     ("IOTA_RPC_URL", "https://api.testnet.iota.cafe"),
-    ("ORACLE_VALIDATOR_CAPS_PACKAGE_ID", values["TESTNET_ORACLE_VALIDATOR_CAPS_PACKAGE_ID"]),
-    ("ORACLE_TASKS_PACKAGE_ID", values["TESTNET_ORACLE_TASKS_PACKAGE_ID"]),
-    ("ORACLE_SYSTEM_PACKAGE_ID", values["TESTNET_ORACLE_SYSTEM_PACKAGE_ID"]),
-    ("ORACLE_STATE_ID", values["TESTNET_ORACLE_STATE_ID"]),
-    ("ORACLE_TREASURY_ID", values["TESTNET_ORACLE_TREASURY_ID"]),
+]
+
+client_network_pairs = [
+    ("TESTNET_IOTA_RPC_URL", "https://api.testnet.iota.cafe"),
+    ("TESTNET_ORACLE_VALIDATOR_CAPS_PACKAGE_ID", values["TESTNET_ORACLE_VALIDATOR_CAPS_PACKAGE_ID"]),
+    ("TESTNET_ORACLE_TASKS_PACKAGE_ID", values["TESTNET_ORACLE_TASKS_PACKAGE_ID"]),
+    ("TESTNET_ORACLE_SYSTEM_PACKAGE_ID", values["TESTNET_ORACLE_SYSTEM_PACKAGE_ID"]),
+    ("TESTNET_ORACLE_STATE_ID", values["TESTNET_ORACLE_STATE_ID"]),
+    ("TESTNET_ORACLE_TREASURY_ID", values["TESTNET_ORACLE_TREASURY_ID"]),
+    ("TESTNET_ORACLE_NODE_REGISTRY_ID", values["TESTNET_ORACLE_NODE_REGISTRY_ID"]),
+    ("TESTNET_ORACLE_TASK_REGISTRY_ID", values["TESTNET_ORACLE_TASK_REGISTRY_ID"]),
+    ("TESTNET_ORACLE_TASK_SCHEDULER_QUEUE_ID", values["TESTNET_ORACLE_TASK_SCHEDULER_QUEUE_ID"]),
 ]
 
 node_pairs = [
@@ -143,12 +150,25 @@ legacy_node_runtime_keys = [
     "ORACLE_TASK_SCHEDULER_QUEUE_ID",
     "DELEGATED_CONTROLLER_CAP_ID",
 ]
+legacy_generic_runtime_keys = [
+    "ORACLE_VALIDATOR_CAPS_PACKAGE_ID",
+    "ORACLE_TASKS_PACKAGE_ID",
+    "ORACLE_SYSTEM_PACKAGE_ID",
+    "ORACLE_STATE_ID",
+    "ORACLE_TREASURY_ID",
+    "ORACLE_NODE_REGISTRY_ID",
+    "ORACLE_TASK_REGISTRY_ID",
+    "ORACLE_TASK_SCHEDULER_QUEUE_ID",
+]
 
-upsert_lines(client_env, runtime_pairs)
+upsert_lines(client_env, [*client_network_pairs, *runtime_pairs])
 upsert_lines(node_env, node_pairs)
 upsert_lines(node_example, node_pairs)
 upsert_lines(webview_env, webview_pairs)
 upsert_lines(webview_example, webview_pairs)
 remove_keys(node_env, legacy_node_runtime_keys)
 remove_keys(node_example, legacy_node_runtime_keys)
+remove_keys(client_env, legacy_generic_runtime_keys)
+remove_keys(webview_env, legacy_generic_runtime_keys)
+remove_keys(webview_example, legacy_generic_runtime_keys)
 PY

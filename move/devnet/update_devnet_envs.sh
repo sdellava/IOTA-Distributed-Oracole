@@ -190,10 +190,14 @@ client_files = [
     repo_root / "client" / ".env.example_devnet",
 ]
 client_pairs = [
-    ("ORACLE_TASKS_PACKAGE_ID", values["ORACLE_TASKS_PACKAGE_ID"]),
-    ("ORACLE_SYSTEM_PACKAGE_ID", values["ORACLE_SYSTEM_PACKAGE_ID"]),
-    ("ORACLE_STATE_ID", values["ORACLE_STATE_ID"]),
-    ("ORACLE_TREASURY_ID", values["ORACLE_TREASURY_ID"]),
+    ("DEVNET_IOTA_RPC_URL", "https://api.devnet.iota.cafe"),
+    ("DEVNET_ORACLE_TASKS_PACKAGE_ID", values["ORACLE_TASKS_PACKAGE_ID"]),
+    ("DEVNET_ORACLE_SYSTEM_PACKAGE_ID", values["ORACLE_SYSTEM_PACKAGE_ID"]),
+    ("DEVNET_ORACLE_STATE_ID", values["ORACLE_STATE_ID"]),
+    ("DEVNET_ORACLE_TREASURY_ID", values["ORACLE_TREASURY_ID"]),
+    ("DEVNET_ORACLE_NODE_REGISTRY_ID", values["ORACLE_NODE_REGISTRY_ID"]),
+    ("DEVNET_ORACLE_TASK_REGISTRY_ID", values["ORACLE_TASK_REGISTRY_ID"]),
+    ("DEVNET_ORACLE_TASK_SCHEDULER_QUEUE_ID", values["ORACLE_TASK_SCHEDULER_QUEUE_ID"]),
 ]
 
 node_files = [
@@ -216,13 +220,6 @@ webview_direct_files = [
     repo_root / "webview" / ".env",
 ]
 webview_direct_pairs = [
-    ("ORACLE_TASKS_PACKAGE_ID", values["ORACLE_TASKS_PACKAGE_ID"]),
-    ("ORACLE_SYSTEM_PACKAGE_ID", values["ORACLE_SYSTEM_PACKAGE_ID"]),
-    ("ORACLE_STATE_ID", values["ORACLE_STATE_ID"]),
-    ("ORACLE_TREASURY_ID", values["ORACLE_TREASURY_ID"]),
-    ("ORACLE_NODE_REGISTRY_ID", values["ORACLE_NODE_REGISTRY_ID"]),
-    ("ORACLE_TASK_REGISTRY_ID", values["ORACLE_TASK_REGISTRY_ID"]),
-    ("ORACLE_TASK_SCHEDULER_QUEUE_ID", values["ORACLE_TASK_SCHEDULER_QUEUE_ID"]),
     ("DEVNET_ORACLE_TASKS_PACKAGE_ID", values["ORACLE_TASKS_PACKAGE_ID"]),
     ("DEVNET_ORACLE_SYSTEM_PACKAGE_ID", values["ORACLE_SYSTEM_PACKAGE_ID"]),
     ("DEVNET_ORACLE_STATE_ID", values["ORACLE_STATE_ID"]),
@@ -267,6 +264,16 @@ legacy_node_runtime_keys = [
     "DELEGATED_CONTROLLER_CAP_ID",
 ]
 
+legacy_generic_runtime_keys = [
+    "ORACLE_TASKS_PACKAGE_ID",
+    "ORACLE_SYSTEM_PACKAGE_ID",
+    "ORACLE_STATE_ID",
+    "ORACLE_TREASURY_ID",
+    "ORACLE_NODE_REGISTRY_ID",
+    "ORACLE_TASK_REGISTRY_ID",
+    "ORACLE_TASK_SCHEDULER_QUEUE_ID",
+]
+
 for file in client_files:
     upsert_lines(file, client_pairs, append_after="ORACLE_TREASURY_ID")
 
@@ -284,6 +291,9 @@ for file in [*client_files, *node_files, *webview_direct_files, *webview_example
 
 for file in node_files:
     remove_keys(file, legacy_node_runtime_keys)
+
+for file in [*client_files, *webview_direct_files, *webview_example_files]:
+    remove_keys(file, legacy_generic_runtime_keys)
 
 print("")
 print("[values]")

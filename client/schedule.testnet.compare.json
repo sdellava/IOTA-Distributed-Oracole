@@ -1,0 +1,6 @@
+{
+  "startScheduleMs": 1776959880000,
+  "endScheduleMs": 1776959880000,
+  "intervalMinutes": 5,
+  "initialFundsIota": "5"
+}

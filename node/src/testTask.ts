@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
 import "dotenv/config";
+import "./bootstrap.js";
 import { Agent, setGlobalDispatcher } from "undici";
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";

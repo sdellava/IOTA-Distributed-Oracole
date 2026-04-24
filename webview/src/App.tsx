@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { ConnectButton, useCurrentAccount } from "@iota/dapp-kit";
+import { ConnectButton, useCurrentAccount, useIotaClientContext } from "@iota/dapp-kit";
 import Menu, { Item as RcMenuItem, Divider } from "rc-menu";
 import ActivityTable from "./components/ActivityTable";
 import MetricCard from "./components/MetricCard";
@@ -206,6 +206,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const currentAccount = useCurrentAccount();
+  const { network: walletProviderNetwork, selectNetwork: selectWalletProviderNetwork } = useIotaClientContext();
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [selectedValidateTaskId, setSelectedValidateTaskId] = useState<string>("");
   const [pageMode, setPageMode] = useState<PageMode>("run");
@@ -298,6 +299,11 @@ export default function App() {
   useEffect(() => {
     activeNetworkRef.current = activeNetwork;
   }, [activeNetwork]);
+
+  useEffect(() => {
+    if (walletProviderNetwork === activeNetwork) return;
+    selectWalletProviderNetwork(activeNetwork);
+  }, [activeNetwork, selectWalletProviderNetwork, walletProviderNetwork]);
 
   useEffect(() => {
     fetchExamples()

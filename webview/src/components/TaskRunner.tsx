@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: LicenseRef-Proprietary
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useCurrentAccount, useSignAndExecuteTransaction } from '@iota/dapp-kit';
+import { useCurrentAccount, useSignTransaction } from '@iota/dapp-kit';
 import { IotaClient, type ChainType } from '@iota/iota-sdk/client';
-import { fetchExampleContent, prepareWalletTask, prepareWalletTaskSchedule } from '../lib/api';
+import { fetchExampleContent, fetchTaskSchedules, prepareWalletTask, prepareWalletTaskSchedule } from '../lib/api';
 import { resolveApiBaseUrl } from '../lib/apiBase';
 import { validateTaskMultisig } from '../lib/multisigValidation';
 import type {
@@ -303,6 +303,24 @@ function extractCreatedTaskId(execution: any): string {
   const byObjectChange = String(createdTask?.objectId ?? createdTask?.object_id ?? '').trim();
   if (byObjectChange) return byObjectChange;
 
+  const ownerOrControllerCap = objectChanges.find((item: any) => {
+    if (item?.type !== 'created') return false;
+    const objectType = String(item?.objectType ?? item?.object_type ?? '');
+    return (
+      objectType.includes('::oracle_tasks::TaskOwnerCap') ||
+      objectType.includes('::oracle_tasks::TaskControllerCap')
+    );
+  });
+  const capTaskId = moveObjectIdToString(
+    ownerOrControllerCap?.fields?.task_id ??
+      ownerOrControllerCap?.fields?.taskId ??
+      ownerOrControllerCap?.content?.fields?.task_id ??
+      ownerOrControllerCap?.content?.fields?.taskId ??
+      ownerOrControllerCap?.parsedJson?.task_id ??
+      ownerOrControllerCap?.parsed_json?.task_id,
+  );
+  if (capTaskId) return capTaskId;
+
   const events = extractArrayLike(execution?.events);
   const createdEvent = events.find((item: any) => {
     const type = String(item?.type ?? '');
@@ -310,7 +328,18 @@ function extractCreatedTaskId(execution: any): string {
   });
 
   const parsed = asRecord(createdEvent?.parsedJson) ?? asRecord(createdEvent?.parsed_json) ?? {};
-  return moveObjectIdToString(parsed.task_id ?? parsed.taskId);
+  const byEvent = moveObjectIdToString(parsed.task_id ?? parsed.taskId ?? parsed.created_task_id ?? parsed.createdTaskId);
+  if (byEvent) return byEvent;
+
+  const effectsCreated = extractArrayLike(execution?.effects?.created);
+  const byEffects = effectsCreated.find((item: any) => {
+    const objectType = String(item?.owner?.ObjectOwner ?? item?.reference?.objectType ?? item?.objectType ?? '');
+    return objectType.includes('::oracle_tasks::Task');
+  });
+  const effectObjectId = String(
+    byEffects?.reference?.objectId ?? byEffects?.objectId ?? byEffects?.object_id ?? '',
+  ).trim();
+  return effectObjectId;
 }
 
 function formatDateTimeLocalInput(date: Date): string {
@@ -402,6 +431,87 @@ async function fetchExecutionForDigest(iotaClient: any, digest: string, fallback
   }
 
   return fallbackExecution;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function matchesCreatedScheduleCandidate(args: {
+  item: any;
+  creator: string;
+  templateId: number;
+  startScheduleMs: string;
+  endScheduleMs: string;
+  intervalMs: string;
+  initialFunds: string;
+}): boolean {
+  const { item, creator, templateId, startScheduleMs, endScheduleMs, intervalMs, initialFunds } = args;
+  if (!item) return false;
+  if (normalizeAddress(item.creator) !== normalizeAddress(creator)) return false;
+  if (String(item.templateId ?? '') !== String(templateId)) return false;
+  if (String(item.startScheduleMs ?? '') !== startScheduleMs) return false;
+  if (String(item.endScheduleMs ?? '') !== endScheduleMs) return false;
+  if (String(item.intervalMs ?? '') !== intervalMs) return false;
+  if (String(item.balanceIota ?? '') !== initialFunds) return false;
+  return true;
+}
+
+async function findScheduledTaskIdByRegistry(args: {
+  network: OracleNetwork;
+  creator: string;
+  prepared: PreparedTaskScheduleWalletResponse;
+  existingIds: Set<string>;
+}): Promise<string | null> {
+  const { network, creator, prepared, existingIds } = args;
+  const templateId = prepared.template.templateId;
+  const startScheduleMs = String(prepared.schedule.startScheduleMs ?? '');
+  const endScheduleMs = String(prepared.schedule.endScheduleMs ?? '');
+  const intervalMs = String(prepared.schedule.intervalMs ?? '');
+  const initialFunds = String(prepared.initialFunds ?? '');
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      const response = await fetchTaskSchedules(network);
+      const items = Array.isArray(response?.items) ? response.items : [];
+      const exactNewMatch = items.find((item: any) => {
+        const id = normalizeAddress(item?.id);
+        return (
+          id &&
+          !existingIds.has(id) &&
+          matchesCreatedScheduleCandidate({
+            item,
+            creator,
+            templateId,
+            startScheduleMs,
+            endScheduleMs,
+            intervalMs,
+            initialFunds,
+          })
+        );
+      });
+      if (exactNewMatch?.id) return normalizeAddress(exactNewMatch.id);
+
+      const fallbackExactMatch = items.find((item: any) =>
+        matchesCreatedScheduleCandidate({
+          item,
+          creator,
+          templateId,
+          startScheduleMs,
+          endScheduleMs,
+          intervalMs,
+          initialFunds,
+        }),
+      );
+      if (fallbackExactMatch?.id) return normalizeAddress(fallbackExactMatch.id);
+    } catch {
+      // keep polling briefly
+    }
+
+    await sleep(800);
+  }
+
+  return null;
 }
 
 function extractPackageIdFromMoveType(typeName: string): string {
@@ -869,6 +979,15 @@ function formatUserFacingError(error: unknown): string {
   if (/abort code:\s*1001/i.test(message) || /EInvalidScheduleWindow/i.test(message)) {
     return 'Schedule end must be greater than or equal to schedule start.';
   }
+  if (/abort code:\s*1003/i.test(message) || /ENoSchedulerNodes/i.test(message)) {
+    return 'No scheduler-enabled nodes are currently registered on the active network.';
+  }
+  if (/abort code:\s*1010/i.test(message) || /ENotEnoughOracleNodes/i.test(message)) {
+    return 'Not enough active oracle nodes support this template on the active network for the requested node count.';
+  }
+  if (/abort code:\s*1011/i.test(message) || /EInvalidQuorum/i.test(message)) {
+    return 'The requested quorum is invalid for the current requested node count.';
+  }
   const templateNotFound = message.match(/Template\s+(\d+)\s+not found under state\s+(0x[a-f0-9]+)/i);
   if (templateNotFound) {
     const [, templateId, stateId] = templateNotFound;
@@ -899,6 +1018,7 @@ export default function TaskRunner({
   const [scheduleInitialFundsIota, setScheduleInitialFundsIota] = useState<string>('5');
   const [scheduleSyncSource, setScheduleSyncSource] = useState<ScheduleSyncSource>('budget');
   const [budgetQuote, setBudgetQuote] = useState<TaskBudgetQuote | null>(null);
+  const [budgetQuoteError, setBudgetQuoteError] = useState<string | null>(null);
   const currentAccount = useCurrentAccount();
   const iotaClients = useMemo(
     () => ({
@@ -923,22 +1043,9 @@ export default function TaskRunner({
       ),
     [registeredNodes],
   );
-  const executionClientRef = useRef(iotaClients.devnet);
   const pollTokenRef = useRef(0);
   const finalizedResultRefetchKeyRef = useRef<string>('');
-  const { mutateAsync: signAndExecuteTransaction } = useSignAndExecuteTransaction({
-    execute: async ({ bytes, signature }) =>
-      await executionClientRef.current.executeTransactionBlock({
-        transactionBlock: bytes,
-        signature,
-        options: {
-          showRawEffects: true,
-          showEffects: true,
-          showObjectChanges: true,
-          showEvents: true,
-        },
-      }),
-  });
+  const { mutateAsync: signTransaction } = useSignTransaction();
 
   useEffect(() => {
     return () => {
@@ -1210,6 +1317,7 @@ export default function TaskRunner({
     let cancelled = false;
     if (!parsedTask || !currentAccount?.address) {
       setBudgetQuote(null);
+      setBudgetQuoteError(null);
       return;
     }
 
@@ -1224,8 +1332,12 @@ export default function TaskRunner({
             requiredPerRunNanoIota,
             requiredPerRunIotaText: formatNanoIotaToIota(requiredPerRunNanoIota),
           });
-        } catch {
-          if (!cancelled) setBudgetQuote(null);
+          setBudgetQuoteError(null);
+        } catch (err) {
+          if (!cancelled) {
+            setBudgetQuote(null);
+            setBudgetQuoteError(formatUserFacingError(err));
+          }
         }
       })();
     }, 350);
@@ -1510,7 +1622,6 @@ export default function TaskRunner({
 
       const networkClient = iotaClients[activeNetwork];
       const chain = CHAIN_BY_NETWORK[activeNetwork];
-      executionClientRef.current = networkClient;
       const startMs = schedulePreview.startMs;
       const budgetNanoIota = parseIotaToNano(scheduleInitialFundsIota);
       if (budgetNanoIota <= 0n) {
@@ -1530,6 +1641,17 @@ export default function TaskRunner({
       const requiredPerRun = quote.requiredPerRunNanoIota;
       if (requiredPerRun <= 0n) {
         throw new Error('Unable to determine the required budget per run for this task.');
+      }
+
+      const existingScheduleIds = new Set<string>();
+      try {
+        const scheduleSnapshot = await fetchTaskSchedules(activeNetwork);
+        for (const item of Array.isArray(scheduleSnapshot?.items) ? scheduleSnapshot.items : []) {
+          const id = normalizeAddress((item as any)?.id);
+          if (id) existingScheduleIds.add(id);
+        }
+      } catch {
+        // non-blocking: fallback extraction can still work without a pre-snapshot
       }
 
       const intervalMinutesRaw = scheduleIntervalMinutes.trim();
@@ -1568,13 +1690,32 @@ export default function TaskRunner({
         currentAccount.address,
         activeNetwork,
       );
-      const execution = await signAndExecuteTransaction({
+      const signed = await signTransaction({
         transaction: prepared.serializedTransaction,
         chain,
       });
+      const execution = await networkClient.executeTransactionBlock({
+        transactionBlock: signed.bytes,
+        signature: signed.signature,
+        options: {
+          showRawEffects: true,
+          showEffects: true,
+          showObjectChanges: true,
+          showEvents: true,
+        },
+      });
       const digest = String(execution?.digest ?? '').trim();
       const confirmedExecution = await fetchExecutionForDigest(networkClient, digest, execution);
-      const taskId = extractCreatedTaskId(confirmedExecution) || extractCreatedTaskId(execution) || null;
+      const taskId =
+        extractCreatedTaskId(confirmedExecution) ||
+        extractCreatedTaskId(execution) ||
+        (await findScheduledTaskIdByRegistry({
+          network: activeNetwork,
+          creator: currentAccount.address,
+          prepared,
+          existingIds: existingScheduleIds,
+        })) ||
+        null;
 
       setTaskScheduleResult({
         prepared,
@@ -1694,6 +1835,11 @@ export default function TaskRunner({
             {schedulePreview.possibleRuns != null ? (
               <>
                 {' '}| possible runs: <span className="mono">{schedulePreview.possibleRuns.toString()}</span>
+              </>
+            ) : null}
+            {budgetQuoteError ? (
+              <>
+                {' '}| <span className="error-inline">{budgetQuoteError}</span>
               </>
             ) : null}
           </small>

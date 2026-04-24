@@ -2,7 +2,7 @@ import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 import { toB64 } from "@iota/bcs";
-import { Transaction } from "@iota/iota-sdk/transactions";
+import { Transaction, coinWithBalance } from "@iota/iota-sdk/transactions";
 
 import { iotaClient } from "./iota";
 import { loadOrCreateClientIdentity } from "./keys";
@@ -61,6 +61,7 @@ type CreateTaskContext = {
   prepared: PreparedTask;
   requiredPerRun: bigint;
   gasBudget: bigint;
+  fundingSource: "gas" | "dedicated";
 };
 
 type ScheduleInput = {
@@ -170,8 +171,30 @@ function mustEnv(k: string): string {
   return v;
 }
 
+function normalizeNetwork(raw: string | undefined): "devnet" | "testnet" | "mainnet" | "localnet" | "" {
+  const value = String(raw ?? "").trim().toLowerCase();
+  if (value === "dev" || value === "devnet") return "devnet";
+  if (value === "test" || value === "testnet") return "testnet";
+  if (value === "main" || value === "mainnet") return "mainnet";
+  if (value === "local" || value === "localnet") return "localnet";
+  return "";
+}
+
+function networkPrefix(): "DEVNET" | "TESTNET" | "MAINNET" | "" {
+  const network = normalizeNetwork(process.env.IOTA_NETWORK);
+  if (network === "devnet" || network === "localnet") return "DEVNET";
+  if (network === "testnet") return "TESTNET";
+  if (network === "mainnet") return "MAINNET";
+  return "";
+}
+
 function envAny(...keys: string[]): string | undefined {
+  const prefix = networkPrefix();
   for (const k of keys) {
+    if (prefix) {
+      const scoped = process.env[`${prefix}_${k}`]?.trim();
+      if (scoped) return scoped;
+    }
     const v = process.env[k]?.trim();
     if (v) return v;
   }
@@ -214,6 +237,57 @@ function getTaskRegistryId(): string {
 
 function getConfiguredNodeRegistryId(): string | undefined {
   return envAny("ORACLE_NODE_REGISTRY_ID");
+}
+
+async function chooseFundingSource(
+  client: AnyClient,
+  sender: string,
+  requiredAmount: bigint,
+  gasBudget: bigint,
+): Promise<"gas" | "dedicated"> {
+  const getCoins = (client as any)?.getCoins;
+  if (typeof getCoins !== "function") return "gas";
+
+  let cursor: string | null | undefined = null;
+  let total = 0n;
+  let largest = 0n;
+  let count = 0;
+
+  for (let pageNo = 0; pageNo < 20; pageNo += 1) {
+    const page: any = await getCoins.call(client, {
+      owner: sender,
+      cursor,
+      limit: 50,
+    });
+
+    for (const coin of page?.data ?? []) {
+      const balance = BigInt(String((coin as any)?.balance ?? "0"));
+      total += balance;
+      if (balance > largest) largest = balance;
+      count += 1;
+    }
+
+    if (!page?.hasNextPage || !page?.nextCursor) break;
+    cursor = page.nextCursor;
+  }
+
+  if (count <= 1) return "gas";
+  if (largest >= requiredAmount + gasBudget) return "gas";
+  if (total >= requiredAmount + gasBudget) return "dedicated";
+  return "gas";
+}
+
+function createFundingCoin(
+  tx: Transaction,
+  amount: bigint,
+  fundingSource: "gas" | "dedicated",
+) {
+  if (fundingSource === "dedicated") {
+    return coinWithBalance({ balance: amount, useGasCoin: false })(tx);
+  }
+
+  const [paymentCoin] = tx.splitCoins(tx.gas, [tx.pure(bcsU64(amount))]);
+  return paymentCoin;
 }
 
 function moveToString(value: any): string {
@@ -1095,10 +1169,10 @@ function extractTaskIdFromTx(res: any): string {
 }
 
 function makeCreateTaskTx(ctx: CreateTaskContext): Transaction {
-  const { tasksPkg, registryId, stateId, nodeRegistryId, prepared, requiredPerRun, gasBudget } = ctx;
+  const { tasksPkg, registryId, stateId, nodeRegistryId, prepared, requiredPerRun, gasBudget, fundingSource } = ctx;
   const tx = new Transaction();
   tx.setGasBudget(Number(gasBudget));
-  const [paymentCoin] = tx.splitCoins(tx.gas, [tx.pure(bcsU64(requiredPerRun))]);
+  const paymentCoin = createFundingCoin(tx, requiredPerRun, fundingSource);
   const startScheduleMs = BigInt(Date.now());
 
   tx.moveCall({
@@ -1139,11 +1213,12 @@ function makeCreateTaskWithScheduleTx(args: {
   prepared: PreparedTask;
   schedule: ScheduleInput;
   gasBudget: bigint;
+  fundingSource: "gas" | "dedicated";
 }): Transaction {
-  const { tasksPkg, registryId, stateId, nodeRegistryId, prepared, schedule, gasBudget } = args;
+  const { tasksPkg, registryId, stateId, nodeRegistryId, prepared, schedule, gasBudget, fundingSource } = args;
   const tx = new Transaction();
   tx.setGasBudget(Number(gasBudget));
-  const [fundingCoin] = tx.splitCoins(tx.gas, [tx.pure(bcsU64(schedule.initialFunds))]);
+  const fundingCoin = createFundingCoin(tx, schedule.initialFunds, fundingSource);
   tx.moveCall({
     target: `${tasksPkg}::oracle_tasks::create_task`,
     arguments: [
@@ -1456,6 +1531,7 @@ async function prepareCreateTaskPlanWithOptions(
     prepared,
     requiredPerRun,
     gasBudget,
+    fundingSource: await chooseFundingSource(client, sender, requiredPerRun, gasBudget),
   });
 
   return {
@@ -1516,6 +1592,7 @@ async function runPrepareTaskScheduleWebview(
     prepared: plan.prepared,
     schedule,
     gasBudget: plan.gasBudget,
+    fundingSource: await chooseFundingSource(client, normalizedSender, schedule.initialFunds, plan.gasBudget),
   });
   tx.setSender(normalizedSender);
 

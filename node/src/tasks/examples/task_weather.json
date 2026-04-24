@@ -1,7 +1,7 @@
 {
   "template_id": 10,
   "type": "GET_JSON_CANONICAL",
-  "requested_nodes": 3,
+  "requested_nodes": 1,
   "request": {
     "method": "GET",
     "url": "https://api.open-meteo.com/v1/forecast?latitude=41.9028&longitude=12.4964&current=temperature_2m&timezone=Europe%2FRome",
