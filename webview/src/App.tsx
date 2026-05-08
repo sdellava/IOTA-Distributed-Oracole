@@ -21,6 +21,26 @@ const REFRESH_MS = 10_000;
 type PageMode = "run" | "validate" | "scheduled" | "node-management" | "task-prices" | "terms";
 const FALLBACK_NETWORKS: OracleNetwork[] = ["mainnet", "testnet", "devnet"];
 
+function taskIdFromPath(pathname: string): string {
+  const match = pathname.match(/^\/task\/([^/?#]+)\/?$/i);
+  if (!match) return "";
+
+  try {
+    return decodeURIComponent(match[1]).trim();
+  } catch {
+    return match[1].trim();
+  }
+}
+
+function taskPath(taskId: string): string {
+  return `/task/${encodeURIComponent(taskId.trim())}`;
+}
+
+function pushBrowserPath(pathname: string) {
+  if (window.location.pathname === pathname) return;
+  window.history.pushState(null, "", pathname);
+}
+
 function normalizeNetwork(value: string | null | undefined): OracleNetwork {
   const raw = String(value ?? "")
     .trim()
@@ -201,6 +221,7 @@ function readableTextForBackground(background: string | null | undefined, dark =
 }
 
 export default function App() {
+  const initialRouteTaskId = taskIdFromPath(window.location.pathname);
   const [status, setStatus] = useState<OracleStatus | null>(null);
   const [examples, setExamples] = useState<ExampleTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -208,12 +229,13 @@ export default function App() {
   const currentAccount = useCurrentAccount();
   const { network: walletProviderNetwork, selectNetwork: selectWalletProviderNetwork } = useIotaClientContext();
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
-  const [selectedValidateTaskId, setSelectedValidateTaskId] = useState<string>("");
-  const [pageMode, setPageMode] = useState<PageMode>("run");
+  const [selectedValidateTaskId, setSelectedValidateTaskId] = useState<string>(initialRouteTaskId);
+  const [pageMode, setPageMode] = useState<PageMode>(initialRouteTaskId ? "validate" : "run");
   const [menuOpen, setMenuOpen] = useState(false);
   const [supportedNetworks, setSupportedNetworks] = useState<OracleNetwork[]>(FALLBACK_NETWORKS);
   const [activeNetwork, setActiveNetworkState] = useState<OracleNetwork>("mainnet");
   const [networkLoading, setNetworkLoading] = useState(false);
+  const [networkConfigLoaded, setNetworkConfigLoaded] = useState(false);
   const [iotaMarketPrice, setIotaMarketPrice] = useState<IotaMarketPriceResponse | null>(null);
   const activeNetworkRef = useRef<OracleNetwork>("mainnet");
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -282,6 +304,8 @@ export default function App() {
         setActiveNetworkState(normalizedNetwork);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setNetworkConfigLoaded(true);
       }
       await refreshIotaPrice();
       await refreshStatus();
@@ -319,6 +343,18 @@ export default function App() {
     }
     document.addEventListener("mousedown", onDocMouseDown);
     return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, []);
+
+  useEffect(() => {
+    function syncRouteTask() {
+      const routeTaskId = taskIdFromPath(window.location.pathname);
+      if (!routeTaskId) return;
+      setSelectedValidateTaskId(routeTaskId);
+      setPageMode("validate");
+    }
+
+    window.addEventListener("popstate", syncRouteTask);
+    return () => window.removeEventListener("popstate", syncRouteTask);
   }, []);
 
   const lastRefreshText = useMemo(() => {
@@ -411,6 +447,9 @@ export default function App() {
                             key === "terms"
                           ) {
                             setPageMode(key);
+                            if (key !== "validate") {
+                              pushBrowserPath("/");
+                            }
                             setMenuOpen(false);
                           }
                         }}
@@ -660,6 +699,7 @@ export default function App() {
           onSelectTask={(taskId) => {
             setSelectedValidateTaskId(taskId);
             setPageMode("validate");
+            pushBrowserPath(taskPath(taskId));
           }}
         />
       ) : pageMode === "node-management" ? (
@@ -677,7 +717,11 @@ export default function App() {
       ) : pageMode === "terms" ? (
         <TermsPage />
       ) : (
-        <ValidateTaskPage initialTaskId={selectedValidateTaskId} activeNetwork={activeNetwork} />
+        <ValidateTaskPage
+          initialTaskId={selectedValidateTaskId}
+          activeNetwork={activeNetwork}
+          readyToValidate={networkConfigLoaded}
+        />
       )}
     </div>
   );

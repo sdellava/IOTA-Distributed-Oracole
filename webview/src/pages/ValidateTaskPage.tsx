@@ -26,11 +26,12 @@ const API_BASE = resolveApiBaseUrl();
 type Props = {
   initialTaskId?: string;
   activeNetwork: OracleNetwork;
+  readyToValidate?: boolean;
 };
 
 type StreamStatus = "idle" | "connecting" | "live" | "reconnecting";
 
-export default function ValidateTaskPage({ initialTaskId = "", activeNetwork }: Props) {
+export default function ValidateTaskPage({ initialTaskId = "", activeNetwork, readyToValidate = true }: Props) {
   const [taskId, setTaskId] = useState("");
   const [validatedTaskId, setValidatedTaskId] = useState("");
   const [task, setTask] = useState<any | null>(null);
@@ -43,8 +44,9 @@ export default function ValidateTaskPage({ initialTaskId = "", activeNetwork }: 
   const streamRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
+    if (!readyToValidate) return;
     void loadRegisteredNodes();
-  }, [activeNetwork]);
+  }, [activeNetwork, readyToValidate]);
 
   useEffect(() => {
     if (!initialTaskId) return;
@@ -120,6 +122,8 @@ export default function ValidateTaskPage({ initialTaskId = "", activeNetwork }: 
   }
 
   async function handleValidate() {
+    if (!readyToValidate) return;
+
     const normalizedTaskId = taskId.trim();
     if (!normalizedTaskId) {
       setError("Insert a task id.");
@@ -134,6 +138,7 @@ export default function ValidateTaskPage({ initialTaskId = "", activeNetwork }: 
   }
 
   useEffect(() => {
+    if (!readyToValidate) return;
     if (!initialTaskId) return;
     const normalizedInitialTaskId = initialTaskId.trim().toLowerCase();
     if (!normalizedInitialTaskId) return;
@@ -141,7 +146,7 @@ export default function ValidateTaskPage({ initialTaskId = "", activeNetwork }: 
     if (loading || lastAutoValidatedIdRef.current === normalizedInitialTaskId) return;
     lastAutoValidatedIdRef.current = normalizedInitialTaskId;
     void handleValidate();
-  }, [initialTaskId, taskId, loading]);
+  }, [initialTaskId, taskId, loading, readyToValidate]);
 
   useEffect(() => {
     if (!validatedTaskId) {
@@ -224,7 +229,7 @@ export default function ValidateTaskPage({ initialTaskId = "", activeNetwork }: 
         <button
           className="validate-task-button"
           onClick={handleValidate}
-          disabled={loading}
+          disabled={loading || !readyToValidate}
         >
           {loading ? "Loading..." : "Validate"}
         </button>
