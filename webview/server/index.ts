@@ -205,12 +205,7 @@ type TaskRunSummary = {
 const TASK_STREAM_POLL_MS = 4_000;
 const EULA_FETCH_TIMEOUT_MS = 5_000;
 
-async function readBundledEula(): Promise<string> {
-  const candidates = [
-    path.join(process.cwd(), "dist", "EULA.md"),
-    path.join(process.cwd(), "public", "EULA.md"),
-  ];
-
+async function readFirstTextFile(candidates: string[], label: string): Promise<string> {
   for (const candidate of candidates) {
     try {
       return await fs.promises.readFile(candidate, "utf8");
@@ -219,7 +214,25 @@ async function readBundledEula(): Promise<string> {
     }
   }
 
-  throw new Error("Bundled EULA.md not found.");
+  throw new Error(`${label} not found.`);
+}
+
+function stripOperatorTermsFromBaseEula(markdown: string): string {
+  return markdown.replace(/\n+## 18\. Governing Law and Jurisdiction[\s\S]*$/u, "");
+}
+
+function joinEulaMarkdown(baseMarkdown: string, operatorTermsMarkdown: string): string {
+  return `${stripOperatorTermsFromBaseEula(baseMarkdown).trimEnd()}\n\n${operatorTermsMarkdown.trimStart()}`;
+}
+
+async function readLocalEulaOperatorTerms(): Promise<string> {
+  return readFirstTextFile(
+    [
+      path.join(process.cwd(), "dist", "EULA_NODE_OPERATOR_TERMS.md"),
+      path.join(process.cwd(), "public", "EULA_NODE_OPERATOR_TERMS.md"),
+    ],
+    "Bundled EULA_NODE_OPERATOR_TERMS.md",
+  );
 }
 
 async function fetchLiveEula(): Promise<string> {
@@ -246,17 +259,13 @@ async function fetchLiveEula(): Promise<string> {
   return response.text();
 }
 
-async function loadEulaMarkdown(): Promise<{ markdown: string; source: "live" | "bundled"; error?: string }> {
-  if (config.eulaSourceUrl) {
-    try {
-      return { markdown: await fetchLiveEula(), source: "live" };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return { markdown: await readBundledEula(), source: "bundled", error: message };
-    }
-  }
+async function loadEulaMarkdown(): Promise<{ markdown: string; source: "live" }> {
+  const [baseMarkdown, operatorTermsMarkdown] = await Promise.all([
+    fetchLiveEula(),
+    readLocalEulaOperatorTerms(),
+  ]);
 
-  return { markdown: await readBundledEula(), source: "bundled" };
+  return { markdown: joinEulaMarkdown(baseMarkdown, operatorTermsMarkdown), source: "live" };
 }
 
 async function fetchTaskResults(
@@ -630,9 +639,6 @@ app.get("/api/legal/eula", async (_req, res) => {
     const result = await loadEulaMarkdown();
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-EULA-Source", result.source);
-    if (result.error) {
-      res.setHeader("X-EULA-Fallback-Reason", result.error.slice(0, 200));
-    }
     res.type("text/markdown").send(result.markdown);
   } catch (error) {
     sendApiError(res, 500, error);

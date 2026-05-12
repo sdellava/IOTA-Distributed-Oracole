@@ -58,6 +58,8 @@ const rootDir = process.cwd();
 const clientDir = path.resolve(rootDir, process.env.ORACLE_CLIENT_DIR ?? "../iota_oracle_client");
 const examplesDirRaw = process.env.ORACLE_EXAMPLES_DIR?.trim() || process.env.ORACLE_CLIENT_EXAMPLES_DIR?.trim() || "examples";
 const examplesDir = path.resolve(rootDir, examplesDirRaw);
+const defaultEulaSourceUrl =
+  "https://raw.githubusercontent.com/sdellava/IOTA-Distributed-Oracole/asset/EULA.md";
 
 const supportedNetworks = (toList(process.env.VITE_SUPPORTED_NETWORKS) as OracleNetwork[])
   .map((n) => normalizeNetwork(n))
@@ -125,7 +127,7 @@ export const config = {
   oracleMessageModule: process.env.ORACLE_MESSAGE_MODULE ?? "oracle_messages",
   activeWindowMinutes: toNumber(process.env.ACTIVE_WINDOW_MINUTES, 15),
   eventFetchLimit: toNumber(process.env.EVENT_FETCH_LIMIT, 100),
-  eulaSourceUrl: envAny("EULA_SOURCE_URL", "GIT_EULA_URL", "EULA_RAW_URL"),
+  eulaSourceUrl: envAny("EULA_SOURCE_URL", "GIT_EULA_URL", "EULA_RAW_URL") || defaultEulaSourceUrl,
   eulaSourceToken: process.env.EULA_SOURCE_TOKEN?.trim() || "",
   oracleNodeAddresses: toList(process.env.ORACLE_NODE_ADDRESSES),
   oracleClientDir: clientDir,

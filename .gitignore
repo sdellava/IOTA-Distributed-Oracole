@@ -8,6 +8,8 @@ node/.env
 node/.env_tesnet_save
 client/.env
 webview/.env
+webview/public/EULA.md
+webview/public/EULA.txt
 .env
 .zip
 .txt
