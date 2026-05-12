@@ -184,6 +184,11 @@ function hasTerminalScheduleStatus(item: TaskScheduleItem): boolean {
   return item.status === 9 || item.status === 11;
 }
 
+function canTopUpSchedule(item: TaskScheduleItem): boolean {
+  const hasUpcomingRun = Number(item.nextRunMs || "0") > 0;
+  return hasUpcomingRun && item.status !== 9 && item.status !== 11;
+}
+
 function displayStatusLabel(item: TaskScheduleItem): string {
   const hasUpcomingRun = Number(item.nextRunMs || "0") > 0;
   if (item.status === 10 && hasUpcomingRun) return "SCHEDULED";
@@ -600,6 +605,7 @@ export default function TaskSchedulesPage({
                   const isSuspended = item.statusLabel.toUpperCase() === "SUSPENDED";
                   const isDepleted = item.statusLabel.toUpperCase() === "DEPLETED";
                   const isCompleted = item.statusLabel.toUpperCase() === "COMPLETED";
+                  const showAddFunds = canTopUpSchedule(item);
                   const ownerCapId = controls.ownerCapIdsByTaskId[normalizeAddress(item.id)];
                   const busyPrefix = `${item.id}:`;
 
@@ -720,23 +726,25 @@ export default function TaskSchedulesPage({
                             >
                               Restart
                             </button>
-                            <button
-                              type="button"
-                              className="scheduled-action-button"
-                              disabled={(!isOwner && !hasControllerCap) || busyActionKey?.startsWith(busyPrefix) || controls.loading}
-                              title="Add more funds to this scheduled task"
-                              onClick={() =>
-                                void handleAction(
-                                  item,
-                                  {
-                                    action: "fund",
-                                  },
-                                  "Funding",
-                                )
-                              }
-                            >
-                              Add funds
-                            </button>
+                            {showAddFunds ? (
+                              <button
+                                type="button"
+                                className="scheduled-action-button"
+                                disabled={(!isOwner && !hasControllerCap) || busyActionKey?.startsWith(busyPrefix) || controls.loading}
+                                title="Add more funds to this scheduled task"
+                                onClick={() =>
+                                  void handleAction(
+                                    item,
+                                    {
+                                      action: "fund",
+                                    },
+                                    "Funding",
+                                  )
+                                }
+                              >
+                                Add funds
+                              </button>
+                            ) : null}
                           </div>
                         ) : controls.loading && currentAccount ? (
                           <div className="summary-hint">Checking caps...</div>
