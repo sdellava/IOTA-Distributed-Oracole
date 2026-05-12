@@ -88,7 +88,7 @@ export const config = {
     port: toNumber(process.env.PORT, 8787),
     oracleTaskModule: process.env.ORACLE_TASK_MODULE ?? "oracle_tasks",
     oracleMessageModule: process.env.ORACLE_MESSAGE_MODULE ?? "oracle_messages",
-    activeWindowMinutes: toNumber(process.env.ACTIVE_WINDOW_MINUTES, 15),
+    activeWindowMinutes: toNumber(process.env.ACTIVE_WINDOW_MINUTES, 2),
     eventFetchLimit: toNumber(process.env.EVENT_FETCH_LIMIT, 100),
     oracleNodeAddresses: toList(process.env.ORACLE_NODE_ADDRESSES),
     oracleClientDir: clientDir,
