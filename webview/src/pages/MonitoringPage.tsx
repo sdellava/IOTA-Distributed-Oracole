@@ -125,6 +125,7 @@ export default function MonitoringPage({ activeNetwork, status, readyToLoad }: P
 
   const registeredNodes = status?.registeredNodes ?? [];
   const recentEvents = (status?.recentEvents ?? []).slice(0, 10);
+  const statusLoaded = Boolean(status);
   const queueNodes = schedules?.queue?.nodes ?? [];
   const queueHead = String(schedules?.queue?.head ?? "").trim();
 
@@ -154,7 +155,7 @@ export default function MonitoringPage({ activeNetwork, status, readyToLoad }: P
           value={status?.metrics.activeNodes ?? "-"}
           hint={`Window: ${status?.activeWindowMinutes ?? "-"} min`}
         />
-        <MetricCard label="Registered nodes" value={registeredNodes.length} hint="On-chain registry" />
+        <MetricCard label="Registered nodes" value={statusLoaded ? registeredNodes.length : "-"} hint="On-chain registry" />
         <MetricCard label="Scheduled tasks" value={schedules?.items.length ?? "-"} hint="Scheduler registry" />
         <MetricCard label="Task objects" value={status?.metrics.onChainTaskObjects ?? "-"} hint="On-chain" />
         <MetricCard label="Oracle events" value={status?.metrics.totalOracleEvents ?? "-"} hint="Total indexed" />
@@ -162,7 +163,9 @@ export default function MonitoringPage({ activeNetwork, status, readyToLoad }: P
 
       <section className="card card-spaced">
         <div className="section-title">Registered nodes</div>
-        {!registeredNodes.length ? (
+        {!statusLoaded ? (
+          <div className="empty">Loading registered nodes...</div>
+        ) : !registeredNodes.length ? (
           <div className="empty">No registered nodes found on this network.</div>
         ) : (
           <div className="table-wrap">
@@ -293,7 +296,9 @@ export default function MonitoringPage({ activeNetwork, status, readyToLoad }: P
 
       <section className="card card-spaced">
         <div className="section-title">Latest 10 oracle events</div>
-        {!recentEvents.length ? (
+        {!statusLoaded ? (
+          <div className="empty">Loading oracle events...</div>
+        ) : !recentEvents.length ? (
           <div className="empty">No recent events found.</div>
         ) : (
           <div className="table-wrap">
