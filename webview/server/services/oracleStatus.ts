@@ -666,6 +666,7 @@ function parseRegisteredNodes(content: unknown): RegisteredOracleNode[] {
   const out: RegisteredOracleNode[] = [];
   for (const node of oracleNodes) {
     const fields = extractFields(node) ?? asRecord(node) ?? {};
+    const nodeId = toNumber(fields.node_id ?? fields.nodeId);
     const address = normalizeAddress(String(fields.addr ?? (fields.addr as any)?.value ?? ""));
     if (!address) continue;
     const pubkey = fields.pubkey ?? null;
@@ -677,6 +678,7 @@ function parseRegisteredNodes(content: unknown): RegisteredOracleNode[] {
         : delegatedControllerCapIdRaw;
     const validatorAddress = normalizeAddress(String(fields.validator ?? (fields.validator as any)?.value ?? ""));
     out.push({
+      nodeId: nodeId == null ? null : String(nodeId),
       address,
       pubkey,
       pubkeyBytes: toByteArray(pubkey).length,

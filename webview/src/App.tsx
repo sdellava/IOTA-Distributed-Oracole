@@ -5,20 +5,26 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { ConnectButton, useCurrentAccount, useIotaClientContext } from "@iota/dapp-kit";
 import Menu, { Item as RcMenuItem, Divider } from "rc-menu";
-import ActivityTable from "./components/ActivityTable";
 import MetricCard from "./components/MetricCard";
 import TaskRunner from "./components/TaskRunner";
-import { fetchExamples, fetchIotaMarketPrice, fetchNetworkConfig, fetchStatusForNetwork, updateActiveNetwork } from "./lib/api";
+import {
+  fetchExamples,
+  fetchIotaMarketPrice,
+  fetchNetworkConfig,
+  fetchStatusForNetwork,
+  updateActiveNetwork,
+} from "./lib/api";
 import type { ExampleTask, IotaMarketPriceResponse, OracleNetwork, OracleStatus, OracleTemplateCost } from "./types";
 import NodeManagementPage from "./pages/NodeManagementPage";
 import TaskPricesPage from "./pages/TaskPricesPage";
 import ValidateTaskPage from "./pages/ValidateTaskPage";
 import TaskSchedulesPage from "./pages/TaskSchedulesPage";
 import TermsPage from "./pages/TermsPage";
+import MonitoringPage from "./pages/MonitoringPage";
 
 const REFRESH_MS = 10_000;
 
-type PageMode = "run" | "validate" | "scheduled" | "node-management" | "task-prices" | "terms";
+type PageMode = "run" | "monitoring" | "validate" | "scheduled" | "node-management" | "task-prices" | "terms";
 const FALLBACK_NETWORKS: OracleNetwork[] = ["mainnet", "testnet", "devnet"];
 
 function taskIdFromPath(pathname: string): string {
@@ -202,11 +208,7 @@ function toRgbString(rgb: [number, number, number]): string {
 function withRgbOffset(input: string | null | undefined, offset: number): string | null {
   const rgb = parseCssColor(input);
   if (!rgb) return null;
-  return toRgbString([
-    clampByte(rgb[0] + offset),
-    clampByte(rgb[1] + offset),
-    clampByte(rgb[2] + offset),
-  ]);
+  return toRgbString([clampByte(rgb[0] + offset), clampByte(rgb[1] + offset), clampByte(rgb[2] + offset)]);
 }
 
 function readableTextForBackground(background: string | null | undefined, dark = "#171d26", light = "#ffffff"): string {
@@ -230,7 +232,7 @@ export default function App() {
   const { network: walletProviderNetwork, selectNetwork: selectWalletProviderNetwork } = useIotaClientContext();
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [selectedValidateTaskId, setSelectedValidateTaskId] = useState<string>(initialRouteTaskId);
-  const [pageMode, setPageMode] = useState<PageMode>(initialRouteTaskId ? "validate" : "run");
+  const [pageMode, setPageMode] = useState<PageMode>(initialRouteTaskId ? "validate" : "monitoring");
   const [menuOpen, setMenuOpen] = useState(false);
   const [supportedNetworks, setSupportedNetworks] = useState<OracleNetwork[]>(FALLBACK_NETWORKS);
   const [activeNetwork, setActiveNetworkState] = useState<OracleNetwork>("mainnet");
@@ -440,6 +442,7 @@ export default function App() {
                         onClick={({ key }: { key: string }) => {
                           if (
                             key === "run" ||
+                            key === "monitoring" ||
                             key === "validate" ||
                             key === "scheduled" ||
                             key === "node-management" ||
@@ -454,17 +457,19 @@ export default function App() {
                           }
                         }}
                       >
-                        <RcMenuItem key="run">Schedule a new task</RcMenuItem>
+                        <RcMenuItem key="monitoring">Monitoring</RcMenuItem>
                         <Divider />
                         <RcMenuItem key="scheduled">Scheduled task list</RcMenuItem>
                         <Divider />
-                        <RcMenuItem key="validate">View or validate a task</RcMenuItem>
+                        <RcMenuItem key="run">Schedule a new task</RcMenuItem>
                         <Divider />
-                        <RcMenuItem key="node-management">Node management</RcMenuItem>
+                        <RcMenuItem key="validate">View or validate a task</RcMenuItem>
                         <Divider />
                         <RcMenuItem key="task-prices">Task prices</RcMenuItem>
                         <Divider />
                         <RcMenuItem key="terms">EULA</RcMenuItem>
+                        <RcMenuItem key="node-management">Node management</RcMenuItem>
+                        <Divider />
                       </Menu>
                     </div>
                   ) : null}
@@ -548,14 +553,14 @@ export default function App() {
             <MetricCard label="Total oracle events" value={status?.metrics.totalOracleEvents ?? "-"} hint="" />
           </section>
 
-            <TaskRunner
-              examples={examples}
-              activeNetwork={activeNetwork}
-              registeredNodes={status?.registeredNodes ?? []}
-              onExecuted={() => void refreshStatus(activeNetwork)}
-              onTemplateIdChange={setSelectedTemplateId}
-              onOpenScheduledTasks={() => setPageMode("scheduled")}
-            />
+          <TaskRunner
+            examples={examples}
+            activeNetwork={activeNetwork}
+            registeredNodes={status?.registeredNodes ?? []}
+            onExecuted={() => void refreshStatus(activeNetwork)}
+            onTemplateIdChange={setSelectedTemplateId}
+            onOpenScheduledTasks={() => setPageMode("scheduled")}
+          />
 
           <section className="card card-spaced">
             <div className="section-title">Configured costs</div>
@@ -586,8 +591,9 @@ export default function App() {
             </div>
             {!availableTemplates.length ? (
               <div className="empty">
-                No approved task templates found on-chain for this network. Nodes can still advertise supported template IDs, but
-                task creation and scheduling require the corresponding templates to be proposed and approved first.
+                No approved task templates found on-chain for this network. Nodes can still advertise supported template
+                IDs, but task creation and scheduling require the corresponding templates to be proposed and approved
+                first.
               </div>
             ) : !selectedTemplateId ? (
               <div className="template-empty-state">Select or load a task template to view its pricing details.</div>
@@ -684,13 +690,9 @@ export default function App() {
               </div>
             )}
           </section>
-
-          <ActivityTable
-            nodes={status?.nodeActivity ?? []}
-            events={status?.recentEvents ?? []}
-            activeNetwork={activeNetwork}
-          />
         </>
+      ) : pageMode === "monitoring" ? (
+        <MonitoringPage activeNetwork={activeNetwork} status={status} />
       ) : pageMode === "scheduled" ? (
         <TaskSchedulesPage
           activeNetwork={activeNetwork}

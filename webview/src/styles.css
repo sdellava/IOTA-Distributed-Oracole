@@ -394,6 +394,10 @@ pre {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
+.activity-card {
+  margin-top: 18px;
+}
+
 .table-wrap {
   width: 100%;
   min-width: 0;
@@ -435,6 +439,34 @@ table {
 .node-activity-table th:nth-child(4),
 .node-activity-table td:nth-child(4) {
   width: 16%;
+}
+
+.monitoring-nodes-table th:nth-child(1),
+.monitoring-nodes-table td:nth-child(1) {
+  width: 16%;
+}
+
+.monitoring-nodes-table th:nth-child(5),
+.monitoring-nodes-table td:nth-child(5) {
+  width: 18%;
+}
+
+.monitoring-queue-table th:nth-child(1),
+.monitoring-queue-table td:nth-child(1) {
+  width: 110px;
+}
+
+.monitoring-events-table th:nth-child(6),
+.monitoring-events-table td:nth-child(6) {
+  width: 28%;
+}
+
+.monitoring-event-details {
+  display: block;
+  max-height: 96px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .table-wrap-wide table {

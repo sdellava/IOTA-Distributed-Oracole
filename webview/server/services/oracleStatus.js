@@ -549,6 +549,7 @@ function parseRegisteredNodes(content) {
     const out = [];
     for (const node of oracleNodes) {
         const fields = extractFields(node) ?? asRecord(node) ?? {};
+        const nodeId = toNumber(fields.node_id ?? fields.nodeId);
         const address = normalizeAddress(String(fields.addr ?? fields.addr?.value ?? ""));
         if (!address)
             continue;
@@ -560,6 +561,7 @@ function parseRegisteredNodes(content) {
             : delegatedControllerCapIdRaw;
         const validatorAddress = normalizeAddress(String(fields.validator ?? fields.validator?.value ?? ""));
         out.push({
+            nodeId: nodeId == null ? null : String(nodeId),
             address,
             pubkey,
             pubkeyBytes: toByteArray(pubkey).length,

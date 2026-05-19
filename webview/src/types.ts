@@ -23,6 +23,7 @@ export type NodeActivity = {
 };
 
 export type RegisteredOracleNode = {
+  nodeId?: string | null;
   address: string;
   pubkey: unknown;
   pubkeyBytes: number;
