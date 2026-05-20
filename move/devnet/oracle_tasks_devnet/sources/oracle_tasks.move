@@ -551,6 +551,138 @@ module iota_oracle_tasks::oracle_tasks {
         );
     }
 
+    #[allow(lint(public_random))]
+    public entry fun create_and_submit_direct_task(
+        st: &State,
+        node_registry: &NodeRegistry,
+        treasury: &mut systemState::OracleTreasury,
+        initial_funds: Coin<IOTA>,
+        template_id: u64,
+        requested_nodes: u64,
+        quorum_k: u64,
+        payload: vector<u8>,
+        retention_days: u64,
+        declared_download_bytes: u64,
+        mediation_mode: u8,
+        variance_max: u64,
+        create_controller_cap: u8,
+        rnd: &Random,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        assert!(template_id != 0, EInvalidTaskTemplate);
+        assert!(vector::length(&payload) > 0, EInvalidPayload);
+        assert!(
+            mediation_mode == MEDIATION_NONE || mediation_mode == MEDIATION_MEAN_U64,
+            EInvalidMediationMode
+        );
+        assert!(
+            create_controller_cap == 0 || create_controller_cap == 1,
+            EInvalidControllerCapFlag
+        );
+
+        validate_request_shape(
+            st,
+            node_registry,
+            template_id,
+            requested_nodes,
+            quorum_k,
+            &payload,
+            retention_days,
+            declared_download_bytes
+        );
+
+        let (raw_payment, system_fee, required_payment) = systemState::validate_task_request_and_get_payment_split(
+            st,
+            template_id,
+            requested_nodes,
+            vector::length(&payload),
+            retention_days,
+            declared_download_bytes
+        );
+        let funded_iota = coin::value(&initial_funds);
+        assert!(funded_iota >= required_payment, EInsufficientTaskBalance);
+
+        let creator = tx_context::sender(ctx);
+        let now = timestamp_ms(clock);
+        let uid = object::new(ctx);
+        let task_id = object::uid_to_inner(&uid);
+        let mut available_balance_iota = coin::into_balance(initial_funds);
+
+        if (system_fee > 0) {
+            let treasury_fee = balance::split(&mut available_balance_iota, system_fee);
+            systemState::deposit_treasury_iota(
+                treasury,
+                coin::from_balance(treasury_fee, ctx),
+                creator
+            );
+        };
+        let run_escrow_iota = balance::split(&mut available_balance_iota, raw_payment);
+
+        let assigned_nodes = assign_nodes(node_registry, template_id, requested_nodes, rnd, ctx);
+        let task = Task {
+            id: uid,
+            creator,
+            status: STATUS_ACTIVE,
+            execution_state: EXEC_OPEN,
+            template_id,
+            task_type: systemState::task_template_task_type(st, template_id),
+            payload,
+            retention_days,
+            declared_download_bytes,
+            mediation_mode,
+            variance_max,
+            requested_nodes,
+            quorum_k,
+            create_controller_cap,
+            start_schedule_ms: now,
+            end_schedule_ms: 0,
+            interval_ms: 0,
+            last_run_ms: now,
+            next_run_ms: 0,
+            inactive_since_ms: 0,
+            last_scheduler_node: @0x0,
+            available_balance_iota,
+            run_escrow_iota,
+            active_run_index: 1,
+            active_round: 0,
+            assigned_nodes,
+            latest_result_seq: 0,
+            result_order: vector::empty(),
+        };
+
+        transfer::share_object(task);
+        transfer::public_transfer(TaskOwnerCap { id: object::new(ctx), task_id }, creator);
+        if (create_controller_cap == 1) {
+            transfer::public_transfer(TaskControllerCap { id: object::new(ctx), task_id }, creator);
+        };
+
+        event::emit(TaskCreated {
+            task_id,
+            creator,
+            template_id,
+            start_schedule_ms: now,
+            end_schedule_ms: 0,
+            interval_ms: 0,
+            next_run_ms: now,
+            funded_iota,
+            has_controller_cap: create_controller_cap,
+        });
+
+        event::emit(TaskRunSubmitted {
+            task_id,
+            scheduler: creator,
+            scheduled_for_ms: now,
+            executed_at_ms: now,
+            next_run_ms: 0,
+            run_index: 1,
+            scheduler_fee_iota: 0,
+            payment_iota: raw_payment,
+            registry_live: 0,
+        });
+
+    }
+
     public entry fun top_up_task(
         registry: &mut TaskRegistry,
         task: &mut Task,

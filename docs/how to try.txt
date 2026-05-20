@@ -26,9 +26,26 @@ open a new terminal and execute:
 cd ./node
 npm run dev -- --node 3
 
-open a new terminal and execute:
+open a new terminal and execute a direct one-shot task:
 cd ./client
-npm run create -- .\examples\task_2nodes.json
+npm run create -- .\examples\task_weather.json
+
+The direct one-shot path uses oracle_tasks::create_and_submit_direct_task. It
+creates the task, assigns nodes immediately and submits run 1 without entering
+the scheduler queue.
+
+To prepare a scheduled task transaction for the wallet/webview, use:
+cd ./client
+npm run create -- prepare-task-schedule-webview .\examples\task_weather.json .\examples\schedule_5m_two_runs.json 0xYOUR_WALLET_ADDRESS
+
+Scheduled tasks use oracle_tasks::create_task and are handled by task 0. The
+schedule is used only when interval_ms is at least 300000 and the window allows
+at least two runs. Otherwise the client prepares a direct one-shot transaction.
+Before using the example schedule file, update startAt/endAt to future,
+minute-aligned timestamps.
+
+In the webview, leave "Interval (minutes)" empty for a direct one-shot task.
+Set an interval only when the task must run more than once.
 
 npm run create -- .\examples\task_GET_HTML_STRIP_DYNAMIC.json
 
