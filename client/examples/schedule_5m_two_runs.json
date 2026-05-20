@@ -1,0 +1,6 @@
+{
+  "startAt": "2030-01-01T12:00:00.000Z",
+  "endAt": "2030-01-01T12:05:00.000Z",
+  "interval_ms": 300000,
+  "initial_funds_iota": 10
+}

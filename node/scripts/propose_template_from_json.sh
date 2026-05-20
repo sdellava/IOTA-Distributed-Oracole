@@ -396,7 +396,7 @@ if (!Number.isFinite(templateId) || templateId <= 0) {
 const isStorage = taskType.toUpperCase() === "STORAGE";
 const allowStorage = toInt(pick("allow_storage"), isStorage ? 1 : 0);
 const minRetention = toInt(pick("min_retention_days"), allowStorage ? 30 : 0);
-const maxRetention = toInt(pick("max_retention_days"), allowStorage ? 365 : 0);
+const maxRetention = toInt(pick("max_retention_days"), allowStorage ? 30 : 0);
 const vals = [
   templateId,
   taskType,

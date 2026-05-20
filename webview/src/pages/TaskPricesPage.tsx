@@ -19,15 +19,22 @@ type TemplateQuote = {
   retentionUnit: bigint;
   schedulerFee: bigint;
   minPayment: bigint;
-  minRetentionDays: bigint;
-  minRetentionCost: bigint;
-  minPerNodeRaw: bigint | null;
-  minRawTask: bigint | null;
-  minSystemFee: bigint | null;
-  minTotal: bigint | null;
-  minRequiredPayment: bigint | null;
-  minDirect: bigint | null;
-  minScheduledPerRun: bigint | null;
+  requestedNodes: bigint;
+  declaredDownloadBytes: bigint;
+  extraDownloadBytes: bigint;
+  downloadCost: bigint;
+  retentionDays: bigint;
+  retentionCost: bigint;
+  perNodeRaw: bigint | null;
+  rawTask: bigint | null;
+  systemFee: bigint | null;
+  totalBeforeFloor: bigint | null;
+  requiredPayment: bigint | null;
+  directTotal: bigint | null;
+  scheduledPerRun: bigint | null;
+  scheduledBudget: bigint | null;
+  validRuntime: boolean;
+  runtimeWarning: string | null;
 };
 
 const IOTA_DECIMALS = 1_000_000_000;
@@ -50,6 +57,19 @@ function parseU64(value: string | null | undefined): bigint {
   return parsed ?? 0n;
 }
 
+function parsePositiveInput(value: string, fallback: bigint): bigint {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) return fallback;
+  const parsed = BigInt(trimmed);
+  return parsed > 0n ? parsed : fallback;
+}
+
+function parseNonNegativeInput(value: string, fallback = 0n): bigint {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) return fallback;
+  return BigInt(trimmed);
+}
+
 function formatNumber(value: number, minimumFractionDigits = 0, maximumFractionDigits = 6): string {
   return value.toLocaleString(undefined, {
     minimumFractionDigits,
@@ -63,6 +83,16 @@ function formatInteger(value: string | null | undefined): string {
   const n = Number(text);
   if (!Number.isFinite(n)) return text;
   return n.toLocaleString();
+}
+
+function formatRetentionRange(template: OracleTemplateCost): string {
+  const min = formatInteger(template.minRetentionDays);
+  const max = formatInteger(template.maxRetentionDays);
+  return `${min} min / ${max} max`;
+}
+
+function formatBpsPercent(bps: number): string {
+  return `${formatNumber(bps / 100, 0, 2)}%`;
 }
 
 function formatIotaAtomic(value: bigint | null | undefined, digits = 6): string {
@@ -88,13 +118,37 @@ function ceilDiv(value: bigint, divisor: bigint): bigint {
   return (value + divisor - 1n) / divisor;
 }
 
-function computeTemplateQuote(template: OracleTemplateCost, systemFeeBps: number, minPayment: bigint): TemplateQuote {
+function computeTemplateQuote(
+  template: OracleTemplateCost,
+  systemFeeBps: number,
+  minPayment: bigint,
+  runtime: {
+    requestedNodes: bigint;
+    declaredDownloadBytes: bigint;
+    retentionDays: bigint;
+    scheduledRuns: bigint;
+  },
+): TemplateQuote {
   const base = parseAtomicIota(template.basePriceIota);
   const downloadUnit = parseU64(template.pricePerDownloadByteIota);
   const retentionUnit = parseU64(template.pricePerRetentionDayIota);
   const schedulerFee = parseU64(template.schedulerFeeIota);
+  const includedDownloadBytes = parseU64(template.includedDownloadBytes);
   const minRetentionDays = parseU64(template.minRetentionDays);
-  const minRetentionCost = retentionUnit * minRetentionDays;
+  const maxRetentionDays = parseU64(template.maxRetentionDays);
+  const retentionDays = template.allowStorage ? runtime.retentionDays : 0n;
+  const extraDownloadBytes =
+    runtime.declaredDownloadBytes > includedDownloadBytes ? runtime.declaredDownloadBytes - includedDownloadBytes : 0n;
+  const downloadCost = extraDownloadBytes * downloadUnit;
+  const retentionCost = retentionDays * retentionUnit;
+  const retentionValid =
+    !template.allowStorage ||
+    (retentionDays >= minRetentionDays && (maxRetentionDays === 0n || retentionDays <= maxRetentionDays));
+  const runtimeWarning = retentionValid
+    ? null
+    : maxRetentionDays === minRetentionDays
+      ? `Retention must be exactly ${minRetentionDays.toString()} day(s) for this template.`
+      : `Retention must be between ${minRetentionDays.toString()} and ${maxRetentionDays.toString()} day(s).`;
 
   if (base == null) {
     return {
@@ -103,25 +157,33 @@ function computeTemplateQuote(template: OracleTemplateCost, systemFeeBps: number
       retentionUnit,
       schedulerFee,
       minPayment,
-      minRetentionDays,
-      minRetentionCost,
-      minPerNodeRaw: null,
-      minRawTask: null,
-      minSystemFee: null,
-      minTotal: null,
-      minRequiredPayment: null,
-      minDirect: null,
-      minScheduledPerRun: null,
+      requestedNodes: runtime.requestedNodes,
+      declaredDownloadBytes: runtime.declaredDownloadBytes,
+      extraDownloadBytes,
+      downloadCost,
+      retentionDays,
+      retentionCost,
+      perNodeRaw: null,
+      rawTask: null,
+      systemFee: null,
+      totalBeforeFloor: null,
+      requiredPayment: null,
+      directTotal: null,
+      scheduledPerRun: null,
+      scheduledBudget: null,
+      validRuntime: retentionValid,
+      runtimeWarning,
     };
   }
 
-  const minPerNodeRaw = base + minRetentionCost;
-  const minRawTask = minPerNodeRaw;
-  const minSystemFee = systemFeeBps > 0 ? ceilDiv(minRawTask * BigInt(systemFeeBps), 10_000n) : 0n;
-  const minTotal = minRawTask + minSystemFee;
-  const minRequiredPayment = minTotal > minPayment ? minTotal : minPayment;
-  const minDirect = minRequiredPayment;
-  const minScheduledPerRun = minRequiredPayment + schedulerFee;
+  const perNodeRaw = base + downloadCost + retentionCost;
+  const rawTask = perNodeRaw * runtime.requestedNodes;
+  const systemFee = systemFeeBps > 0 ? ceilDiv(rawTask * BigInt(systemFeeBps), 10_000n) : 0n;
+  const totalBeforeFloor = rawTask + systemFee;
+  const requiredPayment = totalBeforeFloor > minPayment ? totalBeforeFloor : minPayment;
+  const directTotal = requiredPayment;
+  const scheduledPerRun = requiredPayment + schedulerFee;
+  const scheduledBudget = scheduledPerRun * runtime.scheduledRuns;
 
   return {
     base,
@@ -129,15 +191,22 @@ function computeTemplateQuote(template: OracleTemplateCost, systemFeeBps: number
     retentionUnit,
     schedulerFee,
     minPayment,
-    minRetentionDays,
-    minRetentionCost,
-    minPerNodeRaw,
-    minRawTask,
-    minSystemFee,
-    minTotal,
-    minRequiredPayment,
-    minDirect,
-    minScheduledPerRun,
+    requestedNodes: runtime.requestedNodes,
+    declaredDownloadBytes: runtime.declaredDownloadBytes,
+    extraDownloadBytes,
+    downloadCost,
+    retentionDays,
+    retentionCost,
+    perNodeRaw,
+    rawTask,
+    systemFee,
+    totalBeforeFloor,
+    requiredPayment,
+    directTotal,
+    scheduledPerRun,
+    scheduledBudget,
+    validRuntime: retentionValid,
+    runtimeWarning,
   };
 }
 
@@ -163,9 +232,22 @@ function CostItem({
 
 export default function TaskPricesPage({ templates, systemFeeBps, minPayment, iotaMarketPrice }: Props) {
   const [showEuro, setShowEuro] = useState(false);
+  const [requestedNodes, setRequestedNodes] = useState("1");
+  const [declaredDownloadBytes, setDeclaredDownloadBytes] = useState("0");
+  const [retentionDays, setRetentionDays] = useState("30");
+  const [scheduledRuns, setScheduledRuns] = useState("2");
   const currency: CurrencyMode = showEuro ? "eur" : "usd";
   const feeBps = useMemo(() => parseBps(systemFeeBps), [systemFeeBps]);
   const minPaymentAtomic = useMemo(() => parseU64(minPayment), [minPayment]);
+  const runtime = useMemo(
+    () => ({
+      requestedNodes: parsePositiveInput(requestedNodes, 1n),
+      declaredDownloadBytes: parseNonNegativeInput(declaredDownloadBytes),
+      retentionDays: parseNonNegativeInput(retentionDays, 30n),
+      scheduledRuns: parsePositiveInput(scheduledRuns, 1n),
+    }),
+    [declaredDownloadBytes, requestedNodes, retentionDays, scheduledRuns],
+  );
 
   return (
     <section className="card card-spaced task-prices-page">
@@ -208,6 +290,68 @@ export default function TaskPricesPage({ templates, systemFeeBps, minPayment, io
         </div>
       </div>
 
+      <div className="price-formula-panel">
+        <div className="subsection-title">Runtime parameters</div>
+        <div className="price-input-grid">
+          <label className="schedule-field">
+            Requested nodes
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={requestedNodes}
+              onChange={(event) => setRequestedNodes(event.target.value)}
+            />
+          </label>
+          <label className="schedule-field">
+            Declared download bytes
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={declaredDownloadBytes}
+              onChange={(event) => setDeclaredDownloadBytes(event.target.value)}
+            />
+          </label>
+          <label className="schedule-field">
+            Retention days
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={retentionDays}
+              onChange={(event) => setRetentionDays(event.target.value)}
+            />
+          </label>
+          <label className="schedule-field">
+            Scheduled runs
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={scheduledRuns}
+              onChange={(event) => setScheduledRuns(event.target.value)}
+            />
+          </label>
+          <div className="price-readonly-field">
+            <div className="template-kv-label">System fee</div>
+            <div className="template-kv-value mono">
+              {feeBps} bps ({formatBpsPercent(feeBps)})
+            </div>
+            <div className="summary-hint">Paid to the OracleTreasury.</div>
+          </div>
+          <div className="price-readonly-field">
+            <div className="template-kv-label">Minimum payment</div>
+            <div className="template-kv-value mono">{formatIotaAtomic(minPaymentAtomic)}</div>
+            <div className="summary-hint">Floor applied after raw task + system fee.</div>
+          </div>
+        </div>
+        <div className="summary-hint">
+          These values are used below to calculate the exact task cost for each template. Retention is ignored for
+          non-storage templates.
+        </div>
+      </div>
+
       {!templates.length ? (
         <div className="empty">
           No approved task templates found on-chain for this network. Prices will appear here as soon as templates are
@@ -216,7 +360,7 @@ export default function TaskPricesPage({ templates, systemFeeBps, minPayment, io
       ) : (
         <div className="price-template-list">
           {templates.map((template) => {
-            const quote = computeTemplateQuote(template, feeBps, minPaymentAtomic);
+            const quote = computeTemplateQuote(template, feeBps, minPaymentAtomic, runtime);
             return (
               <article className="price-template-card" key={template.templateId}>
                 <div className="price-template-head">
@@ -231,6 +375,7 @@ export default function TaskPricesPage({ templates, systemFeeBps, minPayment, io
                     {template.isEnabled ? "Enabled" : "Disabled"}
                   </span>
                 </div>
+                {quote.runtimeWarning ? <div className="alert alert-warn">{quote.runtimeWarning}</div> : null}
 
                 <div className="price-component-grid">
                   <CostItem
@@ -266,6 +411,16 @@ export default function TaskPricesPage({ templates, systemFeeBps, minPayment, io
                     hint="Applied to max(0, declared bytes - included bytes)."
                   />
                   <CostItem
+                    label="Extra download bytes"
+                    value={quote.extraDownloadBytes.toLocaleString()}
+                    hint="Runtime declared bytes minus included bytes, floored at zero."
+                  />
+                  <CostItem
+                    label="Download cost"
+                    value={formatIotaAtomic(quote.downloadCost)}
+                    hint="Extra download bytes x price per extra byte."
+                  />
+                  <CostItem
                     label="Storage"
                     value={template.allowStorage ? "Allowed" : "Not allowed"}
                     hint="Controls whether retention pricing can be used."
@@ -273,7 +428,7 @@ export default function TaskPricesPage({ templates, systemFeeBps, minPayment, io
                   />
                   <CostItem
                     label="Retention days"
-                    value={`${formatInteger(template.minRetentionDays)} min / ${formatInteger(template.maxRetentionDays)} max`}
+                    value={formatRetentionRange(template)}
                     hint="Runtime retention_days must stay inside this range."
                   />
                   <CostItem
@@ -282,37 +437,49 @@ export default function TaskPricesPage({ templates, systemFeeBps, minPayment, io
                     hint="Multiplied by task retention_days."
                   />
                   <CostItem
-                    label="Min retention cost"
-                    value={formatIotaAtomic(quote.minRetentionCost)}
-                    hint={`${quote.minRetentionDays.toString()} day(s) x retention price/day.`}
+                    label="Retention cost"
+                    value={formatIotaAtomic(quote.retentionCost)}
+                    hint={`${quote.retentionDays.toString()} day(s) x retention price/day.`}
                   />
                   <CostItem
-                    label="Minimum per-node raw"
-                    value={formatIotaAtomic(quote.minPerNodeRaw)}
-                    hint="Base price + minimum retention cost, before requested_nodes."
+                    label="Per-node raw"
+                    value={formatIotaAtomic(quote.perNodeRaw)}
+                    hint="Base price + download cost + retention cost."
                     tone="accent"
                   />
                   <CostItem
-                    label="System fee on minimum"
-                    value={formatIotaAtomic(quote.minSystemFee)}
-                    hint={`${feeBps} bps rounded up on minimum raw task price.`}
+                    label="Raw task"
+                    value={formatIotaAtomic(quote.rawTask)}
+                    hint={`${quote.requestedNodes.toString()} requested node(s) x per-node raw.`}
+                    tone="accent"
                   />
                   <CostItem
-                    label="Required payment min"
-                    value={formatIotaAtomic(quote.minRequiredPayment)}
+                    label="System fee"
+                    value={formatIotaAtomic(quote.systemFee)}
+                    hint={`${feeBps} bps rounded up on raw task price.`}
+                  />
+                  <CostItem
+                    label="Required payment"
+                    value={formatIotaAtomic(quote.requiredPayment)}
                     hint={`After min payment floor: ${formatIotaAtomic(quote.minPayment)}.`}
                     tone="accent"
                   />
                   <CostItem
-                    label="Direct one-shot min"
-                    value={formatIotaAtomic(quote.minDirect)}
-                    hint={formatCurrency(quote.minDirect, iotaMarketPrice, currency)}
+                    label="Direct one-shot total"
+                    value={formatIotaAtomic(quote.directTotal)}
+                    hint={formatCurrency(quote.directTotal, iotaMarketPrice, currency)}
                     tone="accent"
                   />
                   <CostItem
-                    label="Scheduled per-run min"
-                    value={formatIotaAtomic(quote.minScheduledPerRun)}
-                    hint={formatCurrency(quote.minScheduledPerRun, iotaMarketPrice, currency)}
+                    label="Scheduled per-run"
+                    value={formatIotaAtomic(quote.scheduledPerRun)}
+                    hint={formatCurrency(quote.scheduledPerRun, iotaMarketPrice, currency)}
+                    tone="accent"
+                  />
+                  <CostItem
+                    label="Scheduled budget"
+                    value={formatIotaAtomic(quote.scheduledBudget)}
+                    hint={`${runtime.scheduledRuns.toString()} run(s) x scheduled per-run.`}
                     tone="accent"
                   />
                 </div>
@@ -323,8 +490,8 @@ export default function TaskPricesPage({ templates, systemFeeBps, minPayment, io
       )}
 
       <div className="summary-hint">
-        Minimum totals assume one requested node, zero extra download bytes, and the template minimum retention days.
-        Real task quotes scale with requested_nodes, declared download bytes, retention_days, and scheduled run count.
+        Direct one-shot tasks pay only the required payment. Scheduled tasks add the scheduler fee to every run and the
+        required initial budget is the scheduled per-run amount multiplied by the selected number of runs.
       </div>
     </section>
   );

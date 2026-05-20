@@ -14,7 +14,7 @@ dependencies = [
 
 [[move.package]]
 id = "Iota"
-source = { git = "https://github.com/iotaledger/iota.git", rev = "431ab686e6f1d4abd83b16dd7c671712002ecac8", subdir = "crates/iota-framework/packages/iota-framework" }
+source = { git = "https://github.com/iotaledger/iota.git", rev = "3e2b511de52307e8513f278ee3576a1de47a267f", subdir = "crates/iota-framework/packages/iota-framework" }
 
 dependencies = [
   { id = "MoveStdlib", name = "MoveStdlib" },
@@ -22,7 +22,7 @@ dependencies = [
 
 [[move.package]]
 id = "IotaSystem"
-source = { git = "https://github.com/iotaledger/iota.git", rev = "431ab686e6f1d4abd83b16dd7c671712002ecac8", subdir = "crates/iota-framework/packages/iota-system" }
+source = { git = "https://github.com/iotaledger/iota.git", rev = "3e2b511de52307e8513f278ee3576a1de47a267f", subdir = "crates/iota-framework/packages/iota-system" }
 
 dependencies = [
   { id = "Iota", name = "Iota" },
@@ -31,11 +31,11 @@ dependencies = [
 
 [[move.package]]
 id = "MoveStdlib"
-source = { git = "https://github.com/iotaledger/iota.git", rev = "431ab686e6f1d4abd83b16dd7c671712002ecac8", subdir = "crates/iota-framework/packages/move-stdlib" }
+source = { git = "https://github.com/iotaledger/iota.git", rev = "3e2b511de52307e8513f278ee3576a1de47a267f", subdir = "crates/iota-framework/packages/move-stdlib" }
 
 [[move.package]]
 id = "Stardust"
-source = { git = "https://github.com/iotaledger/iota.git", rev = "431ab686e6f1d4abd83b16dd7c671712002ecac8", subdir = "crates/iota-framework/packages/stardust" }
+source = { git = "https://github.com/iotaledger/iota.git", rev = "3e2b511de52307e8513f278ee3576a1de47a267f", subdir = "crates/iota-framework/packages/stardust" }
 
 dependencies = [
   { id = "Iota", name = "Iota" },
@@ -90,6 +90,6 @@ published-version = "1"
 
 [env.testnet]
 chain-id = "2304aa97"
-original-published-id = "0x0dc5c5f1fb6fa14e28939ff030aed2c0fb274b02fc8642f54d7fc586d4cc5a29"
-latest-published-id = "0x0dc5c5f1fb6fa14e28939ff030aed2c0fb274b02fc8642f54d7fc586d4cc5a29"
+original-published-id = "0x55fe1e57b275a5a774ac54c0c63aa86451821276b17e3e4d62b16f6b4369d858"
+latest-published-id = "0x55fe1e57b275a5a774ac54c0c63aa86451821276b17e3e4d62b16f6b4369d858"
 published-version = "1"

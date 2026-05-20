@@ -883,6 +883,9 @@ function validateAgainstTemplate(prepared: PreparedTask, template: TaskTemplateI
   }
 
   if (prepared.taskType === "STORAGE") {
+    if (prepared.retentionDays !== 30) {
+      throw new Error("STORAGE task requires retention_days=30");
+    }
     if (prepared.declaredDownloadBytes <= 0n) {
       throw new Error("STORAGE task requires declared_download_bytes > 0");
     }

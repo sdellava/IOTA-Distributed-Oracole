@@ -640,6 +640,34 @@ th {
   margin-top: 12px;
 }
 
+.price-input-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.price-input-grid input {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--theme-input-border, rgba(192, 203, 217, 0.95));
+  border-radius: 4px;
+  background: #ffffff;
+  color: var(--theme-card-surface-text, #171d26);
+  padding: 10px 12px;
+}
+
+.price-readonly-field {
+  display: grid;
+  gap: 4px;
+  min-height: 78px;
+  border: 1px solid var(--theme-input-border, rgba(192, 203, 217, 0.95));
+  border-radius: 4px;
+  background: #ffffff;
+  padding: 10px 12px;
+  align-content: center;
+}
+
 .price-template-list {
   display: grid;
   gap: 14px;
@@ -1010,7 +1038,8 @@ th {
   }
 
   .price-formula-grid,
-  .price-component-grid {
+  .price-component-grid,
+  .price-input-grid {
     grid-template-columns: 1fr;
   }
 

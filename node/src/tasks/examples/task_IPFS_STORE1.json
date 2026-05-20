@@ -36,7 +36,7 @@
     "price_per_download_byte_iota": 0,
     "allow_storage": 1,
     "min_retention_days": 30,
-    "max_retention_days": 365,
+    "max_retention_days": 30,
     "price_per_retention_day_iota": 347034
   }
 }
